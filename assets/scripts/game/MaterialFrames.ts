@@ -1,0 +1,7 @@
+/** Auto-synced from tools/ui/material-frames.json */
+export const MATERIAL_FRAMES = {
+    "wood": "b06191e5-aaa3-473b-a9e8-e8fd97d53fe9@f9941",
+    "grass": "b303ff74-caa7-4f68-8716-f50672f84ae8@f9941",
+    "dirt": "0d34ee4c-7ac4-4bbe-a1df-edd4e6ad7a6f@f9941",
+    "stone": "d59e0a71-c294-4f63-ba89-14046cf94836@f9941"
+}

@@ -56,7 +56,7 @@
     },
     {
       "id": "tile-cliff",
-      "kind": "tile",
+      "kind": "terrain",
       "spriteType": "simple",
       "designSize": [
         64,
@@ -215,12 +215,12 @@
       "kind": "prop",
       "spriteType": "simple",
       "designSize": [
-        160,
-        96
+        64,
+        64
       ],
       "path": "assets/textures/props/prop-bridge.png",
       "prefab": "assets/prefabs/world/props/prop-bridge.prefab",
-      "layer": "Midground"
+      "layer": "Ground"
     },
     {
       "id": "prop-sign",
@@ -412,7 +412,12 @@
       ],
       "path": "assets/textures/props/prop-shipping.png",
       "prefab": "",
-      "layer": "Midground"
+      "layer": "Midground",
+      "note": "Storage chest (orthographic 3/4); world interact prop",
+      "tags": [
+        "chest",
+        "storage"
+      ]
     },
     {
       "id": "tile-grass-b",
@@ -701,6 +706,520 @@
       "path": "assets/textures/terrain/tile-fringe-out-sw.png",
       "prefab": "",
       "layer": "Ground"
+    },
+    {
+      "id": "ic-backpack",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        96
+      ],
+      "path": "assets/textures/ui/ic-backpack.png",
+      "prefab": "",
+      "layer": "UI",
+      "spriteFrame": "f9f0c3c3-9e72-4940-8b4a-a82e8b584e09@f9941"
+    },
+    {
+      "id": "tile-pond-shore-n",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-n.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-e",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-e.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-s",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-s.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-w",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-w.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-ne",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-ne.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-nw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-nw.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-se",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-se.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-sw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-sw.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pier",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pier.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-lily",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        28,
+        24
+      ],
+      "path": "assets/textures/nature/nat-lily.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-lily-bloom",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        28,
+        24
+      ],
+      "path": "assets/textures/nature/nat-lily-bloom.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-reed",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        40,
+        44
+      ],
+      "path": "assets/textures/nature/nat-reed.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-rock-wet",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        40,
+        28
+      ],
+      "path": "assets/textures/nature/nat-rock-wet.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-log-sunk",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        88,
+        36
+      ],
+      "path": "assets/textures/nature/nat-log-sunk.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-n-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-n-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-e-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-e-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-s-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-s-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-pond-shore-w-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-pond-shore-w-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "prop-bridge-rail-s",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/props/prop-bridge-rail-s.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "ui-info-panel",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        520,
+        216
+      ],
+      "path": "assets/textures/ui/ui-info-panel.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-gold",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        88
+      ],
+      "path": "assets/textures/ui/ui-info-gold.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-btn-minus",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        72,
+        72
+      ],
+      "path": "assets/textures/ui/ui-info-btn-minus.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-btn-plus",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        72,
+        72
+      ],
+      "path": "assets/textures/ui/ui-info-btn-plus.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-btn-quest",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        72,
+        72
+      ],
+      "path": "assets/textures/ui/ui-info-btn-quest.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-weather-sun",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/ui/ui-info-weather-sun.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-season-spring",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/ui/ui-info-season-spring.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-info-needle",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        36,
+        90
+      ],
+      "path": "assets/textures/ui/ui-info-needle.png",
+      "prefab": "",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-bag-tab",
+      "kind": "chrome",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        90
+      ],
+      "path": "assets/textures/ui/ui-bag-tab.png",
+      "prefab": "",
+      "layer": "UI",
+      "spriteFrame": "62d3b246-145a-4aa5-b081-47e7d4b96b4a@f9941"
+    },
+    {
+      "id": "ic-close",
+      "kind": "icon",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        96
+      ],
+      "path": "assets/textures/ui/ic-close.png",
+      "prefab": "",
+      "layer": "UI",
+      "spriteFrame": "8a6550b2-1626-45d4-89ec-3cd35c8215fd@f9941"
+    },
+    {
+      "id": "FarmInfoBoard",
+      "kind": "panel",
+      "spriteType": "simple",
+      "designSize": [
+        520,
+        408
+      ],
+      "path": "assets/prefabs/ui/FarmInfoBoard.prefab",
+      "prefab": "assets/prefabs/ui/FarmInfoBoard.prefab",
+      "layer": "UI"
+    },
+    {
+      "id": "ui-bag-btn",
+      "kind": "chrome",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        96
+      ],
+      "path": "assets/textures/ui/ui-bag-btn.png",
+      "prefab": "",
+      "layer": "UI",
+      "spriteFrame": "89728dad-dce4-4748-9b4d-d688cec61b94@f9941"
+    },
+    {
+      "id": "ic-wood",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-wood.png",
+      "spriteFrame": "b06191e5-aaa3-473b-a9e8-e8fd97d53fe9@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "wood"
+      ]
+    },
+    {
+      "id": "ic-grass",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-grass.png",
+      "spriteFrame": "b303ff74-caa7-4f68-8716-f50672f84ae8@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "grass"
+      ]
+    },
+    {
+      "id": "ic-dirt",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-dirt.png",
+      "spriteFrame": "0d34ee4c-7ac4-4bbe-a1df-edd4e6ad7a6f@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "dirt"
+      ]
+    },
+    {
+      "id": "ic-stone",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-stone.png",
+      "spriteFrame": "d59e0a71-c294-4f63-ba89-14046cf94836@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "stone"
+      ]
+    },
+    {
+      "id": "ic-hand",
+      "kind": "icon",
+      "path": "assets/textures/ui/ic-hand.png",
+      "spriteFrame": "44766969-a397-41be-aa3e-ed2f77068bf7@f9941"
+    },
+    {
+      "id": "ic-hoe",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-hoe.png",
+      "spriteFrame": "08a2a30f-35b6-487a-8e11-bc4786ea9ea0@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "hoe"
+      ]
+    },
+    {
+      "id": "ic-seeds",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-seeds.png",
+      "spriteFrame": "fdc0f0f2-5da1-4a35-b096-ce5c574fed3c@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "seeds"
+      ]
+    },
+    {
+      "id": "ic-can",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-can.png",
+      "spriteFrame": "9868439a-ba91-4030-8483-45abb0a6b9e1@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "can"
+      ]
+    },
+    {
+      "id": "ic-axe",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-axe.png",
+      "spriteFrame": "ff16e656-2a76-4471-8a1a-38ad49f457b5@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "axe"
+      ]
     }
   ]
 }

@@ -49,7 +49,11 @@ export class WorldYSort extends Component {
     }
 
     private groundRank(name: string): number {
-        if (name.startsWith('fringe_')) return 1;
+        if (name.startsWith('fringe_')) return 5;
+        if (name === 'lake_bridge' || name.startsWith('pond_pier_')) return 4;
+        if (name.startsWith('pond_deco_')) return 3;
+        if (name.startsWith('cliff_') || name.startsWith('pond_cliff_')) return 2;
+        if (name.startsWith('water_') || name.startsWith('pond_water_')) return 1;
         return 0;
     }
 
@@ -63,11 +67,15 @@ export class WorldYSort extends Component {
     }
 
     private isGround(name: string): boolean {
+        // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
+        if (name === 'lake_bridge_rail_s') return false;
         return (
             name.startsWith('tile-') ||
             name.startsWith('fringe_') ||
             name.startsWith('water_') ||
-            name.startsWith('cliff_')
+            name.startsWith('cliff_') ||
+            name.startsWith('pond_') ||
+            name === 'lake_bridge'
         );
     }
 }

@@ -16,5 +16,20 @@ export const TERRAIN_FRAMES = {
     "fringeOutNE": "085b5433-5078-4f1e-bb19-bd6bb92877ae@f9941",
     "fringeOutNW": "2381f630-83cc-40fd-859a-e43ac4d92ced@f9941",
     "fringeOutSE": "44117a94-1020-4d0d-9db3-0f29707f5ce4@f9941",
-    "fringeOutSW": "16194b5d-db52-4380-9ddb-9897e165ceaa@f9941"
+    "fringeOutSW": "16194b5d-db52-4380-9ddb-9897e165ceaa@f9941",
+    "water": "8e3e98e6-ae45-420a-b7a6-d5e95b4fbc59@f9941",
+    "pondShoreN": "dcfa4ec9-c570-4889-9e2d-91f30ec4c841@f9941",
+    "pondShoreE": "5a6e9d33-3b51-4011-8511-520f6aa2a786@f9941",
+    "pondShoreS": "2b702189-7848-4ef1-b50e-518dd1cfacc4@f9941",
+    "pondShoreW": "93e13573-2873-4612-9573-59fe5b943abe@f9941",
+    "pondShoreNE": "419cf8de-92ad-4402-b30e-f15d093af529@f9941",
+    "pondShoreNW": "00a2bad2-2d49-4d61-ae15-b600ae904690@f9941",
+    "pondShoreSE": "4907e949-7248-4c91-a1d7-f91d7159fde6@f9941",
+    "pondShoreSW": "30dbb86a-0b9d-4104-8c20-855fcfe15d30@f9941",
+    "cliff": "8eca2950-7719-4d26-b8ba-84b709aef576@f9941",
+    "pier": "974ee39c-bf8d-428c-8f9d-9a4401621f47@f9941",
+    "pondShoreNB": "54da4774-27c2-4e85-a7d8-00ed3f75f3ad@f9941",
+    "pondShoreEB": "8f789abc-e0aa-49fd-879d-c5db221f1887@f9941",
+    "pondShoreSB": "f71e2705-e907-4699-9aab-7da477267cc0@f9941",
+    "pondShoreWB": "9941e6b4-1227-49ad-845e-510b75430c50@f9941"
 }

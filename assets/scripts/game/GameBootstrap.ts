@@ -7,18 +7,23 @@ import {
     Graphics,
     Layers,
     Node,
+    Prefab,
     Sprite,
     UITransform,
     Vec3,
     Widget,
+    assetManager,
+    instantiate,
     view,
 } from 'cc';
 import { CameraFollow } from './CameraFollow';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FarmHUD } from './FarmHUD';
+import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
 import { FarmWorldLayout } from './FarmWorldLayout';
 import { FirstQuest } from './FirstQuest';
+import { INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
 import { PlayerAnimator } from './PlayerAnimator';
 import { PlayerController } from './PlayerController';
 import {
@@ -29,6 +34,7 @@ import {
     applyPortraitCameraRect,
     portraitVisibleSize,
 } from './PortraitFit';
+import { ensureNightWash } from './NightWash';
 import { TouchJoystick } from './TouchJoystick';
 import { WorldYSort } from './WorldYSort';
 
@@ -73,22 +79,31 @@ export class GameBootstrap extends Component {
             'FarmActionBtn',
             'FarmHotbar',
             'FarmUseBtn',
+            'FarmBagDimmer',
+            'FarmBagPanel',
+            'FarmChestDimmer',
+            'FarmChestPanel',
+            'FarmDragGhost',
+            'FarmToolTip',
+            'FarmInfoBoard',
             'ScreenFill',
+            'NightOverlay',
         ]) {
             const n = canvas.getChildByName(name);
-            if (n) n.destroy();
+            if (n) this._destroyNodeNow(n);
         }
         const oldPlayer = world.getChildByName('Player');
-        if (oldPlayer) oldPlayer.destroy();
+        if (oldPlayer) this._destroyNodeNow(oldPlayer);
         const oldMarker = world.getChildByName('QuestMarker');
-        if (oldMarker) oldMarker.destroy();
+        if (oldMarker) this._destroyNodeNow(oldMarker);
         for (const child of [...world.children]) {
-            if (child.name === 'Crop' || child.name.startsWith('Crop')) child.destroy();
+            if (child.name === 'Crop' || child.name.startsWith('Crop')) this._destroyNodeNow(child);
         }
 
         // Drop story quest leftover from earlier builds.
         const oldQuest = canvas.getComponent(FirstQuest);
         if (oldQuest) canvas.removeComponent(oldQuest);
+        this._compactComponents(canvas);
 
         this.fixPropAnchors(world);
         // Match reference: map fills 1080 width; ground covers the portrait frame.
@@ -101,11 +116,22 @@ export class GameBootstrap extends Component {
         const player = this.spawnPlayer(world);
         const stick = this.spawnTouchControls(canvas);
 
+        let follow = canvas.getComponent(CameraFollow);
+        if (!follow) follow = canvas.addComponent(CameraFollow);
+        follow.target = player;
+        follow.world = world;
+
         FarmWorldLayout.apply(world, frame.localW, frame.localH, () => {
-            player.getComponent(PlayerController)?.rebuildSolids();
+            const ctrl = player.getComponent(PlayerController);
+            ctrl?.rebuildSolids();
+            // Pond + pinned river define the final ground AABB.
+            this.applyMapBounds(player, follow, this.measureMapBounds(world));
+            ctrl?.rebuildSolids();
+            follow.snap();
         });
         this.pinRiverToBottom(world, frame.localH);
         FarmWorldLayout.placeBridge(world);
+        this.applyMapBounds(player, follow, this.measureMapBounds(world));
 
         let farm = canvas.getComponent(FarmSystem);
         if (!farm) farm = canvas.addComponent(FarmSystem);
@@ -115,13 +141,129 @@ export class GameBootstrap extends Component {
         let hud = canvas.getComponent(FarmHUD);
         if (!hud) hud = canvas.addComponent(FarmHUD);
         hud.farm = farm;
-        stick.onTap = (x, y) => hud!.handleTap(x, y);
 
-        let follow = canvas.getComponent(CameraFollow);
-        if (!follow) follow = canvas.addComponent(CameraFollow);
-        follow.target = player;
-        follow.world = world;
+        // Info board: real prefab (layout in editor), not runtime node-build.
+        const oldInfoComp = canvas.getComponent(FarmInfoBoard);
+        if (oldInfoComp) canvas.removeComponent(oldInfoComp);
+        let infoBoard: FarmInfoBoard | null = null;
+        stick.onTap = (x, y) => {
+            if (infoBoard?.handleTap(x, y)) return;
+            hud!.handleTap(x, y);
+        };
+        this.mountInfoBoard(canvas, farm, follow, (info) => {
+            infoBoard = info;
+        });
+        stick.onDragStart = () => {
+            farm!.cancelPending();
+            player.getComponent(PlayerController)?.onManualMoveStart();
+        };
+
         follow.snap();
+    }
+
+    private mountInfoBoard(
+        canvas: Node,
+        farm: FarmSystem,
+        follow: CameraFollow,
+        ready: (info: FarmInfoBoard) => void,
+    ) {
+        assetManager.loadAny({ uuid: INFO_BOARD_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[GameBootstrap] FarmInfoBoard prefab missing', err);
+                return;
+            }
+            if (!canvas.isValid) return;
+            // Drop null component slots before setParent — engine getComponent
+            // crashes on `comp.constructor` when a slot is null (e.g. script
+            // UUID failed to resolve during prefab deserialize).
+            this._compactComponents(canvas);
+            const node = instantiate(asset as Prefab);
+            node.name = 'FarmInfoBoard';
+            node.layer = canvas.layer;
+            this._compactComponentTree(node);
+            node.setParent(canvas);
+            node.setSiblingIndex(canvas.children.length - 1);
+            let info = node.getComponent(FarmInfoBoard);
+            if (!info) info = node.addComponent(FarmInfoBoard);
+            info.farm = farm;
+            info.cameraFollow = follow;
+            ready(info);
+        });
+    }
+
+    /** Detach immediately so hierarchy walks won't touch half-destroyed nodes. */
+    private _destroyNodeNow(n: Node) {
+        if (!n.isValid) return;
+        n.removeFromParent();
+        n.destroy();
+    }
+
+    /** Drop null slots left by failed deserialize / deferred Component.destroy. */
+    private _compactComponents(node: Node) {
+        const comps = (node as unknown as { _components?: Array<Component | null> })._components;
+        if (!comps?.length) return;
+        for (let i = comps.length - 1; i >= 0; i--) {
+            if (!comps[i]) comps.splice(i, 1);
+        }
+    }
+
+    private _compactComponentTree(root: Node) {
+        const stack: Node[] = [root];
+        while (stack.length) {
+            const n = stack.pop()!;
+            this._compactComponents(n);
+            for (const c of n.children) stack.push(c);
+        }
+    }
+
+    /** Grass / water tile edges → camera clamp + player soft bounds. */
+    private measureMapBounds(world: Node): {
+        minX: number;
+        maxX: number;
+        minY: number;
+        maxY: number;
+    } {
+        const TILE = 64;
+        const half = TILE * 0.5;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (const child of world.children) {
+            const n = child.name;
+            if (
+                !n.startsWith('tile-grass') &&
+                !n.startsWith('tile-dirt') &&
+                !n.startsWith('water_') &&
+                !n.startsWith('pond_')
+            ) {
+                continue;
+            }
+            const p = child.position;
+            minX = Math.min(minX, p.x - half);
+            maxX = Math.max(maxX, p.x + half);
+            minY = Math.min(minY, p.y - half);
+            maxY = Math.max(maxY, p.y + half);
+        }
+        if (!Number.isFinite(minX)) {
+            return { minX: -480, maxX: 480, minY: -544, maxY: 544 };
+        }
+        return { minX, maxX, minY, maxY };
+    }
+
+    private applyMapBounds(
+        player: Node,
+        follow: CameraFollow | null,
+        bounds: { minX: number; maxX: number; minY: number; maxY: number },
+    ) {
+        const margin = 20;
+        follow?.setMapBounds(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
+        player.getComponent(PlayerController)?.setMapBounds(
+            bounds.minX + margin,
+            bounds.maxX - margin,
+            bounds.minY + margin,
+            bounds.maxY - margin,
+        );
     }
 
     onDestroy() {
@@ -137,11 +279,13 @@ export class GameBootstrap extends Component {
         ut.setContentSize(DESIGN_W, DESIGN_H);
 
         // Full-bleed Widget forces landscape canvas on desktop — keep off.
+        // removeComponent() only schedules destroy(); splice out immediately.
         const stretch = this.node.getComponent(Widget);
         if (stretch) {
             stretch.enabled = false;
-            stretch.destroy();
+            (this.node as unknown as { _removeComponent: (c: Component) => void })._removeComponent(stretch);
         }
+        this._compactComponents(this.node);
 
         let camNode = this.node.getChildByName('Camera');
         if (!camNode) {
@@ -205,6 +349,7 @@ export class GameBootstrap extends Component {
                 this._letterboxCam.enabled = true;
             }
             this._resizeScreenFill(vis.width, vis.height);
+            this._resizeNightOverlay(vis.width, vis.height);
         } finally {
             this._applyingFrame = false;
         }
@@ -256,6 +401,7 @@ export class GameBootstrap extends Component {
 
         this.spawnScreenFill(canvas, world);
         world.setSiblingIndex(1);
+        ensureNightWash(canvas, world, DESIGN_W, DESIGN_H);
         return { localW, localH };
     }
 
@@ -343,6 +489,11 @@ export class GameBootstrap extends Component {
         if (ut) ut.setContentSize(w, h);
         const g = fill.getComponent(Graphics);
         if (g) this._paintFill(g, w, h);
+    }
+
+    private _resizeNightOverlay(w: number, h: number) {
+        const world = this.node.getChildByName('World');
+        ensureNightWash(this.node, world, w, h);
     }
 
     private _paintFill(g: Graphics, w: number, h: number) {
@@ -439,6 +590,7 @@ export class GameBootstrap extends Component {
 
         const anim = player.addComponent(PlayerAnimator);
         anim.fps = 9;
+        anim.actionFps = 8;
         anim.loadCatalog(FARMER_FRAMES);
 
         return player;

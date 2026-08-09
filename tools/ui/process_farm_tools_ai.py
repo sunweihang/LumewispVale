@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Ingest AI tilled/wet tiles + tool icons; refresh FarmFrames / ToolFrames."""
+"""Ingest AI tilled/wet tiles (+ optional legacy tool icons).
+
+Hotbar tool icons (hand/hoe/seeds/can/axe) are now procedural:
+  /usr/bin/python3 tools/ui/draw_tool_icons.py
+"""
 
 import json
 import shutil

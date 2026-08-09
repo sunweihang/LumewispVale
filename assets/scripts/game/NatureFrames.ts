@@ -17,5 +17,10 @@ export const NATURE_FRAMES = {
     "tuft": "9e8c4d03-f66f-47a1-85f6-c481a3c2d892@f9941",
     "weedTall": "c2d52b55-0e47-4b77-ac61-0de6487c7479@f9941",
     "weedPink": "4402decf-7dd2-4285-a823-612e3d8adc58@f9941",
-    "fiber": "1a76bb8d-c609-41f0-9f7b-a0cc370f1211@f9941"
+    "fiber": "1a76bb8d-c609-41f0-9f7b-a0cc370f1211@f9941",
+    "lily": "85fa79df-8318-4a4a-89e5-4d6733896983@f9941",
+    "lilyBloom": "b22b416c-1cac-463f-af96-ab795268107e@f9941",
+    "reed": "4dad16c6-f8bc-4fd6-b39d-1a90efa87b9b@f9941",
+    "rockWet": "91c6ffa7-327b-488c-8d7f-ea5445f9b489@f9941",
+    "logSunk": "338cb95e-9c92-42eb-820b-701c0727681a@f9941"
 }

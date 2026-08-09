@@ -38,8 +38,13 @@ export class TouchJoystick extends Component {
     /** Fired on short tap (ui coords, origin bottom-left). */
     onTap: ((uiX: number, uiY: number) => void) | null = null;
 
+    /** Fired when a press becomes a drag stick — cancel auto-walk jobs. */
+    onDragStart: (() => void) | null = null;
+
     private _tracking = false;
     private _dragging = false;
+    /** Finger slid inside UI zone — suppress world/UI tap (item drag handled elsewhere). */
+    private _uiSlid = false;
     private _id = -1;
     private _ox = 0;
     private _oy = 0;
@@ -111,6 +116,7 @@ export class TouchJoystick extends Component {
         // Hotbar: let FarmHUD handle via tap path (still track, but don't start stick in bar).
         this._tracking = true;
         this._dragging = false;
+        this._uiSlid = false;
         this._id = id;
         this._ox = x;
         this._oy = y;
@@ -124,14 +130,19 @@ export class TouchJoystick extends Component {
 
         if (!this._dragging) {
             if (dist < this.dragThreshold) return;
-            // Don't start move-stick from the hotbar band.
+            // Full-screen panels (bag / chest): never start the stick, but keep the
+            // gesture eligible for onTap — otherwise close buttons never fire.
+            if (InputBridge.uiBlocking) {
+                return;
+            }
+            // Hotbar / backpack UI: never start the move-stick (FarmHUD owns item drags).
             if (InputBridge.isActionZone(this._ox, this._oy)) {
-                this._tracking = false;
-                this._id = -1;
+                this._uiSlid = true;
                 return;
             }
             this._dragging = true;
             this.showVisualAt(this._ox, this._oy);
+            this.onDragStart?.();
         }
 
         let dx = x - this._ox;
@@ -150,12 +161,15 @@ export class TouchJoystick extends Component {
 
     private end(x: number, y: number) {
         const wasDrag = this._dragging;
+        const uiSlid = this._uiSlid;
         this._tracking = false;
         this._dragging = false;
+        this._uiSlid = false;
         this._id = -1;
         InputBridge.clear();
         this.hideVisual();
-        if (!wasDrag) {
+        // True short tap only — UI slides / item drags must not fire onTap.
+        if (!wasDrag && !uiSlid) {
             this.onTap?.(x, y);
         }
     }

@@ -1,0 +1,45 @@
+{
+  "panel": [
+    520,
+    216
+  ],
+  "gold": [
+    320,
+    88
+  ],
+  "btn": 72,
+  "icon": 64,
+  "edge": 20,
+  "stackGap": 16,
+  "date": {
+    "x": 276,
+    "y": 18,
+    "w": 152,
+    "h": 39
+  },
+  "weather": {
+    "x": 286,
+    "y": 74,
+    "w": 62,
+    "h": 61
+  },
+  "season": {
+    "x": 367,
+    "y": 74,
+    "w": 61,
+    "h": 61
+  },
+  "time": {
+    "x": 276,
+    "y": 153,
+    "w": 152,
+    "h": 43
+  },
+  "dial": [
+    174,
+    73,
+    78
+  ],
+  "prefab": "assets/prefabs/ui/FarmInfoBoard.prefab",
+  "prefabUuid": "220473b9-25ed-460c-b9ef-c7bb009504cf"
+}

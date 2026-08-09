@@ -6,22 +6,37 @@ export class InputBridge {
     /** Last facing for farm interact (grid step). Default: down. */
     static facingX = 0;
     static facingY = -1;
+    /** Full-screen UI (backpack open) — block move-stick entirely. */
+    static uiBlocking = false;
 
     static setMove(x: number, y: number) {
-        if (x * x + y * y > 1) {
-            const len = Math.sqrt(x * x + y * y);
+        const lenSq = x * x + y * y;
+        if (lenSq > 1) {
+            const len = Math.sqrt(lenSq);
             x /= len;
             y /= len;
         }
         InputBridge.move.set(x, y);
-        if (x * x + y * y > 0.01) {
-            if (Math.abs(x) >= Math.abs(y)) {
-                InputBridge.facingX = x >= 0 ? 1 : -1;
-                InputBridge.facingY = 0;
-            } else {
+        if (x * x + y * y <= 0.01) return;
+        // Facing hysteresis: keep current axis until the other clearly wins.
+        const ax = Math.abs(x);
+        const ay = Math.abs(y);
+        const onX = InputBridge.facingY === 0;
+        const bias = 1.3;
+        if (onX) {
+            if (ay > ax * bias) {
                 InputBridge.facingX = 0;
                 InputBridge.facingY = y >= 0 ? 1 : -1;
+            } else {
+                InputBridge.facingX = x >= 0 ? 1 : -1;
+                InputBridge.facingY = 0;
             }
+        } else if (ax > ay * bias) {
+            InputBridge.facingX = x >= 0 ? 1 : -1;
+            InputBridge.facingY = 0;
+        } else {
+            InputBridge.facingX = 0;
+            InputBridge.facingY = y >= 0 ? 1 : -1;
         }
     }
 
@@ -30,11 +45,21 @@ export class InputBridge {
     }
 
     /**
-     * Bottom hotbar band — drag-to-move must not start here.
+     * Optional top-right info board hit-test (set by FarmInfoBoard).
      * `uiX/uiY` are UI coords with origin at bottom-left.
      */
-    static isActionZone(_uiX: number, uiY?: number): boolean {
+    static infoBoardHit: ((uiX: number, uiY: number) => boolean) | null = null;
+
+    /**
+     * Bottom hotbar band / info board — drag-to-move must not start here.
+     * `uiX/uiY` are UI coords with origin at bottom-left.
+     */
+    static isActionZone(uiX?: number, uiY?: number): boolean {
+        if (InputBridge.uiBlocking) return true;
         if (uiY !== undefined && uiY < 260) return true;
+        if (uiX !== undefined && uiY !== undefined && InputBridge.infoBoardHit?.(uiX, uiY)) {
+            return true;
+        }
         return false;
     }
 }
