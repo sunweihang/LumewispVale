@@ -1,0 +1,317 @@
+{
+  "tile-grass": {
+    "texture": "3d13bce6-c91e-4770-a458-f0168dee6085",
+    "prefab": "198c1955-dc72-434c-984e-7a416478dabd",
+    "spriteFrame": "3d13bce6-c91e-4770-a458-f0168dee6085@f9941"
+  },
+  "tile-dirt": {
+    "texture": "8bf7abcf-7d09-44d1-afcb-0bf8036b8025",
+    "prefab": "99a187b8-162a-45c2-81ce-244e453d4033",
+    "spriteFrame": "8bf7abcf-7d09-44d1-afcb-0bf8036b8025@f9941"
+  },
+  "tile-stone": {
+    "texture": "aa3d6099-e8ec-442f-b499-84cdba7c5dcc",
+    "prefab": "d9af91da-2f69-43c9-9159-aada51ece053",
+    "spriteFrame": "aa3d6099-e8ec-442f-b499-84cdba7c5dcc@f9941"
+  },
+  "tile-water": {
+    "texture": "8e3e98e6-ae45-420a-b7a6-d5e95b4fbc59",
+    "prefab": "b23ef36e-c98c-43bf-897e-9ebe59a80039",
+    "spriteFrame": "8e3e98e6-ae45-420a-b7a6-d5e95b4fbc59@f9941"
+  },
+  "tile-cliff": {
+    "texture": "8eca2950-7719-4d26-b8ba-84b709aef576",
+    "prefab": "a826bd7a-cfd2-44a0-9143-18ca82fdb85b",
+    "spriteFrame": "8eca2950-7719-4d26-b8ba-84b709aef576@f9941"
+  },
+  "bld-cottage-blue": {
+    "texture": "988a73bf-a778-4f8e-b912-22b6a2f355c6",
+    "prefab": "3eeeb117-d083-4ead-a994-815aa206cdca",
+    "spriteFrame": "988a73bf-a778-4f8e-b912-22b6a2f355c6@f9941"
+  },
+  "bld-cottage-red": {
+    "texture": "a5b87678-ab64-4173-9a6b-7d409ec746e2",
+    "prefab": "ae00485f-bced-4d56-8e88-d38ce026ccaf",
+    "spriteFrame": "a5b87678-ab64-4173-9a6b-7d409ec746e2@f9941"
+  },
+  "bld-shop": {
+    "texture": "bc624b1d-9279-49d8-beed-ab9db3366b6b",
+    "prefab": "47ebc385-b3c7-4c6c-bb87-5f5c4bc62c32",
+    "spriteFrame": "bc624b1d-9279-49d8-beed-ab9db3366b6b@f9941"
+  },
+  "bld-community": {
+    "texture": "20cf3473-7430-45ec-bf46-fae897650692",
+    "prefab": "35a9b1a2-11b5-43c0-a6d3-fc8ca90364a5",
+    "spriteFrame": "20cf3473-7430-45ec-bf46-fae897650692@f9941"
+  },
+  "bld-shed": {
+    "texture": "d29fe7a0-beb9-42e2-8140-b88c45147ac8",
+    "prefab": "34171491-d92c-45d1-91e2-481875b7d0ca",
+    "spriteFrame": "d29fe7a0-beb9-42e2-8140-b88c45147ac8@f9941"
+  },
+  "nat-tree-oak": {
+    "texture": "4db96ee3-08ea-4d42-a869-eacba7eb3cb5",
+    "prefab": "3a048058-4852-4857-b0cd-a810bc1752ee",
+    "spriteFrame": "4db96ee3-08ea-4d42-a869-eacba7eb3cb5@f9941"
+  },
+  "nat-tree-blossom": {
+    "texture": "b9de4c6c-c556-4c2f-9c93-6e3676257e09",
+    "prefab": "03550695-a6ee-440a-a9bf-e38a2cc83216",
+    "spriteFrame": "b9de4c6c-c556-4c2f-9c93-6e3676257e09@f9941"
+  },
+  "nat-bush": {
+    "texture": "1102b80f-5331-4caa-87a4-338aa3be5f95",
+    "prefab": "11d400ad-cf01-4e53-a11f-efd44e377ef5",
+    "spriteFrame": "1102b80f-5331-4caa-87a4-338aa3be5f95@f9941"
+  },
+  "prop-fence": {
+    "texture": "52ecea29-5da3-4eec-9765-3cc0858e4748",
+    "prefab": "40df6dc2-c281-4698-9f1f-f75338ae6fa9",
+    "spriteFrame": "52ecea29-5da3-4eec-9765-3cc0858e4748@f9941"
+  },
+  "prop-lamp": {
+    "texture": "9994509e-8049-4e4d-9a5f-1672371c36b8",
+    "prefab": "f45071d2-1ed3-4401-8232-ea2b8ddfa931",
+    "spriteFrame": "9994509e-8049-4e4d-9a5f-1672371c36b8@f9941"
+  },
+  "prop-bench": {
+    "texture": "e150e313-5803-4c63-aacb-afcdc6f8d8d4",
+    "prefab": "8c394bdf-5e1e-49cb-aa59-fe60cc1f6766",
+    "spriteFrame": "e150e313-5803-4c63-aacb-afcdc6f8d8d4@f9941"
+  },
+  "prop-fountain": {
+    "texture": "1eb29b8c-cc64-4318-831b-c768a4d4d8b7",
+    "prefab": "54581f33-3090-45a9-ba22-cf639649cd29",
+    "spriteFrame": "1eb29b8c-cc64-4318-831b-c768a4d4d8b7@f9941"
+  },
+  "prop-bridge": {
+    "texture": "7aa6cfc8-27bf-4b43-b089-e517d86b64a2",
+    "prefab": "feb11a67-5982-435e-ae7c-24d5584fcd2a",
+    "spriteFrame": "7aa6cfc8-27bf-4b43-b089-e517d86b64a2@f9941"
+  },
+  "prop-sign": {
+    "texture": "6bf7ecb9-7750-4efd-9f82-84534ceaef25",
+    "prefab": "6d290c3b-e2cf-47fd-b29b-27cc0e6189b9",
+    "spriteFrame": "6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941"
+  },
+  "spc-meteor": {
+    "texture": "e80f5369-d150-4b80-aa7c-636daa221af1",
+    "prefab": "e51a5553-5169-4993-a867-03e35beb87e2",
+    "spriteFrame": "e80f5369-d150-4b80-aa7c-636daa221af1@f9941"
+  },
+  "tile-tilled": {
+    "texture": "514c49fb-7eea-4823-9b5d-60b6ed26135b",
+    "prefab": "",
+    "spriteFrame": "514c49fb-7eea-4823-9b5d-60b6ed26135b@f9941"
+  },
+  "tile-wet": {
+    "texture": "66ae82ed-4036-4dfb-9d3a-6ff3c63adb8b",
+    "prefab": "",
+    "spriteFrame": "66ae82ed-4036-4dfb-9d3a-6ff3c63adb8b@f9941"
+  },
+  "crop-parsnip-0": {
+    "texture": "7fe61070-5ea2-4271-8fe7-22730706ec4f",
+    "prefab": "",
+    "spriteFrame": "7fe61070-5ea2-4271-8fe7-22730706ec4f@f9941"
+  },
+  "crop-parsnip-1": {
+    "texture": "756cfc37-c782-4772-928f-65068c88cdf7",
+    "prefab": "",
+    "spriteFrame": "756cfc37-c782-4772-928f-65068c88cdf7@f9941"
+  },
+  "crop-parsnip-2": {
+    "texture": "49374f1e-aa7a-46aa-ab06-4443de87cd94",
+    "prefab": "",
+    "spriteFrame": "49374f1e-aa7a-46aa-ab06-4443de87cd94@f9941"
+  },
+  "nat-rock": {
+    "texture": "8da832a9-5c56-45d0-a6a9-c87e9b622f54",
+    "prefab": "",
+    "spriteFrame": "8da832a9-5c56-45d0-a6a9-c87e9b622f54@f9941"
+  },
+  "nat-rock-big": {
+    "texture": "58a7823f-7621-40de-a892-ca953e5a3feb",
+    "prefab": "",
+    "spriteFrame": "58a7823f-7621-40de-a892-ca953e5a3feb@f9941"
+  },
+  "nat-stump": {
+    "texture": "28102750-830b-497c-b4d9-63f60307a967",
+    "prefab": "",
+    "spriteFrame": "28102750-830b-497c-b4d9-63f60307a967@f9941"
+  },
+  "nat-log": {
+    "texture": "6acc938c-a5f5-44b5-a09a-3ad009947f05",
+    "prefab": "",
+    "spriteFrame": "6acc938c-a5f5-44b5-a09a-3ad009947f05@f9941"
+  },
+  "nat-weed": {
+    "texture": "b2ce5692-a1a9-4cee-acf8-374c6c16c158",
+    "prefab": "",
+    "spriteFrame": "b2ce5692-a1a9-4cee-acf8-374c6c16c158@f9941"
+  },
+  "nat-weed-bloom": {
+    "texture": "40781c4e-9520-4124-b9cc-7268d8948a51",
+    "prefab": "",
+    "spriteFrame": "40781c4e-9520-4124-b9cc-7268d8948a51@f9941"
+  },
+  "nat-tree-pine": {
+    "texture": "6d416d3d-92bc-40f6-a7ca-297a9d6d83c1",
+    "prefab": "",
+    "spriteFrame": "6d416d3d-92bc-40f6-a7ca-297a9d6d83c1@f9941"
+  },
+  "prop-mailbox": {
+    "texture": "cd898acb-be7c-4686-989e-c1f090a5e5bb",
+    "prefab": "",
+    "spriteFrame": "cd898acb-be7c-4686-989e-c1f090a5e5bb@f9941"
+  },
+  "prop-shipping": {
+    "texture": "34e92659-93e9-4eb4-857f-39fa16daf062",
+    "prefab": "",
+    "spriteFrame": "34e92659-93e9-4eb4-857f-39fa16daf062@f9941"
+  },
+  "ic-hoe": {
+    "texture": "08a2a30f-35b6-487a-8e11-bc4786ea9ea0",
+    "prefab": "",
+    "spriteFrame": "08a2a30f-35b6-487a-8e11-bc4786ea9ea0@f9941"
+  },
+  "ic-can": {
+    "texture": "9868439a-ba91-4030-8483-45abb0a6b9e1",
+    "prefab": "",
+    "spriteFrame": "9868439a-ba91-4030-8483-45abb0a6b9e1@f9941"
+  },
+  "ic-seeds": {
+    "texture": "fdc0f0f2-5da1-4a35-b096-ce5c574fed3c",
+    "prefab": "",
+    "spriteFrame": "fdc0f0f2-5da1-4a35-b096-ce5c574fed3c@f9941"
+  },
+  "ui-slot": {
+    "texture": "0287b05b-8840-4983-ace0-3bbfbc28f9a8",
+    "prefab": "",
+    "spriteFrame": "0287b05b-8840-4983-ace0-3bbfbc28f9a8@f9941"
+  },
+  "tile-grass-b": {
+    "texture": "2f382d48-b5a4-498c-8f61-ac6d2af45a34",
+    "prefab": "",
+    "spriteFrame": "2f382d48-b5a4-498c-8f61-ac6d2af45a34@f9941"
+  },
+  "tile-grass-c": {
+    "texture": "65d28fd1-1f4e-4be3-8cbd-6a80cba6fb9b",
+    "prefab": "",
+    "spriteFrame": "65d28fd1-1f4e-4be3-8cbd-6a80cba6fb9b@f9941"
+  },
+  "tile-dirt-b": {
+    "texture": "e6636d5f-3086-45a0-a295-472f94f8477b",
+    "prefab": "",
+    "spriteFrame": "e6636d5f-3086-45a0-a295-472f94f8477b@f9941"
+  },
+  "nat-pebble": {
+    "texture": "0c59843f-ba83-4a7d-bccd-cb9b42a42f41",
+    "prefab": "",
+    "spriteFrame": "0c59843f-ba83-4a7d-bccd-cb9b42a42f41@f9941"
+  },
+  "nat-twig": {
+    "texture": "22f51dc6-b23d-4b1e-a316-6cfd470b3429",
+    "prefab": "",
+    "spriteFrame": "22f51dc6-b23d-4b1e-a316-6cfd470b3429@f9941"
+  },
+  "nat-tuft": {
+    "texture": "9e8c4d03-f66f-47a1-85f6-c481a3c2d892",
+    "prefab": "",
+    "spriteFrame": "9e8c4d03-f66f-47a1-85f6-c481a3c2d892@f9941"
+  },
+  "nat-weed-tall": {
+    "texture": "c2d52b55-0e47-4b77-ac61-0de6487c7479",
+    "prefab": "",
+    "spriteFrame": "c2d52b55-0e47-4b77-ac61-0de6487c7479@f9941"
+  },
+  "nat-weed-pink": {
+    "texture": "4402decf-7dd2-4285-a823-612e3d8adc58",
+    "prefab": "",
+    "spriteFrame": "4402decf-7dd2-4285-a823-612e3d8adc58@f9941"
+  },
+  "nat-fiber": {
+    "texture": "1a76bb8d-c609-41f0-9f7b-a0cc370f1211",
+    "prefab": "",
+    "spriteFrame": "1a76bb8d-c609-41f0-9f7b-a0cc370f1211@f9941"
+  },
+  "tile-tilled-b": {
+    "texture": "9fbdeb69-618d-4cab-b18b-17dd18a66237",
+    "prefab": "",
+    "spriteFrame": "9fbdeb69-618d-4cab-b18b-17dd18a66237@f9941"
+  },
+  "tile-tilled-c": {
+    "texture": "edf4149a-044b-4891-8426-837c2e89f5fd",
+    "prefab": "",
+    "spriteFrame": "edf4149a-044b-4891-8426-837c2e89f5fd@f9941"
+  },
+  "tile-wet-b": {
+    "texture": "83be5943-e926-4a1b-bc02-7b25bdd8ed3a",
+    "prefab": "",
+    "spriteFrame": "83be5943-e926-4a1b-bc02-7b25bdd8ed3a@f9941"
+  },
+  "tile-fringe-n": {
+    "texture": "9743c04e-79a1-4f47-ac86-fc60ac30978e",
+    "prefab": "",
+    "spriteFrame": "9743c04e-79a1-4f47-ac86-fc60ac30978e@f9941"
+  },
+  "tile-fringe-e": {
+    "texture": "a94e867c-775a-47da-8b6b-29283bded25c",
+    "prefab": "",
+    "spriteFrame": "a94e867c-775a-47da-8b6b-29283bded25c@f9941"
+  },
+  "tile-fringe-s": {
+    "texture": "e57d5e2e-7636-4c8b-8cb4-97c27be72b4c",
+    "prefab": "",
+    "spriteFrame": "e57d5e2e-7636-4c8b-8cb4-97c27be72b4c@f9941"
+  },
+  "tile-fringe-w": {
+    "texture": "104d8c0e-e081-4f58-8aa6-7c58d2ea1f14",
+    "prefab": "",
+    "spriteFrame": "104d8c0e-e081-4f58-8aa6-7c58d2ea1f14@f9941"
+  },
+  "tile-fringe-in-ne": {
+    "texture": "19d3c389-0da4-4a06-be66-a90cc496340e",
+    "prefab": "",
+    "spriteFrame": "19d3c389-0da4-4a06-be66-a90cc496340e@f9941"
+  },
+  "tile-fringe-in-nw": {
+    "texture": "87d12eac-72e5-424d-9cde-337e3f1ca692",
+    "prefab": "",
+    "spriteFrame": "87d12eac-72e5-424d-9cde-337e3f1ca692@f9941"
+  },
+  "tile-fringe-in-se": {
+    "texture": "3059fb90-c72d-43dd-bbe2-36e0384c13bf",
+    "prefab": "",
+    "spriteFrame": "3059fb90-c72d-43dd-bbe2-36e0384c13bf@f9941"
+  },
+  "tile-fringe-in-sw": {
+    "texture": "bf4ae66d-ea26-42c0-8c5f-cfb8e100d2a9",
+    "prefab": "",
+    "spriteFrame": "bf4ae66d-ea26-42c0-8c5f-cfb8e100d2a9@f9941"
+  },
+  "tile-fringe-out-ne": {
+    "texture": "085b5433-5078-4f1e-bb19-bd6bb92877ae",
+    "prefab": "",
+    "spriteFrame": "085b5433-5078-4f1e-bb19-bd6bb92877ae@f9941"
+  },
+  "tile-fringe-out-nw": {
+    "texture": "2381f630-83cc-40fd-859a-e43ac4d92ced",
+    "prefab": "",
+    "spriteFrame": "2381f630-83cc-40fd-859a-e43ac4d92ced@f9941"
+  },
+  "tile-fringe-out-se": {
+    "texture": "44117a94-1020-4d0d-9db3-0f29707f5ce4",
+    "prefab": "",
+    "spriteFrame": "44117a94-1020-4d0d-9db3-0f29707f5ce4@f9941"
+  },
+  "tile-fringe-out-sw": {
+    "texture": "16194b5d-db52-4380-9ddb-9897e165ceaa",
+    "prefab": "",
+    "spriteFrame": "16194b5d-db52-4380-9ddb-9897e165ceaa@f9941"
+  },
+  "ic-axe": {
+    "texture": "ff16e656-2a76-4471-8a1a-38ad49f457b5",
+    "prefab": "",
+    "spriteFrame": "ff16e656-2a76-4471-8a1a-38ad49f457b5@f9941"
+  }
+}

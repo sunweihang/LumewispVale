@@ -1,0 +1,706 @@
+{
+  "project": "LumewispVale",
+  "designSize": [
+    1080,
+    1920
+  ],
+  "tileSize": 64,
+  "items": [
+    {
+      "id": "tile-grass",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-grass.png",
+      "prefab": "assets/prefabs/world/terrain/tile-grass.prefab",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-dirt",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-dirt.png",
+      "prefab": "assets/prefabs/world/terrain/tile-dirt.prefab",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-stone",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-stone.png",
+      "prefab": "assets/prefabs/world/terrain/tile-stone.prefab",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-water",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-water.png",
+      "prefab": "assets/prefabs/world/terrain/tile-water.prefab",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-cliff",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-cliff.png",
+      "prefab": "assets/prefabs/world/terrain/tile-cliff.prefab",
+      "layer": "Ground"
+    },
+    {
+      "id": "bld-cottage-blue",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-cottage-blue.png",
+      "prefab": "assets/prefabs/world/buildings/bld-cottage-blue.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-cottage-red",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-cottage-red.png",
+      "prefab": "assets/prefabs/world/buildings/bld-cottage-red.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-shop",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-shop.png",
+      "prefab": "assets/prefabs/world/buildings/bld-shop.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-community",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        256
+      ],
+      "path": "assets/textures/buildings/bld-community.png",
+      "prefab": "assets/prefabs/world/buildings/bld-community.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-shed",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        128,
+        128
+      ],
+      "path": "assets/textures/buildings/bld-shed.png",
+      "prefab": "assets/prefabs/world/buildings/bld-shed.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-tree-oak",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        128,
+        160
+      ],
+      "path": "assets/textures/nature/nat-tree-oak.png",
+      "prefab": "assets/prefabs/world/nature/nat-tree-oak.prefab",
+      "layer": "Foreground"
+    },
+    {
+      "id": "nat-tree-blossom",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        128,
+        160
+      ],
+      "path": "assets/textures/nature/nat-tree-blossom.png",
+      "prefab": "assets/prefabs/world/nature/nat-tree-blossom.prefab",
+      "layer": "Foreground"
+    },
+    {
+      "id": "nat-bush",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        80
+      ],
+      "path": "assets/textures/nature/nat-bush.png",
+      "prefab": "assets/prefabs/world/nature/nat-bush.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-fence",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/props/prop-fence.png",
+      "prefab": "assets/prefabs/world/props/prop-fence.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-lamp",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        128
+      ],
+      "path": "assets/textures/props/prop-lamp.png",
+      "prefab": "assets/prefabs/world/props/prop-lamp.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-bench",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        48
+      ],
+      "path": "assets/textures/props/prop-bench.png",
+      "prefab": "assets/prefabs/world/props/prop-bench.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-fountain",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        128,
+        128
+      ],
+      "path": "assets/textures/props/prop-fountain.png",
+      "prefab": "assets/prefabs/world/props/prop-fountain.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-bridge",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        160,
+        96
+      ],
+      "path": "assets/textures/props/prop-bridge.png",
+      "prefab": "assets/prefabs/world/props/prop-bridge.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-sign",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        80
+      ],
+      "path": "assets/textures/props/prop-sign.png",
+      "prefab": "assets/prefabs/world/props/prop-sign.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "spc-meteor",
+      "kind": "special",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        256
+      ],
+      "path": "assets/textures/special/spc-meteor.png",
+      "prefab": "assets/prefabs/world/special/spc-meteor.prefab",
+      "layer": "Midground"
+    },
+    {
+      "id": "tile-tilled",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/farm/tile-tilled.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-wet",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/farm/tile-wet.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "crop-parsnip-0",
+      "kind": "crop",
+      "spriteType": "simple",
+      "designSize": [
+        48,
+        64
+      ],
+      "path": "assets/textures/farm/crop-parsnip-0.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "crop-parsnip-1",
+      "kind": "crop",
+      "spriteType": "simple",
+      "designSize": [
+        48,
+        64
+      ],
+      "path": "assets/textures/farm/crop-parsnip-1.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "crop-parsnip-2",
+      "kind": "crop",
+      "spriteType": "simple",
+      "designSize": [
+        48,
+        64
+      ],
+      "path": "assets/textures/farm/crop-parsnip-2.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-rock",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        48,
+        40
+      ],
+      "path": "assets/textures/nature/nat-rock.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-rock-big",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        72,
+        56
+      ],
+      "path": "assets/textures/nature/nat-rock-big.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-stump",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        56,
+        48
+      ],
+      "path": "assets/textures/nature/nat-stump.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-log",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        80,
+        32
+      ],
+      "path": "assets/textures/nature/nat-log.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-weed",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        40,
+        36
+      ],
+      "path": "assets/textures/nature/nat-weed.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-weed-bloom",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        40,
+        36
+      ],
+      "path": "assets/textures/nature/nat-weed-bloom.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-tree-pine",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        144
+      ],
+      "path": "assets/textures/nature/nat-tree-pine.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-mailbox",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        48,
+        64
+      ],
+      "path": "assets/textures/props/prop-mailbox.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "prop-shipping",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        80
+      ],
+      "path": "assets/textures/props/prop-shipping.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "tile-grass-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-grass-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-grass-c",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-grass-c.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-dirt-b",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-dirt-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "nat-pebble",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        24,
+        18
+      ],
+      "path": "assets/textures/nature/nat-pebble.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-twig",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        32,
+        20
+      ],
+      "path": "assets/textures/nature/nat-twig.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-tuft",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        28,
+        24
+      ],
+      "path": "assets/textures/nature/nat-tuft.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-weed-tall",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        36,
+        40
+      ],
+      "path": "assets/textures/nature/nat-weed-tall.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-weed-pink",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        36,
+        40
+      ],
+      "path": "assets/textures/nature/nat-weed-pink.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-fiber",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        20,
+        16
+      ],
+      "path": "assets/textures/nature/nat-fiber.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "tile-tilled-b",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/farm/tile-tilled-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-tilled-c",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/farm/tile-tilled-c.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-wet-b",
+      "kind": "tile",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/farm/tile-wet-b.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-n",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-n.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-e",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-e.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-s",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-s.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-w",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-w.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-in-ne",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-in-ne.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-in-nw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-in-nw.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-in-se",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-in-se.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-in-sw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-in-sw.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-out-ne",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-out-ne.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-out-nw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-out-nw.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-out-se",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-out-se.png",
+      "prefab": "",
+      "layer": "Ground"
+    },
+    {
+      "id": "tile-fringe-out-sw",
+      "kind": "terrain",
+      "spriteType": "simple",
+      "designSize": [
+        64,
+        64
+      ],
+      "path": "assets/textures/terrain/tile-fringe-out-sw.png",
+      "prefab": "",
+      "layer": "Ground"
+    }
+  ]
+}
