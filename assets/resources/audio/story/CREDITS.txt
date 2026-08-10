@@ -1,11 +1,14 @@
 开场插画 BGM / SFX（自 SpaceCard 序章轨）
 ────────────────────────────────
 
-storyThemeCalm.mp3 — 平和钢琴
+storyThemeCalm.mp3 — 平和钢琴（农场）
   曲目：Meditation Impromptu 03
   作者：Kevin MacLeod (incompetech.com)
   许可：Creative Commons BY 4.0
   https://creativecommons.org/licenses/by/4.0/
+
+townTheme.mp3 — 主城 / 小镇
+  来源：Unravel 主城 BGM（assets/resources/audio/bgm/bgm.mp3）
 
 storyThemeAlert.mp3 — 急促紧张
   曲目：Volatile Reaction
@@ -17,6 +20,16 @@ story-thunder-boom.mp3 — 近处落雷
   来源：Freesound「Thunder 1」by Yoyodaman234
   许可：CC0（详见 story-thunder-boom_LICENSE.txt）
 
-UI 点击音效（audio/ui/ui-click.mp3）
+UI / 农场音效（audio/ui/）
 ────────────────────────────────
+ui-click.mp3 — UI / 引导 / 对话点击
   来源：TripleTown resources/audios/UIclick.mp3
+
+farm-tool.mp3 — 翻地 / 播种 / 浇水 / 斧凿
+  来源：TripleTown resources/audios/PutOn.mp3
+
+farm-gather.mp3 — 采集 / 收获 / 拔草
+  来源：TripleTown resources/audios/Merge.mp3
+
+ui-gold.mp3 — 奖励领取 / 金币
+  来源：TripleTown resources/audios/Gold.mp3

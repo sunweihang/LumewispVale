@@ -4,6 +4,7 @@ import { AudioClip, AudioSource, Node, resources, tween } from 'cc';
 const CLIP_PATHS = {
     calm: 'audio/story/storyThemeCalm',
     alert: 'audio/story/storyThemeAlert',
+    town: 'audio/story/townTheme',
     thunder: 'audio/story/story-thunder-boom',
 } as const;
 
@@ -13,12 +14,13 @@ const BGM_VOL = 0.46;
 const THUNDER_VOL = 0.9;
 const FADE_OUT_SEC = 0.45;
 
-type Track = 'alert' | 'calm' | null;
+type Track = 'alert' | 'calm' | 'town' | null;
+type MapBed = 'farm' | 'town' | 'mine';
 
 /**
  * Opening audio for the illustrated prologue — SpaceCard cold-open pack:
  * tense alert BGM during battle/storm, thunder on the fall, calm piano on farm wake.
- * After the prologue, calm keeps looping as the farm bed (nodes live on Canvas).
+ * After the prologue, calm loops on the farm; town uses Unravel hub BGM (nodes on Canvas).
  */
 export class StoryIntroAudio {
     private _host: Node | null = null;
@@ -29,7 +31,7 @@ export class StoryIntroAudio {
     private _track: Track = null;
     /** Illustrated pages are advancing — page cues apply. */
     private _prologue = false;
-    /** Any bed should keep running (prologue or farm calm). */
+    /** Any bed should keep running (prologue, farm calm, or town). */
     private _bed = false;
     private _thunderPlayed = false;
     /** Desired track while bed is on — used to retry after browser autoplay unlock. */
@@ -58,10 +60,14 @@ export class StoryIntroAudio {
         this._sfx.loop = false;
         this._sfx.volume = 1;
 
-        // Recover track flag if Canvas already has calm looping from a prior intro.
+        // Recover track flag if Canvas already has a bed looping from a prior scene.
         if (this._bgm.playing && this._bgm.clip) {
             const name = this._bgm.clip.name || '';
-            if (name.includes('Calm') || name.includes('calm')) {
+            if (name.includes('town') || name.includes('Town')) {
+                this._track = 'town';
+                this._wanted = 'town';
+                this._bed = true;
+            } else if (name.includes('Calm') || name.includes('calm')) {
                 this._track = 'calm';
                 this._wanted = 'calm';
                 this._bed = true;
@@ -147,6 +153,23 @@ export class StoryIntroAudio {
         }
     }
 
+    /**
+     * Map travel bed: town hub uses Unravel BGM; farm / mine keep the calm piano.
+     * Skipped while the illustrated prologue owns the bed.
+     */
+    playMapBed(map: MapBed) {
+        if (this._prologue) return;
+        const track: Track = map === 'town' ? 'town' : 'calm';
+        this._bed = true;
+        this._wanted = track;
+        this.setTrack(track, this._track !== track);
+        const src = this._bgm;
+        if (src?.isValid) {
+            src.loop = true;
+            src.volume = BGM_VOL;
+        }
+    }
+
     /** Fade out and stop (explicit mute / teardown). */
     stop() {
         this._prologue = false;
@@ -192,7 +215,7 @@ export class StoryIntroAudio {
         this._host = null;
     }
 
-    private setTrack(track: 'alert' | 'calm', forceRestart: boolean) {
+    private setTrack(track: 'alert' | 'calm' | 'town', forceRestart: boolean) {
         if (this._track === track && !forceRestart) return;
         const clip = this._clips.get(track) ?? null;
         const src = this._bgm;

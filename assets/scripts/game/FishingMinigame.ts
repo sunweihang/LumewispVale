@@ -39,8 +39,6 @@ export class FishingMinigame extends Component {
     private _fishNode: Node | null = null;
     private _progG: Graphics | null = null;
     private _banner: Label | null = null;
-    private _hint: Label | null = null;
-    private _status: Label | null = null;
     private _holdLabel: Label | null = null;
     private _holdG: Graphics | null = null;
     private _holdPulse: Graphics | null = null;
@@ -48,7 +46,6 @@ export class FishingMinigame extends Component {
     private _fingerN: Node | null = null;
     private _coachArrowG: Graphics | null = null;
     private _barSp: Sprite | null = null;
-    private _titleCard: Node | null = null;
 
     private _panelSf: SpriteFrame | null = null;
     private _barSf: SpriteFrame | null = null;
@@ -109,7 +106,7 @@ export class FishingMinigame extends Component {
 
     /** Seconds after open with no progress drain (reaction window). */
     private _grace = 0;
-    /** First mainline cast — longer grace + clearer copy. */
+    /** First mainline cast — longer grace + gentler start. */
     private _tutorial = false;
 
     /**
@@ -273,39 +270,10 @@ export class FishingMinigame extends Component {
         }
         this._coach = kind;
 
-        if (this._status) {
-            const map: Record<CoachKind, string> = {
-                ready: this._tutorial ? '上钩了！按住右侧大按钮抬竿' : '上钩了！按住右侧按钮',
-                hold: '鱼在上面 · 按住抬起绿条',
-                release: '鱼在下面 · 松开让绿条落下',
-                steady: '稳住！继续套住小鱼',
-                hurry: '快跑掉了！快套住它',
-            };
-            this._status.string = map[kind];
-            this._status.color =
-                kind === 'hurry'
-                    ? new Color(255, 170, 120, 255)
-                    : kind === 'steady'
-                      ? new Color(200, 255, 170, 255)
-                      : new Color(255, 244, 214, 255);
-        }
-
         if (this._holdLabel) {
             if (this._holding) this._holdLabel.string = '抬竿中…';
             else if (kind === 'release') this._holdLabel.string = '松开';
             else this._holdLabel.string = '按住抬竿';
-        }
-
-        if (this._hint) {
-            if (this._age < 2.8 || this._tutorial) {
-                this._hint.string = '绿条套住鱼 · 右侧黄条涨满就钓到';
-            } else {
-                this._hint.string = this._fishIn ? '收线中…' : '别让鱼跑出绿条';
-            }
-        }
-
-        if (this._titleCard && this._age > 1.6) {
-            this._titleCard.active = false;
         }
     }
 
@@ -324,10 +292,7 @@ export class FishingMinigame extends Component {
             else this._banner.string = '跑掉了…';
             this._banner.node.active = true;
         }
-        if (this._hint) this._hint.string = '';
-        if (this._status) this._status.string = '';
         if (this._fingerN) this._fingerN.active = false;
-        if (this._titleCard) this._titleCard.active = false;
 
         const cb = this._onDone;
         this._onDone = null;
@@ -349,8 +314,6 @@ export class FishingMinigame extends Component {
         this._fishNode = null;
         this._progG = null;
         this._banner = null;
-        this._hint = null;
-        this._status = null;
         this._holdLabel = null;
         this._holdG = null;
         this._holdPulse = null;
@@ -358,7 +321,6 @@ export class FishingMinigame extends Component {
         this._fingerN = null;
         this._coachArrowG = null;
         this._barSp = null;
-        this._titleCard = null;
     }
 
     private ensureFrames(done?: () => void) {
@@ -438,10 +400,6 @@ export class FishingMinigame extends Component {
         }
         this._panel = panel;
 
-        // Side callouts: what the columns mean.
-        this.makeCallout(root, panelX - 118, 40, '绿条\n套住鱼', new Color(120, 210, 90, 255));
-        this.makeCallout(root, panelX + 118, 40, '黄条\n收线', new Color(230, 200, 90, 255));
-
         const track = new Node('Track');
         track.layer = root.layer;
         track.setParent(panel);
@@ -498,36 +456,6 @@ export class FishingMinigame extends Component {
         prog.addComponent(UITransform).setContentSize(this.PROG_W + 4, this.TRACK_H);
         this._progG = prog.addComponent(Graphics);
 
-        const title = new Node('TitleCard');
-        title.layer = root.layer;
-        title.setParent(root);
-        title.setPosition(0, vis.height * 0.5 - 140, 0);
-        title.addComponent(UITransform).setContentSize(520, 72);
-        const tg = title.addComponent(Graphics);
-        tg.fillColor = new Color(48, 34, 22, 230);
-        tg.roundRect(-260, -36, 520, 72, 16);
-        tg.fill();
-        tg.strokeColor = new Color(230, 190, 110, 255);
-        tg.lineWidth = 3;
-        tg.roundRect(-260, -36, 520, 72, 16);
-        tg.stroke();
-        const titleLabN = new Node('TitleLab');
-        titleLabN.layer = root.layer;
-        titleLabN.setParent(title);
-        titleLabN.addComponent(UITransform).setContentSize(480, 56);
-        const titleLab = titleLabN.addComponent(Label);
-        titleLab.string = this._tutorial ? '上钩了！用绿条套住小鱼' : '上钩了！';
-        titleLab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        titleLab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(titleLab, {
-            size: 34,
-            color: new Color(255, 244, 214, 255),
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(30, 20, 12, 220),
-        });
-        this._titleCard = title;
-
         const bannerN = new Node('Banner');
         bannerN.layer = root.layer;
         bannerN.setParent(root);
@@ -546,23 +474,6 @@ export class FishingMinigame extends Component {
         });
         bannerN.active = false;
         this._banner = banner;
-
-        const hintN = new Node('Hint');
-        hintN.layer = root.layer;
-        hintN.setParent(panel);
-        hintN.setPosition(0, -this.PANEL_H * 0.5 - 36, 0);
-        hintN.addComponent(UITransform).setContentSize(420, 40);
-        const hint = hintN.addComponent(Label);
-        hint.string = '绿条套住鱼 · 右侧黄条涨满就钓到';
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        styleUiLabel(hint, {
-            size: 24,
-            color: new Color(240, 228, 200, 255),
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(30, 20, 12, 220),
-        });
-        this._hint = hint;
 
         // Primary click target — big hold pad on the clear right half.
         const holdX = 240;
@@ -614,37 +525,6 @@ export class FishingMinigame extends Component {
             outlineColor: new Color(24, 32, 14, 220),
         });
 
-        const statusN = new Node('Status');
-        statusN.layer = root.layer;
-        statusN.setParent(root);
-        statusN.setPosition(holdX, holdY + this.HOLD_R + 56, 0);
-        statusN.addComponent(UITransform).setContentSize(420, 48);
-        const statusBg = statusN.addComponent(Graphics);
-        statusBg.fillColor = new Color(36, 28, 18, 210);
-        statusBg.roundRect(-210, -24, 420, 48, 12);
-        statusBg.fill();
-        statusBg.strokeColor = new Color(210, 170, 90, 220);
-        statusBg.lineWidth = 2;
-        statusBg.roundRect(-210, -24, 420, 48, 12);
-        statusBg.stroke();
-        const statusLabN = new Node('StatusLab');
-        statusLabN.layer = root.layer;
-        statusLabN.setParent(statusN);
-        statusLabN.addComponent(UITransform).setContentSize(400, 40);
-        const status = statusLabN.addComponent(Label);
-        status.string = '上钩了！按住右侧按钮';
-        status.horizontalAlign = Label.HorizontalAlign.CENTER;
-        status.verticalAlign = Label.VerticalAlign.CENTER;
-        status.overflow = Label.Overflow.SHRINK;
-        styleUiLabel(status, {
-            size: 26,
-            color: new Color(255, 244, 214, 255),
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: new Color(30, 20, 12, 220),
-        });
-        this._status = status;
-
         const finger = new Node('FingerHint');
         finger.layer = root.layer;
         finger.setParent(hold);
@@ -657,46 +537,8 @@ export class FishingMinigame extends Component {
         loadUiFont().then((font) => {
             if (!font) return;
             if (bannerN.isValid) applyUiFont(banner);
-            if (hintN.isValid) applyUiFont(hint);
             if (holdLabN.isValid) applyUiFont(holdLab);
             if (holdSubN.isValid) applyUiFont(holdSub);
-            if (statusLabN.isValid) applyUiFont(status);
-            if (titleLabN.isValid) applyUiFont(titleLab);
-        });
-    }
-
-    private makeCallout(root: Node, x: number, y: number, text: string, accent: Color) {
-        const n = new Node('Callout');
-        n.layer = root.layer;
-        n.setParent(root);
-        n.setPosition(x, y, 0);
-        n.addComponent(UITransform).setContentSize(100, 72);
-        const g = n.addComponent(Graphics);
-        g.fillColor = new Color(36, 28, 18, 210);
-        g.roundRect(-50, -36, 100, 72, 12);
-        g.fill();
-        g.strokeColor = accent;
-        g.lineWidth = 2;
-        g.roundRect(-50, -36, 100, 72, 12);
-        g.stroke();
-        const labN = new Node('Lab');
-        labN.layer = root.layer;
-        labN.setParent(n);
-        labN.addComponent(UITransform).setContentSize(92, 64);
-        const lab = labN.addComponent(Label);
-        lab.string = text;
-        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        lab.verticalAlign = Label.VerticalAlign.CENTER;
-        lab.lineHeight = 28;
-        styleUiLabel(lab, {
-            size: 22,
-            color: new Color(255, 244, 214, 255),
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: new Color(24, 16, 10, 220),
-        });
-        loadUiFont().then((font) => {
-            if (font && labN.isValid) applyUiFont(lab);
         });
     }
 

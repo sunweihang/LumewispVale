@@ -8,5 +8,6 @@ export const MATERIAL_FRAMES = {
     "copper": "1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941",
     "iron": "ae905224-b7ee-4d96-9609-1637f6e69307@f9941",
     "goldOre": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941",
-    "gold": "39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941"
+    "gold": "39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941",
+    "parsnip": "695a362e-30eb-4750-9159-a2f61c636a18@f9941"
 }

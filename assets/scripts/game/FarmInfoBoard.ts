@@ -327,11 +327,9 @@ export class FarmInfoBoard extends Component {
         if (this.goldLab) this.goldLab.string = String(this.farm?.gold ?? 0);
     }
 
-    showToast(msg: string) {
-        if (!this.toastLab) return;
-        this.toastLab.string = msg;
-        this.toastLab.node.active = true;
-        this._toastHideAt = Date.now() + 1600;
+    /** Mid-screen toast retired — bottom FarmActionHint / guide already cover tips. */
+    showToast(_msg: string) {
+        if (this.toastLab) this.toastLab.node.active = false;
     }
 
     private canvasHalf(): { halfW: number; halfH: number } {

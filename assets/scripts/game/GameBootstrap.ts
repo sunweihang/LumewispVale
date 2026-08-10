@@ -88,6 +88,13 @@ export class GameBootstrap extends Component {
             return;
         }
 
+        // Full-screen gate FIRST — before teardown so the farm never flashes bare.
+        const loading = LoadingScreen.mount(canvas);
+        loading.setProgress(0.02, '正在唤醒溪谷…');
+        InputBridge.uiBlocking = true;
+        InputBridge.moveLocked = true;
+        InputBridge.clear();
+
         const title = canvas.getChildByName('Title');
         if (title) title.active = false;
 
@@ -125,20 +132,11 @@ export class GameBootstrap extends Component {
             'TownShopPanel',
             'RewardDimmer',
             'RewardPopup',
-            'LoadingScreen',
+            // Keep LoadingScreen — already mounted as the boot gate.
         ]) {
             const n = canvas.getChildByName(name);
             if (n) this._destroyNodeNow(n);
         }
-        const oldLoading = canvas.getComponent(LoadingScreen);
-        if (oldLoading) canvas.removeComponent(oldLoading);
-
-        // Full-screen gate — after cleanup, before world UI mounts.
-        const loading = LoadingScreen.mount(canvas);
-        loading.setProgress(0.02, '正在唤醒溪谷…');
-        InputBridge.uiBlocking = true;
-        InputBridge.moveLocked = true;
-        InputBridge.clear();
         const oldPlayer = world.getChildByName('Player');
         if (oldPlayer) this._destroyNodeNow(oldPlayer);
         const oldMarker = world.getChildByName('QuestMarker');
@@ -239,11 +237,13 @@ export class GameBootstrap extends Component {
         questPanel.bind(quests);
         questPanel.ensureMounted();
         rewardPopup.bind(quests);
+        const mapId = isTown ? 'town' : isMine ? 'mine' : 'farm';
+        storyIntro.syncMapBgm(mapId);
         storyDlg.bind({
             dialogue,
             intro: storyIntro,
             quests,
-            map: isTown ? 'town' : isMine ? 'mine' : 'farm',
+            map: mapId,
             guide: isTown || isMine ? null : guide,
         });
 
@@ -291,11 +291,7 @@ export class GameBootstrap extends Component {
                 if (worldPt) {
                     const hit = MineWorldLayout.findInteract(world, worldPt.x, worldPt.y);
                     if (hit?.kind === 'travel') {
-                        if (!canTravel('town')) {
-                            infoBoard?.showToast('路牌暂时不通…');
-                            return;
-                        }
-                        infoBoard?.showToast('返回微光溪谷镇…');
+                        if (!canTravel('town')) return;
                         travelTo('town', {
                             farm,
                             quests,
@@ -341,6 +337,12 @@ export class GameBootstrap extends Component {
                 },
             });
         } else if (isTown) {
+            let hud = canvas.getComponent(FarmHUD);
+            if (!hud) hud = canvas.addComponent(FarmHUD);
+            hud.farm = farm;
+            quests.hud = hud;
+            hud.bindQuests(quests);
+
             const oldShop = canvas.getComponent(TownShopPanel);
             if (oldShop) canvas.removeComponent(oldShop);
             const shopPanel = canvas.addComponent(TownShopPanel);
@@ -367,61 +369,65 @@ export class GameBootstrap extends Component {
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
                 const worldPt = this.screenToWorld(follow, world, x, y);
-                if (!worldPt) return;
-                // Prefer npc_* actors when the tap lands near them.
-                const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
-                if (npcHit) {
-                    npcHit.node.getComponent(NpcAnimator)?.faceToward(
-                        player.position.x,
-                        player.position.y,
-                    );
-                    if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
-                        if (storyDlg.tryBuilding(npcHit.key)) return;
-                    }
-                    const chat = TownWorldLayout.npcInfo(npcHit.id);
-                    if (chat) {
-                        if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
-                        shopPanel.openInfo(chat.title, chat.body);
-                    }
-                    return;
-                }
-                const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
-                if (!hit) return;
-                if (hit.kind === 'travel') {
-                    if (hit.dest === 'mine') {
-                        if (!canTravel('mine')) {
-                            shopPanel.openInfo(
-                                '矿洞路牌',
-                                '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
-                            );
-                            return;
+                if (worldPt) {
+                    // Prefer npc_* actors when the tap lands near them.
+                    const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
+                    if (npcHit) {
+                        npcHit.node.getComponent(NpcAnimator)?.faceToward(
+                            player.position.x,
+                            player.position.y,
+                        );
+                        if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
+                            if (storyDlg.tryBuilding(npcHit.key)) return;
                         }
-                        shopPanel.openInfo('前往浅层矿洞', '路牌指向北山矿洞…');
-                        travelTo('mine', {
-                            farm,
-                            quests,
-                            spawnX: MineWorldLayout.PLAYER_SPAWN.x,
-                            spawnY: MineWorldLayout.PLAYER_SPAWN.y,
-                        });
+                        const chat = TownWorldLayout.npcInfo(npcHit.id);
+                        if (chat) {
+                            if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
+                            shopPanel.openInfo(chat.title, chat.body);
+                        }
                         return;
                     }
-                    story.tryTownFarmSignTap();
-                    return;
-                }
-                if (hit.kind === 'shop') {
-                    shopPanel.openShop(hit.shopId);
-                    // 矿脉商会放行浅层矿洞（Ch.2 钩子）
-                    if (hit.shopId === 'ore') {
-                        quests.noteFlag('visit_oreshop');
-                        GameState.unlock('mine');
+                    const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
+                    if (hit) {
+                        if (hit.kind === 'travel') {
+                            if (hit.dest === 'mine') {
+                                if (!canTravel('mine')) {
+                                    shopPanel.openInfo(
+                                        '矿洞路牌',
+                                        '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
+                                    );
+                                    return;
+                                }
+                                shopPanel.openInfo('前往浅层矿洞', '路牌指向北山矿洞…');
+                                travelTo('mine', {
+                                    farm,
+                                    quests,
+                                    spawnX: MineWorldLayout.PLAYER_SPAWN.x,
+                                    spawnY: MineWorldLayout.PLAYER_SPAWN.y,
+                                });
+                                return;
+                            }
+                            story.tryTownFarmSignTap();
+                            return;
+                        }
+                        if (hit.kind === 'shop') {
+                            shopPanel.openShop(hit.shopId);
+                            // 矿脉商会放行浅层矿洞（Ch.2 钩子）
+                            if (hit.shopId === 'ore') {
+                                quests.noteFlag('visit_oreshop');
+                                GameState.unlock('mine');
+                            }
+                        } else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
+                        else if (storyDlg.tryBuilding(hit.key)) {
+                            // Story dialogue owns mayor / carpenter / community beats.
+                        } else {
+                            if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
+                            shopPanel.openInfo(hit.title, hit.body);
+                        }
+                        return;
                     }
-                } else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
-                else if (storyDlg.tryBuilding(hit.key)) {
-                    // Story dialogue owns mayor / carpenter / community beats.
-                } else {
-                    if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
-                    shopPanel.openInfo(hit.title, hit.body);
                 }
+                hud!.handleTap(x, y);
             };
             stick.onDragStart = () => {
                 guide.noteActivity();
@@ -442,8 +448,10 @@ export class GameBootstrap extends Component {
                 quests,
                 questPanel,
                 player,
+                hud,
                 infoReady,
                 afterTables: () => {
+                    hud.reloadCraftRecipes();
                     // Arriving in town completes 1009 (idempotent via Flag ≥1).
                     quests.noteFlag('enter_town');
                     if (infoBoard) {
@@ -598,26 +606,56 @@ export class GameBootstrap extends Component {
                 ]);
             }
 
-            loading.setProgress(1, '进入微光溪谷');
-            await new Promise<void>((r) => setTimeout(r, 180));
+            loading.setProgress(1, '准备就绪');
+            if (canvas.isValid) await loading.waitForStart();
         } catch (err) {
             console.warn('[GameBootstrap] loading pipeline failed', err);
-        } finally {
-            await new Promise<void>((resolve) => loading.close(() => resolve()));
+            if (canvas.isValid) await loading.waitForStart();
+        }
+
+        if (!canvas.isValid) {
+            loading.close();
+            return;
+        }
+
+        // Re-kick farm companion patrol after boot — covers hot-reload / late component init.
+        const world = canvas.getChildByName('World');
+        const girl = world?.getChildByName('npc_girl');
+        const girlAnim = girl?.getComponent(NpcAnimator);
+        const patrol = FarmWorldLayout.NPC_SPAWNS.find((s) => s.id === 'girl')?.patrol;
+        if (girlAnim && patrol && patrol.length >= 2) {
+            girlAnim.setPatrol(patrol, { speed: 80, idleMin: 0.5, idleMax: 1.4 });
+        }
+
+        // Start story UNDER the splash, wait until it fully covers, then lift the gate.
+        // Avoids: splash fade → bare farm flash → story fade-in.
+        loading.releaseSuppressedChrome();
+        storyDlg.boot();
+        const intro = canvas.getComponent(StoryIntroPanel);
+        const dialogue = canvas.getComponent(DialoguePanel);
+        let covered = false;
+        if (intro?.isOpen) {
+            await intro.ensureCovered();
+            covered = intro.isOpen;
+        } else if (dialogue?.isOpen) {
+            await dialogue.ensureCovered();
+            covered = dialogue.isOpen;
+        }
+
+        await new Promise<void>((resolve) => {
+            loading.close(() => resolve(), {
+                fadeMs: covered ? 0 : 280,
+                restoreChrome: !covered,
+            });
+        });
+
+        if (covered) {
+            // Intro / dialogue own input locks; just clear stale stick state.
+            InputBridge.clear();
+        } else {
             InputBridge.uiBlocking = false;
             InputBridge.moveLocked = false;
             InputBridge.clear();
-        }
-        if (canvas.isValid) {
-            // Re-kick farm companion patrol after boot — covers hot-reload / late component init.
-            const world = canvas.getChildByName('World');
-            const girl = world?.getChildByName('npc_girl');
-            const girlAnim = girl?.getComponent(NpcAnimator);
-            const patrol = FarmWorldLayout.NPC_SPAWNS.find((s) => s.id === 'girl')?.patrol;
-            if (girlAnim && patrol && patrol.length >= 2) {
-                girlAnim.setPatrol(patrol, { speed: 80, idleMin: 0.5, idleMax: 1.4 });
-            }
-            storyDlg.boot();
         }
     }
 

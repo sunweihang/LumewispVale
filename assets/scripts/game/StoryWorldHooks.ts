@@ -13,6 +13,7 @@ import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
 import { GameState, StoryMapId } from './GameState';
 import { canTravel, travelTo } from './MapTravel';
+import { PlayerController } from './PlayerController';
 import { QuestSystem } from './QuestSystem';
 import { StoryDialogue } from './StoryDialogue';
 import { TownWorldLayout } from './TownWorldLayout';
@@ -23,7 +24,10 @@ const SIGN_FRAME_UUID = '6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941';
 
 /** East road toward town (yard → right-edge gate). Keep in sync with bake_farm_scene.TOWN_GATE. */
 const FARM_TOWN_PORTAL = { x: 13 * 64, y: 4 * 64 + 36 };
-const PORTAL_RADIUS = 90;
+/** Tap hit on the sign sprite (screen can see it before the player arrives). */
+const PORTAL_TAP_RADIUS = 90;
+/** Player must be this close before travel fires — farther taps walk over first. */
+const PORTAL_USE_RANGE = 72;
 
 /**
  * Story props + proximity / portal hooks for the mainline.
@@ -38,6 +42,8 @@ export class StoryWorldHooks extends Component {
     infoBoard: FarmInfoBoard | null = null;
     storyDialogue: StoryDialogue | null = null;
     isTown = false;
+    /** Bumps when a new portal walk starts so stale arrive callbacks no-op. */
+    private _portalWalkGen = 0;
 
     bind(opts: {
         world: Node;
@@ -73,16 +79,47 @@ export class StoryWorldHooks extends Component {
         // Portal travel is tap-driven; nothing to poll each frame.
     }
 
-    /** Farm: tap near town portal sign. */
+    /** Farm: tap town portal sign — walk up first, then travel. */
     tryFarmPortalTap(wx: number, wy: number): boolean {
-        if (this.isTown || !this.world) return false;
+        if (this.isTown || !this.world || !this.player?.isValid) return false;
         const sign = this.world.getChildByName('portal_town');
         if (!sign) return false;
         const p = sign.position;
         const dx = wx - p.x;
         const dy = wy - p.y;
-        if (dx * dx + dy * dy > PORTAL_RADIUS * PORTAL_RADIUS) return false;
-        this.useTownPortal();
+        if (dx * dx + dy * dy > PORTAL_TAP_RADIUS * PORTAL_TAP_RADIUS) return false;
+
+        const pp = this.player.position;
+        const dist = Math.hypot(pp.x - p.x, pp.y - p.y);
+        if (dist <= PORTAL_USE_RANGE) {
+            this.useTownPortal();
+            return true;
+        }
+
+        // Too far to enter — walk beside the sign, then travel on arrive.
+        this.farm?.cancelPending();
+        const ctrl = this.player.getComponent(PlayerController);
+        if (!ctrl) {
+            this.useTownPortal();
+            return true;
+        }
+        const standX = p.x - 40;
+        const standY = p.y;
+        const gen = (this._portalWalkGen += 1);
+        ctrl.walkTo(
+            standX,
+            standY,
+            () => {
+                if (!this.isValid || gen !== this._portalWalkGen) return;
+                this.useTownPortal();
+            },
+            () => {
+                /* stick drag / cancel — stay on farm */
+            },
+            18,
+            null,
+            { x: p.x, y: p.y, dist: PORTAL_USE_RANGE },
+        );
         return true;
     }
 
@@ -93,16 +130,8 @@ export class StoryWorldHooks extends Component {
         return true;
     }
 
-    portalHint(px: number, py: number): string {
-        if (this.isTown || !this.world) return '';
-        const sign = this.world.getChildByName('portal_town');
-        if (!sign) return '';
-        const p = sign.position;
-        const dx = px - p.x;
-        const dy = py - p.y;
-        if (dx * dx + dy * dy > PORTAL_RADIUS * PORTAL_RADIUS) return '';
-        if (!canTravel('town')) return '通往小镇的路牌（先完成农场教程）';
-        return '点击路牌前往微光溪谷镇';
+    portalHint(_px: number, _py: number): string {
+        return '';
     }
 
     private townUnlockedFromQuest(quests: QuestSystem): boolean {
@@ -118,11 +147,7 @@ export class StoryWorldHooks extends Component {
     }
 
     private useTownPortal() {
-        if (!canTravel('town')) {
-            this.infoBoard?.showToast('先把农场这边安顿好，再进镇');
-            return;
-        }
-        this.infoBoard?.showToast('前往微光溪谷镇…');
+        if (!canTravel('town')) return;
         travelTo('town', {
             farm: this.farm,
             quests: this.quests,

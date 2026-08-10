@@ -93,7 +93,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: GIRL,
-            text: '该去镇上露个面了。走到东侧「通往小镇」的路牌点一下就能进镇——镇长府在镇北。去吧，我会想你的。',
+            text: '该去镇上露个面了。往右走到东侧「通往小镇」的路牌，走近点一下就能进镇——镇长府在镇北。去吧，我会想你的。',
         },
     ],
     girl_chat: [

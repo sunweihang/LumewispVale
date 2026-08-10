@@ -20,6 +20,7 @@ import {
 } from 'cc';
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { InputBridge } from './InputBridge';
+import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -156,13 +157,24 @@ export class DialoguePanel extends Component {
             onDone?.();
             return;
         }
+        // Font is warm after AssetWarmup — don't defer (avoids gate→world flash).
         if (!this._fontReady) {
-            // Keep latest request; open only after ZCOOL font is on the labels.
-            this._pending = { lines, onDone };
-            loadUiFont();
-            return;
+            void loadUiFont().then(() => {
+                this._fontReady = true;
+                this.applyFonts();
+            });
         }
         this.beginPlay(lines, onDone);
+    }
+
+    /** Snap opaque while LoadingScreen still covers — then the gate can lift cleanly. */
+    async ensureCovered(_timeoutMs = 500): Promise<void> {
+        if (!this._open || !this._root?.isValid) return;
+        this.killFades();
+        if (this._rootOp) this._rootOp.opacity = 255;
+        this._root.active = true;
+        this.ensureChromeHidden();
+        this.bringToFront();
     }
 
     private beginPlay(lines: DialogueLine[], onDone?: () => void) {
@@ -212,6 +224,7 @@ export class DialoguePanel extends Component {
         this._lastAdvanceAt = now;
         this._busy = true;
         try {
+            playUiClick();
             if (this._index + 1 < this._lines.length) {
                 this._index += 1;
                 this.renderLine();
@@ -409,15 +422,12 @@ export class DialoguePanel extends Component {
 
     private fadeIn() {
         this.killFades();
-        // Opacity must be 0 *before* active=true, or the first frame flashes full.
-        if (this._rootOp) this._rootOp.opacity = 0;
+        // Instant show under LoadingScreen handoff; a 0→255 fade flashes the world
+        // when the splash lifts. Mid-game replays also read fine at full opacity.
+        if (this._rootOp) this._rootOp.opacity = 255;
         if (this._root) this._root.active = true;
         this.bringToFront();
         this.ensureChromeHidden();
-
-        if (this._rootOp) {
-            tween(this._rootOp).to(FADE_IN, { opacity: 255 }).start();
-        }
     }
 
     private fadeOut(done: () => void) {

@@ -29,6 +29,7 @@ import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TOOL_FRAMES } from './ToolFrames';
+import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, executionOrder } = _decorator;
@@ -63,8 +64,6 @@ const GRASS_HINT_RANGE = 340;
 const YARD_GRASS = { x0: -40, x1: 260, y0: 140, y1: 280 };
 /** Within this range of the pier, tip switches from “walk” to “cast”. */
 const FISH_NEAR_RANGE = 300;
-/** Within this range of the town road sign. */
-const TOWN_GATE_NEAR_RANGE = 180;
 /** Quest 1003 first-seed recipe — matches FarmHUD guided craft. */
 const FIRST_SEED_RECIPE = 'seed_from_grass';
 /** Keep the same world target this long so nearest-picking can't thrash the arrow. */
@@ -89,6 +88,11 @@ type IdleGuide = {
     dragTo?: HoleRect;
     /** Item frame for the drag ghost (e.g. boost). */
     dragItem?: string;
+    /**
+     * Finger Z euler degrees. Sprite defaults to pointing down (0).
+     * 90 = walk east / right edge; -90 = walk west / left edge.
+     */
+    arrowDeg?: number;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -103,9 +107,11 @@ const TOOL_LABEL: Record<string, string> = {
 /**
  * Hollow spotlight tutorial after wake_farm dialogue:
  * 1) show quest tracker → 2) select hand → 3) pull weeds until quest 1001 is done.
+ * Spotlight is forced: InputBridge.uiBlocking stays on (no walk / no other taps).
  *
  * Also: while a quest is active, keep guiding — wrong tool → arrow on hotbar,
- * then arrow on the objective (no dim mask, no tip caption under the arrow).
+ * then arrow on the objective (no dim mask). Off-screen world aims become a
+ * left/right edge chevron until the target re-enters the playfield.
  *
  * lateUpdate after CameraFollow so world→UI holes match the snapped World pose.
  */
@@ -137,6 +143,8 @@ export class TutorialGuide extends Component {
     private _idleTip = '';
     private _idleDragTo: HoleRect | null = null;
     private _idleDragItem = '';
+    /** Idle chevron Z euler; 0 = down, 90 = right. */
+    private _idleArrowDeg = 0;
     private _step: GuideStep = 'quest';
     private _inputReady = false;
     private _prevBlocking = false;
@@ -243,12 +251,14 @@ export class TutorialGuide extends Component {
 
         if (this._step === 'quest') {
             // Any tap advances once the tracker is visible.
+            playUiClick();
             this.gotoStep('hand');
             return true;
         }
 
         if (this._step === 'hand') {
             if (!inHole) return true;
+            playUiClick();
             this.farm?.setTool('hand');
             this.gotoStep('grass');
             return true;
@@ -256,6 +266,7 @@ export class TutorialGuide extends Component {
 
         // grass — hollow accepts the dig; act on the locked weed (hole > sprite).
         if (inHole) {
+            playUiClick();
             const target = this._grassTarget;
             if (target?.isValid) this.farm?.tryPullGrass(target);
             else this.farm?.tryActAtUi(uiX, uiY);
@@ -275,6 +286,12 @@ export class TutorialGuide extends Component {
 
     lateUpdate() {
         if (this._open) {
+            // Re-assert lock each frame — nested UI restore / stale-clear must not
+            // re-enable the stick mid-spotlight (hollow would drift with the camera).
+            if (!InputBridge.uiBlocking) {
+                InputBridge.uiBlocking = true;
+                InputBridge.clear();
+            }
             if (this._root?.isValid) {
                 this._root.setSiblingIndex(this.node.children.length - 1);
             }
@@ -348,6 +365,8 @@ export class TutorialGuide extends Component {
         this._idleTip = '';
         this._idleDragTo = null;
         this._idleDragItem = '';
+        this._idleArrowDeg = 0;
+        if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         this.clearStickyTarget();
         this.clearDragDemoChrome();
     }
@@ -403,6 +422,8 @@ export class TutorialGuide extends Component {
         this._idleSilent = false;
         this._idleDragTo = null;
         this._idleDragItem = '';
+        this._idleArrowDeg = 0;
+        if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         // Keep sticky aim across brief dialogue / modal hides so the arrow
         // doesn't re-pick a different weed/plot when it comes back.
         this.clearDragDemoChrome();
@@ -430,6 +451,7 @@ export class TutorialGuide extends Component {
         this._idleTip = guide.tip;
         this._idleDragTo = guide.dragTo ?? null;
         this._idleDragItem = guide.dragItem ?? '';
+        this._idleArrowDeg = guide.arrowDeg ?? 0;
         if (this._tipLab) this._tipLab.string = guide.tip;
         if (this._idleDragItem) this.ensureDragGhostFrame(this._idleDragItem);
     }
@@ -460,13 +482,16 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Point at a world hole (edge-clamped if off-screen). Quest dock only when
-     * there is truly no world aim — never jump there just because the target left
-     * the playfield band (that was the main “乱蹦” source).
+     * Point at a world hole. Off-screen → left/right edge chevron (not quest dock).
+     * Quest dock only when there is truly no world aim.
      */
     private worldOrQuest(hole: HoleRect | null, tip: string, fallbackTip?: string): IdleGuide | null {
-        const directed = this.directedHole(hole);
-        if (directed) return { hole: directed, tip, uiDock: false };
+        if (hole) {
+            if (this.isInPlayfield(hole)) {
+                return { hole, tip, uiDock: false, arrowDeg: 0 };
+            }
+            return this.offscreenEdgeGuide(hole, fallbackTip ?? tip);
+        }
         const q = this.questHole();
         if (!q) return null;
         return { hole: q, tip: fallbackTip ?? tip, uiDock: true };
@@ -723,21 +748,19 @@ export class TutorialGuide extends Component {
         return { hole, tip: '露穗：点这里制作种子呀', uiDock: true };
     }
 
-    /** Quest 1009: directed arrow on the town road sign. */
+    /**
+     * Quest 1009: off-screen gate → right-edge walk cue; on-screen → tap the sign.
+     */
     private resolveTownGateGuide(): IdleGuide | null {
         const node = this.farm?.findWorldNode('portal_town') ?? null;
         const raw = node
-            ? { x: node.position.x, y: node.position.y }
-            : StoryWorldHooks.farmPortalPos();
+            ? { x: node.position.x, y: node.position.y + 40 }
+            : { x: StoryWorldHooks.farmPortalPos().x, y: StoryWorldHooks.farmPortalPos().y + 40 };
         const pos = this.stickyWorldPos('town-gate', raw);
-        const player = this.farm?.player;
-        const near =
-            !!player?.isValid &&
-            Math.hypot(player.position.x - pos.x, player.position.y - pos.y) <= TOWN_GATE_NEAR_RANGE;
         return this.worldPosGuide(
             pos,
-            near ? '露穗：点路牌去微光溪谷镇吧' : '露穗：跟着箭头走到东侧路牌呀',
-            '露穗：往东侧路牌走，点一下进镇～',
+            '露穗：点路牌去微光溪谷镇吧',
+            '露穗：往右走，去东侧路牌呀',
         );
     }
 
@@ -764,24 +787,14 @@ export class TutorialGuide extends Component {
         return this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再抛竿～');
     }
 
-    /** Pier stand, or the nearest shore stand when the player is already lakeside. */
+    /** Always the fixed mid-pier tip — never retarget to nearest shore (avoids bounce). */
     private fishGuideTarget(): { pos: WorldPos; near: boolean } {
         const hint = FarmWorldLayout.fishingHintWorld();
+        const pos = this.stickyWorldPos('fish', hint);
         const player = this.farm?.player;
-        if (!player?.isValid) return { pos: this.stickyWorldPos('fish', hint), near: false };
-
-        const px = player.position.x;
-        const py = player.position.y;
-        const stand = FarmWorldLayout.findFishingStand(px, py);
-        if (stand) {
-            const pos = this.stickyWorldPos('fish-stand', { x: stand.standX, y: stand.standY });
-            return { pos, near: true };
-        }
-        const dist = Math.hypot(px - hint.x, py - hint.y);
-        return {
-            pos: this.stickyWorldPos('fish', hint),
-            near: dist <= FISH_NEAR_RANGE,
-        };
+        if (!player?.isValid) return { pos, near: false };
+        const dist = Math.hypot(player.position.x - hint.x, player.position.y - hint.y);
+        return { pos, near: dist <= FISH_NEAR_RANGE };
     }
 
     /** Hold a fixed world point briefly (pier / portal) so the edge arrow stays put. */
@@ -804,19 +817,46 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * World target → hole. If off the playfield, clamp to the near edge so the
-     * chevron still points toward the aim instead of jumping to the quest dock.
+     * Target left/right of the playfield → edge chevron pointing that way.
+     * Vertically off but still in X → clamp Y and keep a down arrow.
      */
-    private directedHole(hole: HoleRect | null): HoleRect | null {
-        if (!hole) return null;
-        if (this.isInPlayfield(hole)) return hole;
+    private offscreenEdgeGuide(hole: HoleRect, tip: string): IdleGuide {
         const band = this.playfieldBand();
-        const pad = 56;
+        const inX = hole.x >= band.x0 && hole.x <= band.x1;
+        if (inX) {
+            return {
+                hole: {
+                    x: hole.x,
+                    y: Math.max(band.y0 + 56, Math.min(band.y1 - 56, hole.y)),
+                    w: 80,
+                    h: 80,
+                },
+                tip,
+                uiDock: false,
+                arrowDeg: 0,
+            };
+        }
+
+        const goRight = hole.x > (band.x0 + band.x1) * 0.5;
+        let y = Math.max(band.y0 + 80, Math.min(band.y1 - 80, hole.y));
+        const player = this.farm?.player;
+        if (player?.isValid) {
+            const ph = this.worldPosHole({ x: player.position.x, y: player.position.y });
+            if (ph) y = Math.max(band.y0 + 80, Math.min(band.y1 - 80, ph.y));
+        }
+        if (goRight) {
+            return {
+                hole: { x: band.x1 - 56, y, w: 80, h: 80 },
+                tip: tip.includes('走') ? tip : '露穗：跟着箭头往右走，靠近了再动手呀',
+                uiDock: false,
+                arrowDeg: 90,
+            };
+        }
         return {
-            x: Math.max(band.x0 + pad, Math.min(band.x1 - pad, hole.x)),
-            y: Math.max(band.y0 + pad, Math.min(band.y1 - pad, hole.y)),
-            w: Math.min(90, Math.max(72, hole.w)),
-            h: Math.min(90, Math.max(72, hole.h)),
+            hole: { x: band.x0 + 56, y, w: 80, h: 80 },
+            tip: tip.includes('走') ? tip : '露穗：跟着箭头往左走，靠近了再动手呀',
+            uiDock: false,
+            arrowDeg: -90,
         };
     }
 
@@ -852,13 +892,9 @@ export class TutorialGuide extends Component {
     }
 
     private applyStep() {
-        if (this._step === 'quest' || this._step === 'hand') {
-            InputBridge.uiBlocking = true;
-            InputBridge.clear();
-        } else {
-            // Let the player walk up to weeds; stick still works.
-            InputBridge.uiBlocking = false;
-        }
+        // Forced hollow guide — lock stick / world taps for every step (incl. grass).
+        InputBridge.uiBlocking = true;
+        InputBridge.clear();
 
         if (this._step === 'grass') {
             this._grassTarget = this.pickHintGrass() ?? this.farm?.nearestGrass() ?? null;
@@ -1153,14 +1189,27 @@ export class TutorialGuide extends Component {
         // Big chevron sits centered above the target and bobs into it.
         // Bob AFTER clamp — claim / dock targets pin to the playfield floor and
         // would otherwise eat the sine offset every frame.
-        let fx = this._hole.x;
-        // Tool-swap: sit tight above the slot so the tip clearly reads as "this tool".
-        let fy = this._idleSilent ? top + 40 : top + 56;
+        const arrowDeg = this._idleOn ? this._idleArrowDeg : 0;
         const band = this.playfieldBand();
         // Quest / hand / claim / tool-swap sit in the bottom dock — don't force playfield band.
         const uiDock =
             (this._open && (this._step === 'quest' || this._step === 'hand')) ||
             (!this._open && this._idleOn && this._idleUiDock);
+        const bob = Math.sin(Date.now() * 0.01) * 12;
+        let fx = this._hole.x;
+        let fy: number;
+        if (arrowDeg === 90) {
+            // Point east: sit left of the aim and bob into +X.
+            fx = this._hole.x - 48;
+            fy = this._hole.y;
+        } else if (arrowDeg === -90) {
+            // Point west: sit right of the aim and bob into -X.
+            fx = this._hole.x + 48;
+            fy = this._hole.y;
+        } else {
+            // Tool-swap: sit tight above the slot so the tip clearly reads as "this tool".
+            fy = this._idleSilent ? top + 40 : top + 56;
+        }
         if (uiDock) {
             fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
             fy = Math.max(-halfH + 80, Math.min(halfH - 50, fy));
@@ -1168,8 +1217,14 @@ export class TutorialGuide extends Component {
             fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
             fy = Math.max(band.y0 + 50, Math.min(band.y1 - 20, fy));
         }
-        const bob = Math.sin(Date.now() * 0.01) * 12;
-        finger.setPosition(fx, fy + bob, 0);
+        if (arrowDeg === 90) {
+            finger.setPosition(fx + bob, fy, 0);
+        } else if (arrowDeg === -90) {
+            finger.setPosition(fx - bob, fy, 0);
+        } else {
+            finger.setPosition(fx, fy + bob, 0);
+        }
+        finger.setRotationFromEuler(0, 0, arrowDeg);
 
         if (withTip && tip) {
             const tipHalfW = TIP_W * 0.5;

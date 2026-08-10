@@ -22,6 +22,7 @@ import { DESIGN_H, DESIGN_W, portraitVisibleSize } from './PortraitFit';
 import { InputBridge } from './InputBridge';
 import { StoryIntroAudio } from './StoryIntroAudio';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
+import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -127,6 +128,12 @@ export class StoryIntroPanel extends Component {
         return this._open;
     }
 
+    /** Farm / mine → calm piano; town → Unravel hub BGM. */
+    syncMapBgm(map: 'farm' | 'town' | 'mine') {
+        this._audio.attach(this.node);
+        this._audio.playMapBed(map);
+    }
+
     onLoad() {
         this.build();
         this.hideVisualImmediate();
@@ -139,6 +146,30 @@ export class StoryIntroPanel extends Component {
             this._pending = null;
             if (pending) this.beginPlay(pending.pages, pending.onDone);
         });
+    }
+
+    /**
+     * Snap to a full opaque cover and wait for page-0 art.
+     * Used while LoadingScreen is still up so lifting the gate never flashes the farm.
+     */
+    async ensureCovered(timeoutMs = 2500): Promise<void> {
+        if (!this._open || !this._root?.isValid) return;
+        if (this._rootOp) {
+            Tween.stopAllByTarget(this._rootOp);
+            this._rootOp.opacity = 255;
+        }
+        if (this._artOp) {
+            Tween.stopAllByTarget(this._artOp);
+            this._artOp.opacity = 255;
+        }
+        this._root.active = true;
+        this.ensureChromeHidden();
+        this.bringToFront();
+        const t0 = Date.now();
+        while (Date.now() - t0 < timeoutMs) {
+            if (this._art?.spriteFrame) return;
+            await new Promise<void>((r) => setTimeout(r, 32));
+        }
     }
 
     onDestroy() {
@@ -168,10 +199,12 @@ export class StoryIntroPanel extends Component {
             onDone?.();
             return;
         }
+        // Font is warm after AssetWarmup — don't defer cover (avoids gate→farm flash).
         if (!this._fontReady) {
-            this._pending = { pages: list, onDone };
-            loadUiFont();
-            return;
+            void loadUiFont().then(() => {
+                this._fontReady = true;
+                this.applyFonts();
+            });
         }
         this.beginPlay(list, onDone);
     }
@@ -298,6 +331,7 @@ export class StoryIntroPanel extends Component {
         if (now - this._lastAdvanceAt < 280) return;
         this._lastAdvanceAt = now;
         this._audio.unlockFromGesture();
+        playUiClick();
 
         if (this._typing || this._typed < this._fullText.length) {
             this.revealAll();
@@ -378,11 +412,15 @@ export class StoryIntroPanel extends Component {
     }
 
     private fadeIn() {
-        if (this._rootOp) this._rootOp.opacity = 0;
+        // Instant cover — boot handoff sits under LoadingScreen; a 0→255 fade would
+        // flash the farm when the splash lifts. Later page crosses still tween art.
+        if (this._rootOp) {
+            Tween.stopAllByTarget(this._rootOp);
+            this._rootOp.opacity = 255;
+        }
         if (this._root) this._root.active = true;
         this.bringToFront();
         this.ensureChromeHidden();
-        if (this._rootOp) tween(this._rootOp).to(FADE_IN, { opacity: 255 }).start();
     }
 
     private fadeOut(done: () => void) {

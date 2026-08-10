@@ -21,6 +21,7 @@ import { QUEST_FRAMES } from './QuestFrames';
 import { QuestSystem } from './QuestSystem';
 import { REWARD_FRAMES } from './RewardFrames';
 import { TOOL_FRAMES } from './ToolFrames';
+import { playUiGold } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -121,6 +122,7 @@ export class RewardPopup extends Component {
 
     private confirmClaim() {
         if (!this._open) return;
+        playUiGold();
         // Snapshot chip icons → bag fly, then hide chips so we don't double-draw.
         const flies = this.collectFlyPayloads();
         if (this._chipHost) this._chipHost.active = false;
@@ -346,6 +348,7 @@ export class RewardPopup extends Component {
         if (k === 'copper') return MATERIAL_FRAMES.copper ?? null;
         if (k === 'iron') return MATERIAL_FRAMES.iron ?? null;
         if (k === 'goldore' || k === 'gold_ore') return MATERIAL_FRAMES.goldOre ?? null;
+        if (k === 'parsnip') return MATERIAL_FRAMES.parsnip ?? null;
         return null;
     }
 

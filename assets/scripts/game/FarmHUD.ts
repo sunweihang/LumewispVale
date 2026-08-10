@@ -28,7 +28,7 @@ import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
-import { playUiClick } from './UiAudio';
+import { playFarmTool, playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
@@ -674,8 +674,8 @@ export class FarmHUD extends Component {
     private loadFrames(done: () => void) {
         const toolKeys = Object.keys(TOOL_FRAMES) as (keyof typeof TOOL_FRAMES)[];
         const extra: { key: InvItemId; uuid: string }[] = [];
-        const cropSf = FARM_FRAMES.crop?.[2];
-        if (cropSf) extra.push({ key: 'parsnip', uuid: cropSf });
+        const parsnipSf = MATERIAL_FRAMES.parsnip ?? FARM_FRAMES.crop?.[2];
+        if (parsnipSf) extra.push({ key: 'parsnip', uuid: parsnipSf });
         for (const id of ALL_MATERIALS) {
             const uuid = MATERIAL_FRAME_UUID[id];
             if (uuid) extra.push({ key: id, uuid });
@@ -2181,6 +2181,7 @@ export class FarmHUD extends Component {
             this._tutorialCraftLock && recipeId === FIRST_SEED_RECIPE;
         this._craftJobs.delete(recipeId);
         if (this._craftAdWait?.recipeId === recipeId) this._craftAdWait = null;
+        playFarmTool();
         this.mergeOrPlaceInBag({ id: job.out.id, count: job.out.count });
         this.syncFarmFromBag();
         this._quests?.noteCraft(recipeId, 1);

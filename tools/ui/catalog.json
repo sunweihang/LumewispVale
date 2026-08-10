@@ -1717,6 +1717,22 @@
       "path": "assets/textures/nature/nat-weed-blue.png",
       "prefab": "",
       "layer": "Midground"
+    },
+    {
+      "id": "ic-parsnip",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-parsnip.png",
+      "spriteFrame": "695a362e-30eb-4750-9159-a2f61c636a18@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "parsnip",
+        "ai"
+      ]
     }
   ]
 }

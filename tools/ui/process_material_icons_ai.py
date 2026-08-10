@@ -76,13 +76,26 @@ JOBS = (
         "strip_frame": False,
         "eat_mid_gray": True,
     },
+    {
+        # Harvested crop item — leafy greens must survive (no neon-green key).
+        "key": "parsnip",
+        "src": "ic-parsnip-ai-ref.png",
+        "colors": 28,
+        "strip_frame": False,
+        "eat_mid_gray": True,
+        "eat_neon_green": False,
+    },
 )
 
 LOGICAL = 32
 OUT_SIZE = 96
 
 
-def knock_bg(im: Image.Image, eat_mid_gray: bool = True) -> Image.Image:
+def knock_bg(
+    im: Image.Image,
+    eat_mid_gray: bool = True,
+    eat_neon_green: bool = True,
+) -> Image.Image:
     """Drop neon-green chroma and (optionally) mid-gray canvas. Skip gray-eat for stone."""
     im = im.convert("RGBA")
     px = im.load()
@@ -92,11 +105,11 @@ def knock_bg(im: Image.Image, eat_mid_gray: bool = True) -> Image.Image:
             r, g, b, a = px[x, y]
             if a == 0:
                 continue
-            # Neon green / lime chroma key
-            if g >= 140 and g > r + 35 and g > b + 35:
+            # Neon green / lime chroma key (disable for leafy crop icons)
+            if eat_neon_green and g >= 140 and g > r + 35 and g > b + 35:
                 px[x, y] = (0, 0, 0, 0)
                 continue
-            if g >= 200 and r < 120 and b < 120:
+            if eat_neon_green and g >= 200 and r < 120 and b < 120:
                 px[x, y] = (0, 0, 0, 0)
                 continue
             mx, mn = max(r, g, b), min(r, g, b)
@@ -213,6 +226,7 @@ def pixelize(
     out_size: int,
     colors: int,
     eat_mid_gray: bool = True,
+    eat_neon_green: bool = True,
 ) -> Image.Image:
     im = trim(im)
     sw, sh = im.size
@@ -244,8 +258,8 @@ def pixelize(
                 and 90 <= (r + g + b) / 3 <= 175
             ):
                 continue
-            # Green chroma leftovers
-            if g > r + 40 and g > b + 40 and g > 140:
+            # Green chroma leftovers (keep real foliage when eat_neon_green=False)
+            if eat_neon_green and g > r + 40 and g > b + 40 and g > 140:
                 continue
             if r + g + b < 18 and fp[x, y][3] < 200:
                 continue
@@ -398,9 +412,11 @@ def process_one(job: dict) -> Image.Image:
     if not src.exists():
         raise SystemExit("missing AI source: {}".format(src))
     im = Image.open(src).convert("RGBA")
-    im = knock_bg(im, eat_mid_gray=job.get("eat_mid_gray", True))
+    eat_mid = job.get("eat_mid_gray", True)
+    eat_green = job.get("eat_neon_green", True)
+    im = knock_bg(im, eat_mid_gray=eat_mid, eat_neon_green=eat_green)
     # flood_corners eats soft gray — unsafe for gray stone bodies.
-    if job.get("eat_mid_gray", True):
+    if eat_mid:
         im = flood_corners(im)
     if job.get("strip_frame"):
         im = strip_slot_frame(im)
@@ -409,23 +425,40 @@ def process_one(job: dict) -> Image.Image:
         LOGICAL,
         OUT_SIZE,
         job["colors"],
-        eat_mid_gray=job.get("eat_mid_gray", True),
+        eat_mid_gray=eat_mid,
+        eat_neon_green=eat_green,
     )
 
 
-def main() -> None:
+def main(argv=None):
+    import sys
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    only = set(args) if args else None
+
     OUT.mkdir(parents=True, exist_ok=True)
     umap: dict = {}
     if UUID_MAP.exists():
         umap = json.loads(UUID_MAP.read_text(encoding="utf-8"))
 
-    frames = {}
+    # Preserve existing frame map when processing a subset.
+    frames: dict = {}
+    if MF.exists():
+        try:
+            frames = json.loads(MF.read_text(encoding="utf-8"))
+        except Exception:
+            frames = {}
+
+    jobs = [j for j in JOBS if not only or j["key"] in only]
+    if not jobs:
+        raise SystemExit("no matching JOBS for {}".format(sorted(only or [])))
+
     contact = Image.new(
         "RGBA",
-        (OUT_SIZE * len(JOBS) + 12 + (len(JOBS) - 1) * 6, OUT_SIZE + 20),
+        (OUT_SIZE * len(jobs) + 12 + (len(jobs) - 1) * 6, OUT_SIZE + 20),
         (48, 42, 36, 255),
     )
-    for i, job in enumerate(JOBS):
+    for i, job in enumerate(jobs):
         out_img = process_one(job)
         out_path = OUT / "ic-{}.png".format(job["key"])
         out_img.save(out_path)
@@ -452,6 +485,8 @@ def main() -> None:
     )
     sync_catalog(frames)
     prev = SRC / "material-icons-ai-preview.png"
+    if only:
+        prev = SRC / "ic-{}-ai-preview.png".format(next(iter(only)))
     contact.save(prev)
     print("preview", prev.relative_to(ROOT))
 

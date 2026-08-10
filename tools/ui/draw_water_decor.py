@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Stardew-like lake decorations: lily pads, flower lilies, reeds, wet rocks, sunk log.
+Stardew-like lake decorations: reeds, wet rocks, sunk log.
+
+Lily pads (nat-lily / nat-lily-bloom) are AI-ingested via process_lily_ai.py —
+this script only syncs their UUID frames and must not overwrite those PNGs.
 """
 
 import json
@@ -171,13 +174,12 @@ def upsert_catalog(item_id, path):
 
 
 def draw_lily(bloom=False, w=28, h=24):
+    """Legacy placeholder — do not regenerate. Use process_lily_ai.py."""
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     cx, cy = w // 2, h // 2 + 1
-    # pad ellipse with notch
     d.ellipse([2, 4, w - 3, h - 3], fill=PAD_D)
     d.ellipse([3, 5, w - 4, h - 4], fill=PAD)
-    # radial veins
     for a in range(0, 360, 45):
         rad = math.radians(a)
         x1 = cx + int(math.cos(rad) * 2)
@@ -185,14 +187,11 @@ def draw_lily(bloom=False, w=28, h=24):
         x2 = cx + int(math.cos(rad) * 9)
         y2 = cy + int(math.sin(rad) * 7)
         d.line([(x1, y1), (x2, y2)], fill=PAD_D)
-    # notch cut (classic lily) — clear a wedge on the right
     px = img.load()
     for y in range(h):
         for x in range(cx + 2, w):
-            # wedge from center toward right edge
             if abs(y - cy) <= (x - cx) // 2 + 1:
                 px[x, y] = (0, 0, 0, 0)
-    # highlight speck
     if 0 <= cx - 3 < w and 0 <= cy - 2 < h:
         px[cx - 3, cy - 2] = PAD_L
     if bloom:
@@ -264,9 +263,13 @@ def main():
     if NATURE_FRAMES.exists():
         frames = json.loads(NATURE_FRAMES.read_text(encoding="utf-8"))
 
+    # Lily pads: AI ingest via process_lily_ai.py (do not overwrite with PIL ellipses).
+    for item_id, key in (("nat-lily", "lily"), ("nat-lily-bloom", "lilyBloom")):
+        if item_id in uuid_map and uuid_map[item_id].get("spriteFrame"):
+            frames[key] = uuid_map[item_id]["spriteFrame"]
+            upsert_catalog(item_id, "assets/textures/nature/{}.png".format(item_id))
+
     specs = [
-        ("nat-lily", "lily", draw_lily(False), 0.5),
-        ("nat-lily-bloom", "lilyBloom", draw_lily(True), 0.5),
         ("nat-reed", "reed", draw_reed(), 0.0),
         ("nat-rock-wet", "rockWet", draw_rock_wet(), 0.15),
         ("nat-log-sunk", "logSunk", draw_log_sunk(), 0.15),

@@ -14,10 +14,16 @@ import { loadUiFont } from './UiFont';
 const STORY_AUDIO_PATHS = [
     'audio/story/storyThemeAlert',
     'audio/story/storyThemeCalm',
+    'audio/story/townTheme',
     'audio/story/story-thunder-boom',
 ];
 
-const UI_AUDIO_PATHS = ['audio/ui/ui-click'];
+const UI_AUDIO_PATHS = [
+    'audio/ui/ui-click',
+    'audio/ui/farm-tool',
+    'audio/ui/farm-gather',
+    'audio/ui/ui-gold',
+];
 
 const STORY_UUIDS = [
     /** Meteor prefab */

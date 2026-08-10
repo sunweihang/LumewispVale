@@ -2,7 +2,10 @@ import {
     _decorator,
     Color,
     Component,
+    EventMouse,
+    EventTouch,
     Graphics,
+    Input,
     Label,
     Node,
     Sprite,
@@ -10,12 +13,14 @@ import {
     UIOpacity,
     UITransform,
     assetManager,
+    input,
     tween,
     Tween,
     view,
 } from 'cc';
 import { DESIGN_W, portraitVisibleSize } from './PortraitFit';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
+import { playUiClick } from './UiAudio';
 
 const { ccclass } = _decorator;
 
@@ -23,6 +28,11 @@ const { ccclass } = _decorator;
 const SPLASH_W = 1080;
 const SPLASH_H = 2200;
 const SPLASH_SF_UUID = '5a4ebb12-2f98-4075-a870-b9286e9ac348@f9941';
+
+/** Progress dock while warming assets (design Y). */
+const DOCK_Y_LOADING = -880;
+/** Start hint sits higher so it clears the phone home indicator. */
+const DOCK_Y_READY = -640;
 
 /** Game HUD that must stay hidden under the boot gate. */
 const HIDE_WHILE_LOADING = [
@@ -39,8 +49,7 @@ const HIDE_WHILE_LOADING = [
     'GmPanel',
     'TouchControls',
     'StickVisual',
-    'DialogueBox',
-    'StoryIntro',
+    // DialogueBox / StoryIntro stay mountable under the gate for seamless handoff.
     'QuestPanel',
     'TownShopPanel',
     'TownShopDimmer',
@@ -62,16 +71,28 @@ export class LoadingScreen extends Component {
     private _pctLab: Label | null = null;
     private _titleLab: Label | null = null;
     private _subLab: Label | null = null;
+    private _startHint: Node | null = null;
+    private _startHintLab: Label | null = null;
+    private _startHintOp: UIOpacity | null = null;
+    private _barTrack: Node | null = null;
     private _progress = 0;
     private _barW = 720;
     private _barH = 32;
     private _open = false;
+    private _readyForStart = false;
+    private _startResolved = false;
+    private _suppressChrome = true;
+    private _onStart: (() => void) | null = null;
     private _chromeWas = new Map<string, boolean>();
 
     /** Build and show immediately (call before other UI). */
     static mount(canvas: Node): LoadingScreen {
         const old = canvas.getChildByName('LoadingScreen');
-        if (old) old.destroy();
+        // removeFromParent first — deferred destroy alone leaves a one-frame hole.
+        if (old?.isValid) {
+            old.removeFromParent();
+            old.destroy();
+        }
         let comp = canvas.getComponent(LoadingScreen);
         if (comp) canvas.removeComponent(comp);
         comp = canvas.addComponent(LoadingScreen);
@@ -97,32 +118,66 @@ export class LoadingScreen extends Component {
         this.suppressGameChrome();
     }
 
-    close(done?: () => void) {
+    /**
+     * After assets hit 100%, reveal「开始游戏」and wait for a tap.
+     * Call before close() so the player controls when to enter.
+     */
+    waitForStart(): Promise<void> {
+        if (this._startResolved || !this._root?.isValid) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            this._onStart = () => resolve();
+            this.showStartGate();
+        });
+    }
+
+    /** Restore HUD under the opaque splash so the next overlay can re-hide and own it. */
+    releaseSuppressedChrome() {
+        this._suppressChrome = false;
+        this.restoreGameChrome();
+    }
+
+    /**
+     * @param opts.fadeMs 0 = instant lift (use when story/dialogue already covers).
+     * @param opts.restoreChrome false when the next overlay already owns HUD hiding.
+     */
+    close(done?: () => void, opts?: { fadeMs?: number; restoreChrome?: boolean }) {
+        // Unblock any pending waitForStart if close races ahead.
+        this.resolveStart();
+        this.unlistenStart();
+        const fadeMs = opts?.fadeMs ?? 350;
+        const restoreChrome = opts?.restoreChrome !== false;
+        const finish = () => {
+            if (restoreChrome) this.restoreGameChrome();
+            if (this._root?.isValid) {
+                this._root.removeFromParent();
+                this._root.destroy();
+                this._root = null;
+            }
+            done?.();
+        };
         if (!this._root) {
             this._open = false;
-            this.restoreGameChrome();
-            done?.();
+            finish();
             return;
         }
         this._open = false;
+        if (fadeMs <= 0) {
+            finish();
+            return;
+        }
         const op = this._root.getComponent(UIOpacity) ?? this._root.addComponent(UIOpacity);
         Tween.stopAllByTarget(op);
         tween(op)
-            .to(0.35, { opacity: 0 })
-            .call(() => {
-                this.restoreGameChrome();
-                if (this._root?.isValid) {
-                    this._root.destroy();
-                    this._root = null;
-                }
-                done?.();
-            })
+            .to(fadeMs / 1000, { opacity: 0 })
+            .call(finish)
             .start();
     }
 
     lateUpdate() {
         if (!this._open || !this._root?.isValid) return;
-        this.suppressGameChrome();
+        if (this._suppressChrome) this.suppressGameChrome();
         this.bringToFront();
     }
 
@@ -157,13 +212,18 @@ export class LoadingScreen extends Component {
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
         sp.type = Sprite.Type.SIMPLE;
         this._splash = sp;
-        assetManager.loadAny({ uuid: SPLASH_SF_UUID }, (err, asset) => {
-            if (!err && asset && sp.isValid) {
-                sp.spriteFrame = asset as SpriteFrame;
-                this.layoutToVisible();
-                this.bringToFront();
-            }
-        });
+        const cached = assetManager.assets.get(SPLASH_SF_UUID) as SpriteFrame | null | undefined;
+        if (cached) {
+            sp.spriteFrame = cached;
+        } else {
+            assetManager.loadAny({ uuid: SPLASH_SF_UUID }, (err, asset) => {
+                if (!err && asset && sp.isValid) {
+                    sp.spriteFrame = asset as SpriteFrame;
+                    this.layoutToVisible();
+                    this.bringToFront();
+                }
+            });
+        }
 
         const titleN = new Node('Title');
         titleN.layer = root.layer;
@@ -202,14 +262,15 @@ export class LoadingScreen extends Component {
         const dock = new Node('ProgressDock');
         dock.layer = root.layer;
         dock.setParent(root);
-        dock.setPosition(0, -880, 0);
-        dock.addComponent(UITransform).setContentSize(800, 160);
+        dock.setPosition(0, DOCK_Y_LOADING, 0);
+        dock.addComponent(UITransform).setContentSize(900, 160);
 
         const track = new Node('BarTrack');
         track.layer = root.layer;
         track.setParent(dock);
         track.setPosition(0, 24, 0);
         track.addComponent(UITransform).setContentSize(this._barW + 14, this._barH + 14);
+        this._barTrack = track;
         const tg = track.addComponent(Graphics);
         tg.fillColor = new Color(28, 22, 16, 230);
         tg.roundRect(-(this._barW + 14) * 0.5, -(this._barH + 14) * 0.5, this._barW + 14, this._barH + 14, 16);
@@ -258,6 +319,8 @@ export class LoadingScreen extends Component {
         pct.string = '0%';
         this._pctLab = pct;
 
+        this.buildStartHint(dock);
+
         this.paintBar();
         this.layoutToVisible();
         this.suppressGameChrome();
@@ -270,12 +333,120 @@ export class LoadingScreen extends Component {
             if (this._subLab) applyUiFont(this._subLab);
             if (this._tipLab) applyUiFont(this._tipLab);
             if (this._pctLab) applyUiFont(this._pctLab);
+            if (this._startHintLab) applyUiFont(this._startHintLab);
         });
     }
 
     onDestroy() {
         view.off('canvas-resize', this.layoutToVisible, this);
+        this.stopStartPulse();
+        this.unlistenStart();
         if (this._open) this.restoreGameChrome();
+    }
+
+    private buildStartHint(dock: Node) {
+        const hint = new Node('StartHint');
+        hint.layer = dock.layer;
+        hint.setParent(dock);
+        hint.setPosition(0, 0, 0);
+        hint.addComponent(UITransform).setContentSize(900, 72);
+        hint.active = false;
+        this._startHintOp = hint.addComponent(UIOpacity);
+        this._startHintOp.opacity = 255;
+
+        const labN = new Node('Label');
+        labN.layer = dock.layer;
+        labN.setParent(hint);
+        labN.addComponent(UITransform).setContentSize(900, 72);
+        const lab = labN.addComponent(Label);
+        styleUiLabel(lab, {
+            size: 48,
+            color: new Color(255, 242, 210, 255),
+            outline: true,
+            outlineWidth: 4,
+            outlineColor: new Color(40, 28, 14, 230),
+        });
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        lab.string = '点击开始游戏';
+        this._startHintLab = lab;
+        this._startHint = hint;
+    }
+
+    private showStartGate() {
+        if (!this._root?.isValid) {
+            this.resolveStart();
+            return;
+        }
+        this._readyForStart = true;
+        if (this._tipLab) this._tipLab.node.active = false;
+        if (this._pctLab) this._pctLab.node.active = false;
+        if (this._barTrack) this._barTrack.active = false;
+        if (this._startHint?.isValid) {
+            this._startHint.active = true;
+            this.startHintPulse();
+        }
+        this.listenStart();
+        this.layoutToVisible();
+        this.bringToFront();
+        this.suppressGameChrome();
+    }
+
+    private startHintPulse() {
+        if (!this._startHintOp) return;
+        this.stopStartPulse();
+        this._startHintOp.opacity = 255;
+        // Slower than dialogue tip — splash reads better at a calm breath.
+        tween(this._startHintOp)
+            .repeatForever(
+                tween(this._startHintOp).to(0.9, { opacity: 255 }).to(0.9, { opacity: 120 }),
+            )
+            .start();
+    }
+
+    private stopStartPulse() {
+        if (this._startHintOp) {
+            Tween.stopAllByTarget(this._startHintOp);
+            this._startHintOp.opacity = 255;
+        }
+    }
+
+    private listenStart() {
+        this.unlistenStart();
+        // Global input — same as DialoguePanel「点击继续」(node hits can miss over Splash).
+        input.on(Input.EventType.TOUCH_END, this.onStartTouch, this);
+        input.on(Input.EventType.MOUSE_UP, this.onStartMouse, this);
+    }
+
+    private unlistenStart() {
+        input.off(Input.EventType.TOUCH_END, this.onStartTouch, this);
+        input.off(Input.EventType.MOUSE_UP, this.onStartMouse, this);
+    }
+
+    private onStartTouch = (e: EventTouch) => {
+        if (!this._readyForStart || this._startResolved) return;
+        e.propagationStopped = true;
+        playUiClick();
+        this.resolveStart();
+    };
+
+    private onStartMouse = (e: EventMouse) => {
+        if (!this._readyForStart || this._startResolved) return;
+        if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
+        e.propagationStopped = true;
+        playUiClick();
+        this.resolveStart();
+    };
+
+    private resolveStart() {
+        if (this._startResolved) return;
+        this._startResolved = true;
+        this._readyForStart = false;
+        this.stopStartPulse();
+        this.unlistenStart();
+        const cb = this._onStart;
+        this._onStart = null;
+        cb?.();
     }
 
     private bringToFront() {
@@ -285,6 +456,7 @@ export class LoadingScreen extends Component {
     }
 
     private suppressGameChrome() {
+        if (!this._suppressChrome) return;
         const canvas = this.node;
         for (const name of HIDE_WHILE_LOADING) {
             const n = canvas.getChildByName(name);
@@ -345,7 +517,8 @@ export class LoadingScreen extends Component {
         const dock = this._root.getChildByName('ProgressDock');
         if (title) title.setPosition(0, 820 * scale, 0);
         if (sub) sub.setPosition(0, 740 * scale, 0);
-        if (dock) dock.setPosition(0, -880 * scale, 0);
+        const dockY = this._readyForStart ? DOCK_Y_READY : DOCK_Y_LOADING;
+        if (dock) dock.setPosition(0, dockY * scale, 0);
         this.bringToFront();
     };
 

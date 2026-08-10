@@ -455,10 +455,14 @@ class FarmBake:
             sf = self.pick_variant(kind, ix, iy)
             self.add_ground(f"tile-{kind}_{ix}_{iy}", sf, ix, iy)
 
-        self.paint_grass_fringe()
+        # Grass fringe runs after place_pond — pier approach dirt is stamped there.
 
     def cell_is_grass(self, ix: int, iy: int) -> bool:
-        return self.wanted.get(f"{ix},{iy}") != "dirt"
+        key = f"{ix},{iy}"
+        # Same rule as other dirt edges: water / pier wood are not sod sides
+        if key in self.water or key in self.pier_wood:
+            return False
+        return self.wanted.get(key) != "dirt"
 
     def paint_grass_fringe(self) -> None:
         for key, kind in self.wanted.items():
@@ -1082,6 +1086,8 @@ class FarmBake:
         self.water = self.build_pond_water()
         self.paint_terrain()
         self.place_pond()
+        # Pier dirt is in wanted now — reuse the same fringe tiles as the rest of the farm
+        self.paint_grass_fringe()
         # Garden before cottage so editor draw-order never paints hedges on the roof
         self.place_yard()
         self.place_cottage_garden()

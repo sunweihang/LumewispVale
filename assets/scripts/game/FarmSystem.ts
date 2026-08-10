@@ -22,6 +22,7 @@ import { ActionAnim, PlayerAnimator } from './PlayerAnimator';
 import { footSolidFor } from './GridPath';
 import { PlayerController } from './PlayerController';
 import { TOOL_FRAMES } from './ToolFrames';
+import { playFarmGather, playFarmTool } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
@@ -451,7 +452,7 @@ export class FarmSystem extends Component {
         switch (action) {
             case GotoAction.HintMeteor:
             case GotoAction.HintTownGate:
-                return '跟着箭头走到东侧路牌';
+                return '跟着箭头往右走，点东侧路牌';
             case GotoAction.HintMayor:
                 return '跟着箭头前往镇长府';
             case GotoAction.SelectRod:
@@ -989,17 +990,21 @@ export class FarmSystem extends Component {
         if (!plot || !this.canActOnPlot(plot)) return;
         if (this.tool === 'hand' && plot.phase === 'crop' && plot.stage >= 2) {
             this.harvest(plot);
+            playFarmGather();
             this._onQuestStat?.('harvest', undefined, 1);
         } else if (this.tool === 'hoe' && plot.phase === 'soil') {
             this.till(plot);
+            playFarmTool();
             this._onQuestStat?.('till', undefined, 1);
         } else if (this.tool === 'seeds' && plot.phase === 'tilled') {
             if (this.seeds <= 0) return;
             this.plant(plot);
             this.seeds -= 1;
+            playFarmTool();
             this._onQuestStat?.('plant', undefined, 1);
         } else if (this.tool === 'can' && plot.phase === 'crop' && !plot.watered && plot.stage < 2) {
             this.water(plot);
+            playFarmTool();
             this._onQuestStat?.('water', undefined, 1);
         } else if (
             this.tool === 'boost' &&
@@ -1010,6 +1015,7 @@ export class FarmSystem extends Component {
             if (this.boosts <= 0) return;
             this.applyBoost(plot);
             this.boosts -= 1;
+            playFarmTool();
             this.floatTip('催熟完成！');
             this._onInvChange?.();
         }
@@ -1024,11 +1030,13 @@ export class FarmSystem extends Component {
             const hits = (this._natureHits.get(id) ?? 0) + 1;
             if (hits < need) {
                 this._natureHits.set(id, hits);
+                playFarmTool();
                 return true;
             }
             this._natureHits.delete(id);
         }
         this.grantNatureLoot(target, act);
+        playFarmGather();
         const wasSolid = act === 'chop' || target.name.includes('_solid_');
         target.destroy();
         if (wasSolid) {

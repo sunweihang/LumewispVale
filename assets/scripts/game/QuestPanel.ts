@@ -1253,6 +1253,7 @@ export class QuestPanel extends Component {
         if (k === 'copper') return MATERIAL_FRAMES.copper ?? null;
         if (k === 'iron') return MATERIAL_FRAMES.iron ?? null;
         if (k === 'goldore' || k === 'gold_ore') return MATERIAL_FRAMES.goldOre ?? null;
+        if (k === 'parsnip') return MATERIAL_FRAMES.parsnip ?? null;
         return null;
     }
 
