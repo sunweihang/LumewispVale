@@ -32,7 +32,7 @@ MT_HI = (196, 202, 210, 255)
 MT_DK = (96, 102, 112, 255)
 MT_EDGE = (72, 76, 84, 255)
 
-TOOLS = ("hand", "hoe", "seeds", "can", "axe")
+TOOLS = ("hand", "hoe", "seeds", "can", "axe", "rod")
 
 
 def put(p, s, x, y, c):
@@ -280,6 +280,50 @@ def draw_can() -> Image.Image:
     return img.resize((96, 96), Image.NEAREST)
 
 
+def draw_rod() -> Image.Image:
+    """Fishing rod — long pole + reel + line tip (hotbar tool)."""
+    s = 32
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    p = img.load()
+
+    cork = (196, 148, 88, 255)
+    cork_dk = (150, 108, 58, 255)
+    line_c = (210, 214, 220, 255)
+    hook = (168, 174, 184, 255)
+
+    # Pole (bottom-left → top-right)
+    line(p, s, 6, 26, 24, 6, WD, thick=2)
+    steps = 20
+    for i in range(steps + 1):
+        t = i / float(steps)
+        x = int(round(6 + (24 - 6) * t))
+        y = int(round(26 + (6 - 26) * t))
+        put(p, s, x, y, WD_HI if i % 3 == 0 else WD)
+        put(p, s, x + 1, y + 1, WD_DK)
+
+    # Grip wraps
+    for x, y in ((8, 23), (9, 22), (10, 21), (11, 20)):
+        put(p, s, x, y, cork)
+        put(p, s, x + 1, y, cork_dk)
+
+    # Reel
+    fill_ellipse(p, s, 12, 18, 3, 3, MT)
+    fill_ellipse(p, s, 12, 18, 2, 2, MT_HI)
+    put(p, s, 12, 18, MT_DK)
+    put(p, s, 15, 17, MT_EDGE)
+
+    # Tip ring + short hanging line
+    put(p, s, 24, 6, MT_HI)
+    put(p, s, 25, 5, MT)
+    put(p, s, 26, 7, line_c)
+    put(p, s, 26, 8, line_c)
+    put(p, s, 26, 9, hook)
+    put(p, s, 25, 10, hook)
+
+    outline_opaque(p, s)
+    return img.resize((96, 96), Image.NEAREST)
+
+
 def draw_axe() -> Image.Image:
     """Chopping axe — diagonal haft + flared cutting blade."""
     s = 32
@@ -331,6 +375,7 @@ DRAWERS = {
     "seeds": draw_seeds,
     "can": draw_can,
     "axe": draw_axe,
+    "rod": draw_rod,
 }
 
 

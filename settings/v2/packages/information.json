@@ -3,13 +3,21 @@
   "information": {
     "customSplash": {
       "id": "customSplash",
-      "label": "Custom Splash",
-      "visible": true
+      "label": "customSplash",
+      "enable": true,
+      "customSplash": {
+        "complete": false,
+        "form": "https://creator-api.cocos.com/api/form/show?sid=e16c98233a292ca32a053c1449119f00"
+      }
     },
     "removeSplash": {
       "id": "removeSplash",
-      "label": "Remove Splash",
-      "visible": true
+      "label": "removeSplash",
+      "enable": true,
+      "removeSplash": {
+        "complete": false,
+        "form": "https://creator-api.cocos.com/api/form/show?sid=e16c98233a292ca32a053c1449119f00"
+      }
     }
   }
 }

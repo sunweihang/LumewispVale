@@ -23,7 +23,7 @@ SF_SUFFIX = "f9941"
 
 OUTLINE = (40, 28, 18, 255)
 
-MATERIALS = ("wood", "grass", "dirt", "stone")
+MATERIALS = ("wood", "grass", "dirt", "stone", "fish")
 
 
 def put(p, s, x, y, c):
@@ -235,11 +235,53 @@ def draw_stone() -> Image.Image:
     return img.resize((96, 96), Image.NEAREST)
 
 
+def draw_fish() -> Image.Image:
+    """Small blue pond fish — backpack loot icon."""
+    s = 32
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    p = img.load()
+
+    body = (78, 148, 214, 255)
+    body_hi = (132, 196, 236, 255)
+    body_dk = (48, 104, 168, 255)
+    belly = (196, 226, 244, 255)
+    fin = (56, 120, 186, 255)
+    eye = (36, 40, 48, 255)
+    eye_hi = (248, 248, 252, 255)
+
+    # Body
+    fill_ellipse(p, s, 15, 16, 9, 5, body)
+    fill_ellipse(p, s, 14, 15, 7, 3, body_hi)
+    fill_ellipse(p, s, 16, 18, 6, 2, belly)
+    # Head taper
+    fill_ellipse(p, s, 23, 16, 3, 3, body)
+    put(p, s, 24, 15, body_hi)
+    # Tail
+    fill_rect(p, s, 4, 13, 7, 19, fin)
+    put(p, s, 5, 14, body_hi)
+    put(p, s, 5, 18, body_dk)
+    put(p, s, 3, 12, fin)
+    put(p, s, 3, 20, fin)
+    put(p, s, 2, 16, body_dk)
+    # Dorsal / belly fins
+    put(p, s, 14, 11, fin)
+    put(p, s, 15, 10, fin)
+    put(p, s, 16, 11, fin)
+    put(p, s, 15, 21, fin)
+    # Eye
+    put(p, s, 22, 15, eye_hi)
+    put(p, s, 23, 15, eye)
+
+    outline_opaque(p, s)
+    return img.resize((96, 96), Image.NEAREST)
+
+
 DRAWERS = {
     "wood": draw_wood,
     "grass": draw_grass,
     "dirt": draw_dirt,
     "stone": draw_stone,
+    "fish": draw_fish,
 }
 
 

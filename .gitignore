@@ -33,3 +33,14 @@ node_modules/
 *.pyc
 tools/ui/ai-raw/
 
+# Ephemeral QA / alignment overlays (not source art)
+tools/ui/ai-source/debug-*.png
+tools/ui/ai-source/hoe-align-*.png
+tools/ui/ai-source/hoe-diff-*.png
+tools/ui/ai-source/hoe-overlay-*.png
+tools/ui/ai-source/hoe-down-vs-walk.png
+tools/ui/ai-source/*-qa.png
+tools/ui/ai-source/farmer-action-vs-walk-*.png
+tools/ui/ai-source/info-panel-dial-debug.png
+tools/ui/ai-source/fishing-ingame-mock.png
+

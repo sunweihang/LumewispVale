@@ -48,9 +48,10 @@ JOBS = (
     {"key": "seeds", "src": "ic-seeds-ai-ref.png", "colors": 28, "eat_mid_gray": True},
     {"key": "can", "src": "ic-can-ai-ref.png", "colors": 28, "eat_mid_gray": True},
     {"key": "axe", "src": "ic-axe-ai-ref.png", "colors": 26, "eat_mid_gray": False},
+    {"key": "rod", "src": "ic-rod-ai-ref.png", "colors": 26, "eat_mid_gray": False},
 )
 
-TOOL_ORDER = ("hand", "hoe", "seeds", "can", "axe")
+TOOL_ORDER = ("hand", "hoe", "seeds", "can", "axe", "rod")
 
 
 def knock_bg(im, eat_mid_gray=True):

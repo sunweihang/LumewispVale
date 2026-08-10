@@ -12,14 +12,27 @@ import { FarmSystem } from './FarmSystem';
 import { InputBridge } from './InputBridge';
 import { applyNightWash } from './NightWash';
 import { DESIGN_H, DESIGN_W } from './PortraitFit';
+import { QuestPanel } from './QuestPanel';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
 
 /** Short weekdays — fits the narrow date slot on mobile. */
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const SEASONS = ['春', '夏', '秋', '冬'];
 /** Real seconds per in-game minute. */
 const SEC_PER_GAME_MIN = 0.7;
+/** In-game day length (starts 06:00 → ends ~02:00). */
+const DAY_MINUTES = 20 * 60;
+
+export type GameClock = {
+    day: number;
+    season: number;
+    weekday: number;
+    hour: number;
+    minute: number;
+    paused: boolean;
+};
 
 /**
  * Top-right status board. Layout lives in `assets/prefabs/ui/FarmInfoBoard.prefab`
@@ -32,6 +45,9 @@ export class FarmInfoBoard extends Component {
 
     @property(CameraFollow)
     cameraFollow: CameraFollow | null = null;
+
+    /** Runtime quest panel (opened by BtnQuest). */
+    questPanel: QuestPanel | null = null;
 
     @property(Label)
     dateLab: Label | null = null;
@@ -62,8 +78,9 @@ export class FarmInfoBoard extends Component {
     private _season = 0;
     private _weekday = 2;
     /** Minutes since 06:00 (game day ≈ 20h → 1200 min). */
-    private _minutes = (18 - 6) * 60 + 10;
+    private _minutes = 0;
     private _acc = 0;
+    private _paused = false;
 
     private _baseWorldScale = 1;
     private _zoom = 1;
@@ -140,14 +157,80 @@ export class FarmInfoBoard extends Component {
     };
 
     update(dt: number) {
-        this._acc += dt;
-        while (this._acc >= SEC_PER_GAME_MIN) {
-            this._acc -= SEC_PER_GAME_MIN;
-            this.advanceMinute();
+        if (!this._paused) {
+            this._acc += dt;
+            while (this._acc >= SEC_PER_GAME_MIN) {
+                this._acc -= SEC_PER_GAME_MIN;
+                this.advanceMinute();
+            }
         }
         if (this.toastLab?.node.active && this._toastHideAt > 0 && Date.now() >= this._toastHideAt) {
             this.toastLab.node.active = false;
         }
+    }
+
+    /** Snapshot of calendar + wall clock (display hour wraps 0–23). */
+    getClock(): GameClock {
+        const hour = (6 + Math.floor(this._minutes / 60)) % 24;
+        const minute = this._minutes % 60;
+        return {
+            day: this._day,
+            season: this._season,
+            weekday: this._weekday,
+            hour,
+            minute,
+            paused: this._paused,
+        };
+    }
+
+    get paused(): boolean {
+        return this._paused;
+    }
+
+    setPaused(paused: boolean) {
+        this._paused = !!paused;
+        if (paused) this._acc = 0;
+    }
+
+    /** Set display hour:minute within the 20h game day (06:00→01:59). */
+    setTime(hour: number, minute = 0) {
+        const h = ((Math.floor(hour) % 24) + 24) % 24;
+        const m = Math.max(0, Math.min(59, Math.floor(minute)));
+        let since6 = ((h - 6 + 24) % 24) * 60 + m;
+        if (since6 >= DAY_MINUTES) since6 = DAY_MINUTES - 1;
+        this._minutes = since6;
+        this._acc = 0;
+        this._nightIntensity = -1;
+        this.refreshClock();
+    }
+
+    /** Nudge clock by signed in-game minutes (can roll day / season). */
+    addMinutes(delta: number) {
+        let d = Math.trunc(delta);
+        if (!d) return;
+        this._acc = 0;
+        if (d > 0) {
+            while (d-- > 0) this.advanceMinute();
+            return;
+        }
+        while (d++ < 0) this.rewindMinute();
+    }
+
+    setDay(day: number, weekday?: number, season?: number) {
+        this._day = Math.max(1, Math.min(28, Math.floor(day)));
+        if (weekday !== undefined) this._weekday = ((Math.floor(weekday) % 7) + 7) % 7;
+        if (season !== undefined) this._season = ((Math.floor(season) % 4) + 4) % 4;
+        this._nightIntensity = -1;
+        this.refreshClock();
+    }
+
+    /** Season label for UI (春夏秋冬). */
+    seasonName(season = this._season): string {
+        return SEASONS[((season % 4) + 4) % 4] ?? '春';
+    }
+
+    weekdayName(weekday = this._weekday): string {
+        return WEEKDAYS[((weekday % 7) + 7) % 7] ?? '周日';
     }
 
     /** UI coords: origin bottom-left. Returns true if consumed. */
@@ -164,7 +247,8 @@ export class FarmInfoBoard extends Component {
             return true;
         }
         if (this.hitNode(this.btnQuest, local.x, local.y)) {
-            this.showToast('今日暂无新任务');
+            if (this.questPanel) this.questPanel.toggle();
+            else this.showToast('任务加载中…');
             return true;
         }
         return this.hitRoot(local.x, local.y);
@@ -203,13 +287,27 @@ export class FarmInfoBoard extends Component {
 
     private advanceMinute() {
         this._minutes += 1;
-        if (this._minutes >= 20 * 60) {
+        if (this._minutes >= DAY_MINUTES) {
             this._minutes = 0;
             this._day += 1;
             this._weekday = (this._weekday + 1) % 7;
             if (this._day > 28) {
                 this._day = 1;
                 this._season = (this._season + 1) % 4;
+            }
+        }
+        this.refreshClock();
+    }
+
+    private rewindMinute() {
+        this._minutes -= 1;
+        if (this._minutes < 0) {
+            this._minutes = DAY_MINUTES - 1;
+            this._day -= 1;
+            this._weekday = (this._weekday + 6) % 7;
+            if (this._day < 1) {
+                this._day = 28;
+                this._season = (this._season + 3) % 4;
             }
         }
         this.refreshClock();
@@ -228,7 +326,7 @@ export class FarmInfoBoard extends Component {
             this.timeLab.string = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
         }
         if (this.needle) {
-            const t = this._minutes / (20 * 60);
+            const t = this._minutes / DAY_MINUTES;
             const angle = 200 - t * 280;
             this.needle.setRotationFromEuler(0, 0, angle);
         }
@@ -239,7 +337,7 @@ export class FarmInfoBoard extends Component {
     private nightIntensity(hour: number, min: number): number {
         const t = hour + min / 60;
         if (t >= 6 && t < 17) return 0;
-        // Ease-in dusk so ~18:00 already reads as evening (game starts ~18:10).
+        // Ease-in dusk so ~18:00 already reads as evening.
         if (t >= 17 && t < 20) {
             const u = (t - 17) / 3;
             return Math.min(1, 0.25 + u * 0.75);
@@ -278,7 +376,7 @@ export class FarmInfoBoard extends Component {
         this.cameraFollow?.snap();
     }
 
-    private showToast(msg: string) {
+    showToast(msg: string) {
         if (!this.toastLab) return;
         this.toastLab.string = msg;
         this.toastLab.node.active = true;

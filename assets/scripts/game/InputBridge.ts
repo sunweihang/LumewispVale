@@ -8,8 +8,17 @@ export class InputBridge {
     static facingY = -1;
     /** Full-screen UI (backpack open) — block move-stick entirely. */
     static uiBlocking = false;
+    /**
+     * Fishing / exclusive pointer modes — TouchJoystick must not track at all
+     * (mouse hold must not become drag-to-move).
+     */
+    static moveLocked = false;
 
     static setMove(x: number, y: number) {
+        if (InputBridge.moveLocked) {
+            InputBridge.move.set(0, 0);
+            return;
+        }
         const lenSq = x * x + y * y;
         if (lenSq > 1) {
             const len = Math.sqrt(lenSq);
@@ -51,13 +60,22 @@ export class InputBridge {
     static infoBoardHit: ((uiX: number, uiY: number) => boolean) | null = null;
 
     /**
+     * Optional GM chip hit-test (set by GmPanel).
+     * `uiX/uiY` are UI coords with origin at bottom-left.
+     */
+    static gmUiHit: ((uiX: number, uiY: number) => boolean) | null = null;
+
+    /**
      * Bottom hotbar band / info board — drag-to-move must not start here.
      * `uiX/uiY` are UI coords with origin at bottom-left.
      */
     static isActionZone(uiX?: number, uiY?: number): boolean {
-        if (InputBridge.uiBlocking) return true;
+        if (InputBridge.moveLocked || InputBridge.uiBlocking) return true;
         if (uiY !== undefined && uiY < 260) return true;
         if (uiX !== undefined && uiY !== undefined && InputBridge.infoBoardHit?.(uiX, uiY)) {
+            return true;
+        }
+        if (uiX !== undefined && uiY !== undefined && InputBridge.gmUiHit?.(uiX, uiY)) {
             return true;
         }
         return false;

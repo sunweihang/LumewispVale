@@ -4,6 +4,7 @@ import {
     footSolidFor,
     lineClear,
     listApproachStands,
+    pointBlocked,
     PathSolid,
 } from './GridPath';
 import { InputBridge } from './InputBridge';
@@ -274,6 +275,57 @@ export class PlayerController extends Component {
             if (endD <= 20) return s;
         }
         return radial;
+    }
+
+    /**
+     * Soft weeds / bushes don't collide, but their feet often sit inside a
+     * nearby pine/rock AABB. Pick a free stand beside the foot on the caller's
+     * side so auto-walk doesn't charge into the trunk.
+     */
+    freeStandNear(
+        tx: number,
+        ty: number,
+        fromX: number,
+        fromY: number,
+        maxDist = 28,
+    ): { x: number; y: number } {
+        const hw = this.bodyWidth * 0.5;
+        const hh = this.bodyHeight * 0.5;
+        const solids = this._solids;
+        if (!pointBlocked(tx, ty, hw, hh, solids)) {
+            return { x: tx, y: ty };
+        }
+        // Fine grid so the stand hugs the weed instead of stopping a tile away.
+        const cell = 8;
+        const maxRing = Math.max(1, Math.ceil(maxDist / cell));
+        let best: { x: number; y: number; score: number } | null = null;
+        for (let r = 1; r <= maxRing; r++) {
+            for (let oy = -r; oy <= r; oy++) {
+                for (let ox = -r; ox <= r; ox++) {
+                    if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+                    const x = tx + ox * cell;
+                    const y = ty + oy * cell;
+                    if (x < this._minX || x > this._maxX || y < this._minY || y > this._maxY) {
+                        continue;
+                    }
+                    if (pointBlocked(x, y, hw, hh, solids)) continue;
+                    const dGoal = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+                    const dFrom = (x - fromX) * (x - fromX) + (y - fromY) * (y - fromY);
+                    // Prefer hugging the weed; only lightly bias toward the caller.
+                    const score = dGoal + dFrom * 0.15;
+                    if (!best || score < best.score) best = { x, y, score };
+                }
+            }
+            if (best) return { x: best.x, y: best.y };
+        }
+        // Fallback: step back toward the caller from the blocked foot.
+        const dx = fromX - tx;
+        const dy = fromY - ty;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        return {
+            x: tx + (dx / len) * Math.min(maxDist, 20),
+            y: ty + (dy / len) * Math.min(maxDist, 20),
+        };
     }
 
     /** Solids used for path / collision, optionally skipping the walk target. */
@@ -644,11 +696,18 @@ export class PlayerController extends Component {
     private isSolidName(name: string): boolean {
         return (
             name.startsWith('cottage_') ||
+            name.startsWith('home_') ||
+            name.startsWith('bld_') ||
             name.startsWith('shed') ||
+            name === 'shop' ||
+            name === 'community' ||
+            name === 'fountain' ||
+            name.startsWith('lamp_') ||
             name.startsWith('fence') ||
             name.startsWith('tree_') ||
             name.startsWith('prop_shipping') ||
             name.startsWith('prop_mailbox') ||
+            name.startsWith('prop_craftbench') ||
             name.startsWith('pond_water_') ||
             name.startsWith('pond_cliff_') ||
             name.startsWith('water_') ||

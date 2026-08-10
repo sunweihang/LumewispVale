@@ -20,10 +20,14 @@ import {
     tween,
     view,
 } from 'cc';
+import { CraftItemId, CraftRecipe, getCraftRecipes } from './CraftRecipes';
 import { FarmMaterial, FarmSystem, FarmTool } from './FarmSystem';
 import { FARM_FRAMES } from './FarmFrames';
+import { FishingMinigame } from './FishingMinigame';
+import { GmPanel } from './GmPanel';
 import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
+import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -43,11 +47,16 @@ const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }>
     seeds: { title: '种子', kind: '种子', desc: '在翻好的田地上播种' },
     can: { title: '水壶', kind: '工具', desc: '给作物浇水，促进生长' },
     axe: { title: '斧头', kind: '工具', desc: '砍伐野外的松树和橡树' },
+    rod: { title: '鱼竿', kind: '工具', desc: '在湖边或码头抛竿钓鱼' },
     parsnip: { title: '防风草', kind: '作物', desc: '刚收获的作物，可以出售或食用' },
     wood: { title: '木头', kind: '材料', desc: '砍伐树木获得，可用于建造' },
     grass: { title: '草料', kind: '材料', desc: '拔除杂草与灌木获得' },
     dirt: { title: '泥土', kind: '材料', desc: '锄地开垦时翻出的土壤' },
     stone: { title: '石头', kind: '材料', desc: '用锄头挖开石子与岩石获得' },
+    fish: { title: '鱼', kind: '食材', desc: '从湖里钓上来的鲜鱼' },
+    copper: { title: '铜矿石', kind: '矿石', desc: '矿脉商会出售的入门矿' },
+    iron: { title: '铁矿石', kind: '矿石', desc: '更坚硬的锻造材料' },
+    goldOre: { title: '金矿石', kind: '矿石', desc: '稀有闪光矿脉' },
 };
 
 const MATERIAL_FRAME_UUID: Record<FarmMaterial, string> = {
@@ -55,9 +64,22 @@ const MATERIAL_FRAME_UUID: Record<FarmMaterial, string> = {
     grass: MATERIAL_FRAMES.grass,
     dirt: MATERIAL_FRAMES.dirt,
     stone: MATERIAL_FRAMES.stone,
+    fish: MATERIAL_FRAMES.fish,
+    copper: MATERIAL_FRAMES.copper,
+    iron: MATERIAL_FRAMES.iron,
+    goldOre: MATERIAL_FRAMES.goldOre,
 };
 
-const ALL_MATERIALS: FarmMaterial[] = ['wood', 'grass', 'dirt', 'stone'];
+const ALL_MATERIALS: FarmMaterial[] = [
+    'wood',
+    'grass',
+    'dirt',
+    'stone',
+    'fish',
+    'copper',
+    'iron',
+    'goldOre',
+];
 
 /** Hotbar + tip chrome vs previous baseline (100px slots). */
 const UI_SCALE = 1.5;
@@ -109,8 +131,39 @@ const CHEST_SECTION_GAP = Math.round(36 * UI_SCALE);
 const CHEST_BTN_H = Math.round(40 * UI_SCALE);
 const CHEST_DOCK_GAP = INV_DOCK_GAP;
 
+/** Yard craftbench: recipe list panel (fixed column grid). */
+const CRAFT_PAD = Math.round(18 * UI_SCALE);
+/** Tall header so close button sits inside the parchment, not on the chrome lip. */
+const CRAFT_HEADER_H = Math.round(72 * UI_SCALE);
+const CRAFT_TITLE_H = Math.round(40 * UI_SCALE);
+const CRAFT_ROW_H = Math.round(88 * UI_SCALE);
+const CRAFT_ROW_GAP = Math.round(10 * UI_SCALE);
+/** Matches assets/textures/ui/ui-craft-btn.png */
+const CRAFT_BTN_W = 180;
+const CRAFT_BTN_H = 66;
+const CRAFT_OUT_SZ = Math.round(64 * UI_SCALE);
+/** Name column right of out icon (single-line row, like图2). */
+const CRAFT_NAME_COL_W = Math.round(128 * UI_SCALE);
+const CRAFT_COST_ICON = Math.round(36 * UI_SCALE);
+/** Fixed cost cell so every row lines up (icon + have/need). */
+const CRAFT_COST_CELL_W = Math.round(100 * UI_SCALE);
+const CRAFT_COST_SLOTS = 2;
+const CRAFT_COL_GAP = Math.round(14 * UI_SCALE);
+/** Ad chip sits at the right; progress bar stretches from costs → ad. */
+const CRAFT_AD_SZ = Math.round(52 * UI_SCALE);
+const CRAFT_BAR_H = Math.round(40 * UI_SCALE);
+/** Mock rewarded-ad watch (seconds), same cadence as crop boost. */
+const CRAFT_AD_WATCH_SEC = 1.2;
+
 function isFarmTool(id: InvItemId): id is FarmTool {
-    return id === 'hand' || id === 'hoe' || id === 'seeds' || id === 'can' || id === 'axe';
+    return (
+        id === 'hand' ||
+        id === 'hoe' ||
+        id === 'seeds' ||
+        id === 'can' ||
+        id === 'axe' ||
+        id === 'rod'
+    );
 }
 
 function isHandLockedSlot(index: number): boolean {
@@ -161,6 +214,34 @@ export class FarmHUD extends Component {
     private _chestCloseBtn: Node | null = null;
     private _takeAllBtn: Node | null = null;
 
+    /** Yard craftbench UI. */
+    private _craftOpen = false;
+    private _craftDimmer: Node | null = null;
+    private _craftPanel: Node | null = null;
+    private _craftCloseBtn: Node | null = null;
+    private _craftRows: {
+        root: Node;
+        recipe: CraftRecipe;
+        costLabs: Label[];
+        craftBtn: Node;
+        craftLab: Label;
+        btnSp: Sprite | null;
+        btnOp: UIOpacity | null;
+        progressRoot: Node;
+        barGfx: Graphics;
+        barLab: Label;
+        barW: number;
+        adBtn: Node;
+        adOp: UIOpacity | null;
+    }[] = [];
+    /** Active craft countdowns (recipe id → remaining / total). */
+    private _craftJobs = new Map<
+        string,
+        { remain: number; total: number; out: { id: CraftItemId; count: number } }
+    >();
+    /** Mock rewarded-ad boost while a craft is running. */
+    private _craftAdWait: { recipeId: string; left: number } | null = null;
+
     private _drag: {
         /** Absolute backpack index, or chest index when from === 'chest'. */
         index: number;
@@ -196,6 +277,18 @@ export class FarmHUD extends Component {
                 const takeLab = this._takeAllBtn?.getChildByName('Label')?.getComponent(Label);
                 if (takeLab) applyUiFont(takeLab);
             }
+            const craft = this._craftPanel;
+            if (craft) {
+                const titleLab = craft.getChildByName('Title')?.getComponent(Label);
+                if (titleLab) applyUiFont(titleLab);
+            }
+            for (const row of this._craftRows) {
+                if (row.craftLab) applyUiFont(row.craftLab);
+                if (row.barLab) applyUiFont(row.barLab);
+                for (const lab of row.costLabs) applyUiFont(lab);
+                const nameLab = row.root.getChildByName('Name')?.getComponent(Label);
+                if (nameLab) applyUiFont(nameLab);
+            }
         });
         input.on(Input.EventType.KEY_DOWN, this.onKey, this);
         input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
@@ -219,14 +312,16 @@ export class FarmHUD extends Component {
         input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     }
 
-    update() {
+    update(dt: number) {
         if (this._tip?.active && this._tipHideAt > 0 && Date.now() >= this._tipHideAt) {
             this.hideTip();
         }
+        this.tickCraftJobs(dt);
     }
 
     /** Wired from TouchJoystick: short tap (not drag). */
     handleTap(uiX: number, uiY: number) {
+        if (this.node.getComponent(FishingMinigame)?.isOpen) return;
         if (this._suppressTap) {
             this._suppressTap = false;
             return;
@@ -243,6 +338,19 @@ export class FarmHUD extends Component {
             if (this.hitHotbar(uiX, uiY, true)) return;
             if (this.hitChestPanel(uiX, uiY)) return;
             this.setChestOpen(false);
+            return;
+        }
+        if (this._craftOpen) {
+            if (
+                this.hitCraftClose(uiX, uiY) ||
+                this.hitCraftAd(uiX, uiY) ||
+                this.hitCraftRow(uiX, uiY)
+            ) {
+                return;
+            }
+            if (this.hitHotbar(uiX, uiY, true)) return;
+            if (this.hitCraftPanel(uiX, uiY)) return;
+            this.setCraftOpen(false);
             return;
         }
         if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
@@ -276,6 +384,7 @@ export class FarmHUD extends Component {
             { id: 'seeds', count: Math.max(1, this.farm?.seeds ?? 12) },
             { id: 'can', count: 1 },
             { id: 'axe', count: 1 },
+            { id: 'rod', count: 1 },
         ];
         starter.forEach((s, i) => {
             this._backpack[HOTBAR_BASE + i] = s;
@@ -317,6 +426,7 @@ export class FarmHUD extends Component {
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         if (this._chestOpen) this.refreshChestIcons();
+        if (this._craftOpen) this.refreshCraftRows();
     }
 
     /** Mirror an absolute farm counter into the bag (0 removes the stack). */
@@ -475,6 +585,7 @@ export class FarmHUD extends Component {
         this.buildBagButton(bar);
         this.buildBagPanel();
         this.buildChestPanel();
+        this.buildCraftPanel();
         this.buildGhost();
         this.buildTip();
 
@@ -482,13 +593,43 @@ export class FarmHUD extends Component {
         this.farm?.onInvChange(() => this.syncFromFarm());
         this.farm?.onLootFly((id, count, wx, wy) => this.playLootFly(id, count, wx, wy));
         this.farm?.onChestOpen(() => this.setChestOpen(true));
+        this.farm?.onCraftOpen(() => this.setCraftOpen(true));
         this.buildLootFxRoot();
         this.syncFromFarm();
         this.refreshHotbarIcons();
         this.refreshSelection();
         this.setBagOpen(false);
         this.setChestOpen(false);
+        this.setCraftOpen(false);
         this.orderLayers();
+    }
+
+    /** Rebuild craft rows after Luban tables load. */
+    reloadCraftRecipes() {
+        if (this._craftPanel?.isValid) this._craftPanel.destroy();
+        if (this._craftDimmer?.isValid) this._craftDimmer.destroy();
+        if (this._craftCloseBtn?.isValid) this._craftCloseBtn.destroy();
+        this._craftPanel = null;
+        this._craftDimmer = null;
+        this._craftCloseBtn = null;
+        this._craftRows = [];
+        this.buildCraftPanel();
+        this.setCraftOpen(false);
+        this.orderLayers();
+    }
+
+    openCraftPanel() {
+        this.setCraftOpen(true);
+    }
+
+    openBagPanel() {
+        this.setBagOpen(true);
+    }
+
+    private _quests: QuestSystem | null = null;
+
+    bindQuests(quests: QuestSystem | null) {
+        this._quests = quests;
     }
 
     /** Dimmer < panels < hotbar < tip < drag ghost < loot fly */
@@ -498,6 +639,8 @@ export class FarmHUD extends Component {
             this._panel,
             this._chestDimmer,
             this._chestPanel,
+            this._craftDimmer,
+            this._craftPanel,
             this._bar,
             this._tip,
             this._ghost,
@@ -765,43 +908,51 @@ export class FarmHUD extends Component {
         }
     }
 
-    private buildCloseButton(panel: Node, panelW: number, panelH: number) {
-        const canvas = this.node;
-        const btn = new Node('CloseBtn');
-        btn.layer = canvas.layer;
-        btn.setParent(panel);
+    /** Shared corner placement for bag / chest / craft close buttons. */
+    private placePanelCloseButton(btn: Node, panelW: number, panelH: number) {
         const pad = Math.round(14 * UI_SCALE);
         const hit = Math.round(CLOSE_BTN * 1.35);
         btn.setPosition(panelW * 0.5 - pad - hit * 0.5, panelH * 0.5 - pad - hit * 0.5, 0);
         btn.addComponent(UITransform).setContentSize(hit, hit);
+    }
 
+    private fillPanelCloseVisual(btn: Node, layer: number) {
         if (this._frames.close) {
             const icon = new Node('Icon');
-            icon.layer = canvas.layer;
+            icon.layer = layer;
             icon.setParent(btn);
             icon.addComponent(UITransform).setContentSize(CLOSE_BTN, CLOSE_BTN);
             const sp = icon.addComponent(Sprite);
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
             sp.spriteFrame = this._frames.close;
-        } else {
-            const g = btn.addComponent(Graphics);
-            const half = CLOSE_BTN * 0.5;
-            g.fillColor = new Color(186, 110, 36, 255);
-            g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-            g.fill();
-            g.strokeColor = new Color(54, 30, 14, 255);
-            g.lineWidth = Math.round(4 * UI_SCALE);
-            g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-            g.stroke();
-            g.strokeColor = new Color(72, 42, 22, 255);
-            g.lineWidth = Math.round(5 * UI_SCALE);
-            const m = Math.round(14 * UI_SCALE);
-            g.moveTo(-m, m);
-            g.lineTo(m, -m);
-            g.moveTo(-m, -m);
-            g.lineTo(m, m);
-            g.stroke();
+            return;
         }
+        const g = btn.addComponent(Graphics);
+        const half = CLOSE_BTN * 0.5;
+        g.fillColor = new Color(186, 110, 36, 255);
+        g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
+        g.fill();
+        g.strokeColor = new Color(54, 30, 14, 255);
+        g.lineWidth = Math.round(4 * UI_SCALE);
+        g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
+        g.stroke();
+        g.strokeColor = new Color(72, 42, 22, 255);
+        g.lineWidth = Math.round(5 * UI_SCALE);
+        const m = Math.round(14 * UI_SCALE);
+        g.moveTo(-m, m);
+        g.lineTo(m, -m);
+        g.moveTo(-m, -m);
+        g.lineTo(m, m);
+        g.stroke();
+    }
+
+    private buildCloseButton(panel: Node, panelW: number, panelH: number) {
+        const canvas = this.node;
+        const btn = new Node('CloseBtn');
+        btn.layer = canvas.layer;
+        btn.setParent(panel);
+        this.placePanelCloseButton(btn, panelW, panelH);
+        this.fillPanelCloseVisual(btn, canvas.layer);
         this._closeBtn = btn;
     }
 
@@ -957,18 +1108,20 @@ export class FarmHUD extends Component {
 
     private toggleBag() {
         if (this._chestOpen) this.setChestOpen(false);
+        if (this._craftOpen) this.setCraftOpen(false);
         this.setBagOpen(!this._bagOpen);
     }
 
     private setBagOpen(open: boolean) {
         this._bagOpen = open;
         if (open && this._chestOpen) this.setChestOpen(false);
-        InputBridge.uiBlocking = open || this._chestOpen;
+        if (open && this._craftOpen) this.setCraftOpen(false);
+        InputBridge.uiBlocking = open || this._chestOpen || this._craftOpen;
         if (this._dimmer) this._dimmer.active = open;
         if (this._panel) this._panel.active = open;
         // Unified bag chrome covers the standalone hotbar plate + bag tab.
-        if (this._barBg) this._barBg.active = !open && !this._chestOpen;
-        if (this._bagBtn) this._bagBtn.active = !open && !this._chestOpen;
+        if (this._barBg) this._barBg.active = !open && !this._chestOpen && !this._craftOpen;
+        if (this._bagBtn) this._bagBtn.active = !open && !this._chestOpen && !this._craftOpen;
         if (this._closeBtn) this._closeBtn.active = open;
         if (!open) this.cancelDrag();
         this.refreshBagBtn();
@@ -1177,30 +1330,8 @@ export class FarmHUD extends Component {
         const btn = new Node('CloseBtn');
         btn.layer = panel.layer;
         btn.setParent(panel);
-        const pad = Math.round(14 * UI_SCALE);
-        // Larger hit plate than the icon so taps register reliably.
-        const hit = Math.round(CLOSE_BTN * 1.35);
-        btn.setPosition(panelW * 0.5 - pad - hit * 0.5, panelH * 0.5 - pad - hit * 0.5, 0);
-        btn.addComponent(UITransform).setContentSize(hit, hit);
-        if (this._frames.close) {
-            const icon = new Node('Icon');
-            icon.layer = panel.layer;
-            icon.setParent(btn);
-            icon.addComponent(UITransform).setContentSize(CLOSE_BTN, CLOSE_BTN);
-            const sp = icon.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.spriteFrame = this._frames.close;
-        } else {
-            const g = btn.addComponent(Graphics);
-            const half = CLOSE_BTN * 0.5;
-            g.fillColor = new Color(186, 110, 36, 255);
-            g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-            g.fill();
-            g.strokeColor = new Color(54, 30, 14, 255);
-            g.lineWidth = Math.round(4 * UI_SCALE);
-            g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-            g.stroke();
-        }
+        this.placePanelCloseButton(btn, panelW, panelH);
+        this.fillPanelCloseVisual(btn, panel.layer);
         this._chestCloseBtn = btn;
     }
 
@@ -1248,14 +1379,15 @@ export class FarmHUD extends Component {
     private setChestOpen(open: boolean) {
         this._chestOpen = open;
         if (open && this._bagOpen) this.setBagOpen(false);
-        InputBridge.uiBlocking = open || this._bagOpen;
+        if (open && this._craftOpen) this.setCraftOpen(false);
+        InputBridge.uiBlocking = open || this._bagOpen || this._craftOpen;
         if (this._chestDimmer) this._chestDimmer.active = open;
         if (this._chestPanel) this._chestPanel.active = open;
         if (this._chestCloseBtn) this._chestCloseBtn.active = open;
         if (this._takeAllBtn) this._takeAllBtn.active = open;
         // Hide standalone hotbar plate + bag tab; keep slot icons so they sit in the dock.
-        if (this._barBg) this._barBg.active = !open && !this._bagOpen;
-        if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen;
+        if (this._barBg) this._barBg.active = !open && !this._bagOpen && !this._craftOpen;
+        if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen && !this._craftOpen;
         if (this._bar) this._bar.active = true;
         if (!open) this.cancelDrag();
         if (open) {
@@ -1266,6 +1398,613 @@ export class FarmHUD extends Component {
             this.hideTip();
             this.orderLayers();
         }
+    }
+
+    private buildCraftPanel() {
+        const canvas = this.node;
+        const dimmer = new Node('FarmCraftDimmer');
+        dimmer.layer = canvas.layer;
+        dimmer.setParent(canvas);
+        const vis = view.getVisibleSize();
+        dimmer.addComponent(UITransform).setContentSize(vis.width * 2, vis.height * 2);
+        const dG = dimmer.addComponent(Graphics);
+        dG.fillColor = new Color(0, 0, 0, 150);
+        dG.rect(-vis.width, -vis.height, vis.width * 2, vis.height * 2);
+        dG.fill();
+        this._craftDimmer = dimmer;
+
+        const recipes = getCraftRecipes();
+        const n = Math.max(1, recipes.length);
+        const listH = n * CRAFT_ROW_H + Math.max(0, n - 1) * CRAFT_ROW_GAP;
+        // out | name | costs | craft btn (→ progress+ad while busy) — single-line like图2
+        const midW =
+            CRAFT_NAME_COL_W + CRAFT_COL_GAP + CRAFT_COST_SLOTS * CRAFT_COST_CELL_W;
+        const panelW = Math.max(
+            BAR_BG_W + Math.round(48 * UI_SCALE),
+            CRAFT_PAD * 2 + CRAFT_OUT_SZ + CRAFT_COL_GAP + midW + CRAFT_COL_GAP + CRAFT_BTN_W,
+        );
+        const panelH = CRAFT_PAD + CRAFT_HEADER_H + Math.round(8 * UI_SCALE) + listH + CRAFT_PAD;
+
+        const panel = new Node('FarmCraftPanel');
+        panel.layer = canvas.layer;
+        panel.setParent(canvas);
+        // Keep the panel body above the hotbar; clamp so the header/close stay on-screen.
+        const panelBottom = BAR_Y + BAR_H * 0.5 + Math.round(18 * UI_SCALE);
+        let panelY = panelBottom + panelH * 0.5;
+        const maxTop = view.getVisibleSize().height * 0.5 - Math.round(24 * UI_SCALE);
+        const top = panelY + panelH * 0.5;
+        if (top > maxTop) panelY -= top - maxTop;
+        panel.setPosition(0, panelY, 0);
+        panel.addComponent(UITransform).setContentSize(panelW, panelH);
+        this._craftPanel = panel;
+
+        const chrome = new Node('Chrome');
+        chrome.layer = canvas.layer;
+        chrome.setParent(panel);
+        chrome.addComponent(UITransform).setContentSize(panelW, panelH);
+        const g = chrome.addComponent(Graphics);
+        this.drawCraftChrome(g, panelW, panelH);
+
+        const headerTop = panelH * 0.5 - CRAFT_PAD;
+        const titleY = headerTop - CRAFT_HEADER_H * 0.5;
+        const titleN = new Node('Title');
+        titleN.layer = canvas.layer;
+        titleN.setParent(panel);
+        titleN.setPosition(0, titleY, 0);
+        // Leave side gutters so title never sits under the close hit plate.
+        const titleW = panelW - Math.round(CLOSE_BTN * 2.8);
+        titleN.addComponent(UITransform).setContentSize(titleW, CRAFT_TITLE_H);
+        const title = titleN.addComponent(Label);
+        title.string = '制作台';
+        title.horizontalAlign = Label.HorizontalAlign.CENTER;
+        title.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(title, {
+            size: Math.round(28 * UI_SCALE),
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+        });
+
+        this.buildCraftCloseButton(panel, panelW, panelH);
+
+        const listTop = headerTop - CRAFT_HEADER_H - Math.round(6 * UI_SCALE);
+        this._craftRows = [];
+        recipes.forEach((recipe, i) => {
+            const rowY = listTop - CRAFT_ROW_H * 0.5 - i * (CRAFT_ROW_H + CRAFT_ROW_GAP);
+            this._craftRows.push(this.buildCraftRow(panel, panelW, recipe, rowY));
+        });
+
+        // Close above rows / chrome so it never draws under the first recipe plate.
+        if (this._craftCloseBtn?.isValid) {
+            this._craftCloseBtn.setSiblingIndex(panel.children.length - 1);
+        }
+    }
+
+    private drawCraftChrome(g: Graphics, w: number, h: number) {
+        g.clear();
+        const x0 = -w * 0.5;
+        const y0 = -h * 0.5;
+        const r = Math.round(18 * UI_SCALE);
+        g.fillColor = new Color(176, 110, 48, 255);
+        g.roundRect(x0, y0, w, h, r);
+        g.fill();
+        g.fillColor = new Color(120, 72, 32, 255);
+        g.roundRect(x0 + 6, y0 + 6, w - 12, h - 12, r - 4);
+        g.fill();
+        g.fillColor = new Color(232, 198, 140, 255);
+        g.roundRect(x0 + 14, y0 + 14, w - 28, h - 28, r - 8);
+        g.fill();
+        g.strokeColor = new Color(60, 36, 18, 255);
+        g.lineWidth = Math.round(4 * UI_SCALE);
+        g.roundRect(x0, y0, w, h, r);
+        g.stroke();
+        g.strokeColor = new Color(210, 150, 70, 255);
+        g.lineWidth = Math.round(3 * UI_SCALE);
+        g.roundRect(x0 + 8, y0 + 8, w - 16, h - 16, r - 5);
+        g.stroke();
+    }
+
+    private buildCraftCloseButton(panel: Node, panelW: number, panelH: number) {
+        const btn = new Node('CloseBtn');
+        btn.layer = panel.layer;
+        btn.setParent(panel);
+        this.placePanelCloseButton(btn, panelW, panelH);
+        this.fillPanelCloseVisual(btn, panel.layer);
+        this._craftCloseBtn = btn;
+    }
+
+    private buildCraftRow(
+        panel: Node,
+        panelW: number,
+        recipe: CraftRecipe,
+        rowY: number,
+    ): {
+        root: Node;
+        recipe: CraftRecipe;
+        costLabs: Label[];
+        craftBtn: Node;
+        craftLab: Label;
+        btnSp: Sprite | null;
+        btnOp: UIOpacity | null;
+        progressRoot: Node;
+        barGfx: Graphics;
+        barLab: Label;
+        barW: number;
+        adBtn: Node;
+        adOp: UIOpacity | null;
+    } {
+        const rowW = panelW - CRAFT_PAD * 2;
+        const root = new Node(`Craft_${recipe.id}`);
+        root.layer = panel.layer;
+        root.setParent(panel);
+        root.setPosition(0, rowY, 0);
+        root.addComponent(UITransform).setContentSize(rowW, CRAFT_ROW_H);
+
+        const plate = root.addComponent(Graphics);
+        const rw = rowW * 0.5;
+        const rh = CRAFT_ROW_H * 0.5;
+        plate.fillColor = new Color(210, 168, 112, 255);
+        plate.roundRect(-rw, -rh, rowW, CRAFT_ROW_H, Math.round(12 * UI_SCALE));
+        plate.fill();
+        plate.strokeColor = new Color(120, 72, 32, 255);
+        plate.lineWidth = Math.round(2 * UI_SCALE);
+        plate.roundRect(-rw, -rh, rowW, CRAFT_ROW_H, Math.round(12 * UI_SCALE));
+        plate.stroke();
+
+        // Idle: [out] [name] [cost…] …… [制作]
+        // Busy: [out] [name] [cost…] [========进度条========][广告]
+        const left = -rowW * 0.5 + Math.round(12 * UI_SCALE);
+        const right = rowW * 0.5 - Math.round(12 * UI_SCALE);
+        const outX = left + CRAFT_OUT_SZ * 0.5;
+        const actionLeft = right - CRAFT_BTN_W;
+        const btnX = actionLeft + CRAFT_BTN_W * 0.5;
+        const nameLeft = outX + CRAFT_OUT_SZ * 0.5 + CRAFT_COL_GAP;
+        const costOrigin = nameLeft + CRAFT_NAME_COL_W + CRAFT_COL_GAP;
+        const costRight = costOrigin + CRAFT_COST_SLOTS * CRAFT_COST_CELL_W;
+        const adX = right - CRAFT_AD_SZ * 0.5;
+        const barLeft = costRight + CRAFT_COL_GAP;
+        const barRight = adX - CRAFT_AD_SZ * 0.5 - CRAFT_COL_GAP;
+        const barW = Math.max(CRAFT_BTN_W, Math.round(barRight - barLeft));
+        const barX = (barLeft + barRight) * 0.5;
+
+        const outRoot = new Node('Out');
+        outRoot.layer = panel.layer;
+        outRoot.setParent(root);
+        outRoot.setPosition(outX, 0, 0);
+        outRoot.addComponent(UITransform).setContentSize(CRAFT_OUT_SZ, CRAFT_OUT_SZ);
+        this.addSlotPlate(outRoot, Math.round(CRAFT_OUT_SZ * 0.95));
+        this.addIcon(outRoot, this.frameFor(recipe.out.id), Math.round(CRAFT_OUT_SZ * 0.7));
+        const outCount = this.addCountLabel(outRoot, CRAFT_OUT_SZ);
+        if (outCount) {
+            outCount.string = recipe.out.count > 1 ? String(recipe.out.count) : '';
+            outCount.node.active = recipe.out.count > 1;
+        }
+
+        const nameH = Math.round(32 * UI_SCALE);
+        const nameN = new Node('Name');
+        nameN.layer = panel.layer;
+        nameN.setParent(root);
+        nameN.setPosition(nameLeft + CRAFT_NAME_COL_W * 0.5, 0, 0);
+        nameN.addComponent(UITransform).setContentSize(CRAFT_NAME_COL_W, nameH);
+        const nameLab = nameN.addComponent(Label);
+        nameLab.string = recipe.name;
+        nameLab.horizontalAlign = Label.HorizontalAlign.LEFT;
+        nameLab.verticalAlign = Label.VerticalAlign.CENTER;
+        nameLab.overflow = Label.Overflow.CLAMP;
+        styleUiLabel(nameLab, {
+            size: Math.round(22 * UI_SCALE),
+            color: new Color(60, 40, 22, 255),
+            outline: false,
+        });
+
+        const costLabs: Label[] = [];
+        for (let i = 0; i < CRAFT_COST_SLOTS; i++) {
+            const cell = new Node(`Cost_${i}`);
+            cell.layer = panel.layer;
+            cell.setParent(root);
+            const cellX = costOrigin + i * CRAFT_COST_CELL_W + CRAFT_COST_CELL_W * 0.5;
+            cell.setPosition(cellX, 0, 0);
+            cell.addComponent(UITransform).setContentSize(CRAFT_COST_CELL_W, CRAFT_COST_ICON + 4);
+
+            const cost = recipe.cost[i];
+            if (!cost) {
+                cell.active = false;
+                continue;
+            }
+
+            const iconN = new Node('Icon');
+            iconN.layer = panel.layer;
+            iconN.setParent(cell);
+            iconN.setPosition(-CRAFT_COST_CELL_W * 0.5 + CRAFT_COST_ICON * 0.5 + 2, 0, 0);
+            iconN.addComponent(UITransform).setContentSize(CRAFT_COST_ICON, CRAFT_COST_ICON);
+            this.addIcon(iconN, this.frameFor(cost.id), Math.round(CRAFT_COST_ICON * 0.92));
+
+            const labN = new Node('Need');
+            labN.layer = panel.layer;
+            labN.setParent(cell);
+            const labW = CRAFT_COST_CELL_W - CRAFT_COST_ICON - 8;
+            labN.setPosition(CRAFT_COST_CELL_W * 0.5 - labW * 0.5 - 2, 0, 0);
+            labN.addComponent(UITransform).setContentSize(labW, CRAFT_COST_ICON);
+            const lab = labN.addComponent(Label);
+            lab.string = `0/${cost.count}`;
+            lab.horizontalAlign = Label.HorizontalAlign.LEFT;
+            lab.verticalAlign = Label.VerticalAlign.CENTER;
+            styleUiLabel(lab, {
+                size: Math.round(18 * UI_SCALE),
+                color: new Color(70, 48, 28, 255),
+                outline: false,
+            });
+            costLabs.push(lab);
+        }
+
+        const btn = new Node('CraftBtn');
+        btn.layer = panel.layer;
+        btn.setParent(root);
+        btn.setPosition(btnX, 0, 0);
+        btn.addComponent(UITransform).setContentSize(CRAFT_BTN_W, CRAFT_BTN_H);
+        let btnSp: Sprite | null = null;
+        let btnOp: UIOpacity | null = null;
+        if (this._frames.craftBtn) {
+            btnSp = btn.addComponent(Sprite);
+            btnSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            btnSp.trim = false;
+            btnSp.spriteFrame = this._frames.craftBtn;
+            btnOp = btn.addComponent(UIOpacity);
+            btnOp.opacity = 255;
+        } else {
+            const g = btn.addComponent(Graphics);
+            this.paintCraftBtnFallback(g, true);
+        }
+
+        const btnLabN = new Node('Label');
+        btnLabN.layer = panel.layer;
+        btnLabN.setParent(btn);
+        btnLabN.addComponent(UITransform).setContentSize(CRAFT_BTN_W, CRAFT_BTN_H);
+        const craftLab = btnLabN.addComponent(Label);
+        craftLab.string = '制作';
+        craftLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        craftLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(craftLab, {
+            size: Math.round(24 * UI_SCALE),
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+        });
+
+        // Progress stretches from after material costs to just before the ad chip.
+        const progressRoot = new Node('Progress');
+        progressRoot.layer = panel.layer;
+        progressRoot.setParent(root);
+        progressRoot.setPosition(barX, 0, 0);
+        progressRoot.addComponent(UITransform).setContentSize(barW, CRAFT_BAR_H);
+        progressRoot.active = false;
+        const barGfx = progressRoot.addComponent(Graphics);
+        this.paintCraftProgress(barGfx, barW, 0);
+
+        const barLabN = new Node('BarLabel');
+        barLabN.layer = panel.layer;
+        barLabN.setParent(progressRoot);
+        barLabN.addComponent(UITransform).setContentSize(barW, CRAFT_BAR_H);
+        const barLab = barLabN.addComponent(Label);
+        barLab.string = '';
+        barLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        barLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(barLab, {
+            size: Math.round(18 * UI_SCALE),
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+        });
+
+        const adBtn = new Node('AdBtn');
+        adBtn.layer = panel.layer;
+        adBtn.setParent(root);
+        adBtn.setPosition(adX, 0, 0);
+        adBtn.addComponent(UITransform).setContentSize(CRAFT_AD_SZ, CRAFT_AD_SZ);
+        adBtn.active = false;
+        let adOp: UIOpacity | null = null;
+        if (this._frames.adVideo) {
+            const sp = adBtn.addComponent(Sprite);
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            sp.trim = false;
+            sp.spriteFrame = this._frames.adVideo;
+            adOp = adBtn.addComponent(UIOpacity);
+            adOp.opacity = 255;
+        } else {
+            const g = adBtn.addComponent(Graphics);
+            const half = CRAFT_AD_SZ * 0.5;
+            g.fillColor = new Color(186, 110, 36, 255);
+            g.roundRect(-half, -half, CRAFT_AD_SZ, CRAFT_AD_SZ, Math.round(10 * UI_SCALE));
+            g.fill();
+        }
+
+        return {
+            root,
+            recipe,
+            costLabs,
+            craftBtn: btn,
+            craftLab,
+            btnSp,
+            btnOp,
+            progressRoot,
+            barGfx,
+            barLab,
+            barW,
+            adBtn,
+            adOp,
+        };
+    }
+
+    private paintCraftProgress(g: Graphics, w: number, t01: number) {
+        g.clear();
+        const h = CRAFT_BAR_H;
+        const x0 = -w * 0.5;
+        const y0 = -h * 0.5;
+        const r = Math.round(10 * UI_SCALE);
+        // Track
+        g.fillColor = new Color(120, 72, 32, 255);
+        g.roundRect(x0, y0, w, h, r);
+        g.fill();
+        g.fillColor = new Color(70, 44, 22, 255);
+        g.roundRect(x0 + 3, y0 + 3, w - 6, h - 6, Math.max(4, r - 4));
+        g.fill();
+        // Fill
+        const innerW = w - 8;
+        const fillW = Math.max(0, Math.min(innerW, Math.round(innerW * t01)));
+        if (fillW > 0) {
+            g.fillColor = new Color(210, 150, 55, 255);
+            g.roundRect(x0 + 4, y0 + 4, fillW, h - 8, Math.max(3, r - 5));
+            g.fill();
+            g.fillColor = new Color(236, 190, 90, 255);
+            g.roundRect(x0 + 4, y0 + 4, fillW, Math.max(4, (h - 8) * 0.35), Math.max(2, r - 6));
+            g.fill();
+        }
+        g.strokeColor = new Color(54, 30, 14, 255);
+        g.lineWidth = Math.round(2 * UI_SCALE);
+        g.roundRect(x0, y0, w, h, r);
+        g.stroke();
+    }
+
+    /** Fallback if AI craftBtn frame failed to load. */
+    private paintCraftBtnFallback(g: Graphics, can: boolean) {
+        g.clear();
+        const bw = CRAFT_BTN_W * 0.5;
+        const bh = CRAFT_BTN_H * 0.5;
+        const fill = can ? new Color(120, 72, 32, 255) : new Color(110, 96, 78, 255);
+        const inner = can ? new Color(186, 110, 36, 255) : new Color(150, 130, 100, 255);
+        g.fillColor = fill;
+        g.roundRect(-bw, -bh, CRAFT_BTN_W, CRAFT_BTN_H, Math.round(12 * UI_SCALE));
+        g.fill();
+        g.fillColor = inner;
+        g.roundRect(-bw + 4, -bh + 4, CRAFT_BTN_W - 8, CRAFT_BTN_H - 8, Math.round(10 * UI_SCALE));
+        g.fill();
+        g.strokeColor = new Color(54, 30, 14, 255);
+        g.lineWidth = Math.round(3 * UI_SCALE);
+        g.roundRect(-bw, -bh, CRAFT_BTN_W, CRAFT_BTN_H, Math.round(12 * UI_SCALE));
+        g.stroke();
+    }
+
+    private setCraftOpen(open: boolean) {
+        this._craftOpen = open;
+        if (open && this._bagOpen) this.setBagOpen(false);
+        if (open && this._chestOpen) this.setChestOpen(false);
+        InputBridge.uiBlocking = open || this._bagOpen || this._chestOpen;
+        if (this._craftDimmer) this._craftDimmer.active = open;
+        if (this._craftPanel) this._craftPanel.active = open;
+        if (this._craftCloseBtn) this._craftCloseBtn.active = open;
+        if (this._barBg) this._barBg.active = !open && !this._bagOpen && !this._chestOpen;
+        if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen && !this._chestOpen;
+        if (this._bar) this._bar.active = true;
+        if (!open) return;
+        this.syncFromFarm();
+        this.refreshCraftRows();
+        this.refreshHotbarIcons();
+        this.refreshSelection();
+        this.hideTip();
+        this.orderLayers();
+    }
+
+    private bagCount(id: CraftItemId): number {
+        return this._backpack.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
+    }
+
+    private canAfford(recipe: CraftRecipe): boolean {
+        return recipe.cost.every((c) => this.bagCount(c.id) >= c.count);
+    }
+
+    private consumeFromBag(id: CraftItemId, count: number): boolean {
+        let left = count;
+        for (let i = 0; i < this._backpack.length && left > 0; i++) {
+            const s = this._backpack[i];
+            if (!s || s.id !== id) continue;
+            if (isHandLockedSlot(i) || s.id === 'hand') continue;
+            const take = Math.min(left, s.count);
+            s.count -= take;
+            left -= take;
+            if (s.count <= 0) this._backpack[i] = null;
+        }
+        this.ensureHandSlot();
+        return left <= 0;
+    }
+
+    private refreshCraftRows() {
+        for (const row of this._craftRows) {
+            const job = this._craftJobs.get(row.recipe.id);
+            const busy = !!job;
+            const can = !busy && this.canAfford(row.recipe);
+            row.recipe.cost.forEach((c, i) => {
+                const lab = row.costLabs[i];
+                if (!lab) return;
+                const have = this.bagCount(c.id);
+                lab.string = `${have}/${c.count}`;
+                lab.color = have >= c.count ? new Color(50, 110, 45, 255) : new Color(150, 55, 40, 255);
+            });
+
+            row.craftBtn.active = !busy;
+            row.progressRoot.active = busy;
+            row.adBtn.active = busy;
+
+            if (busy && job) {
+                const t01 = 1 - Math.max(0, job.remain) / Math.max(0.001, job.total);
+                this.paintCraftProgress(row.barGfx, row.barW, t01);
+                row.barLab.string = `${Math.max(0, Math.ceil(job.remain))}秒`;
+                if (row.adOp) row.adOp.opacity = this._craftAdWait ? 120 : 255;
+            } else {
+                row.craftLab.string = '制作';
+                if (row.btnOp) row.btnOp.opacity = can ? 255 : 140;
+                if (row.btnSp) {
+                    row.btnSp.color = can
+                        ? new Color(255, 255, 255, 255)
+                        : new Color(180, 180, 180, 255);
+                }
+                row.craftLab.color = can
+                    ? new Color(255, 244, 214, 255)
+                    : new Color(220, 210, 190, 160);
+            }
+        }
+    }
+
+    private tryCraftRecipe(recipe: CraftRecipe) {
+        if (this._craftJobs.has(recipe.id)) return;
+        if (!this.canAfford(recipe)) return;
+        for (const c of recipe.cost) {
+            if (!this.consumeFromBag(c.id, c.count)) {
+                this.refreshCraftRows();
+                return;
+            }
+        }
+        const total = Math.max(1, recipe.craftSeconds);
+        this._craftJobs.set(recipe.id, {
+            remain: total,
+            total,
+            out: { id: recipe.out.id, count: recipe.out.count },
+        });
+        this.syncFarmFromBag();
+        this.refreshCraftRows();
+        this.refreshHotbarIcons();
+        this.refreshInvIcons();
+        this.refreshSelection();
+    }
+
+    private tickCraftJobs(dt: number) {
+        if (this._craftAdWait) {
+            this._craftAdWait.left -= dt;
+            if (this._craftAdWait.left <= 0) {
+                const id = this._craftAdWait.recipeId;
+                this._craftAdWait = null;
+                this.finishCraftAdBoost(id);
+            }
+        }
+
+        if (!this._craftJobs.size) return;
+        let changed = false;
+        const done: string[] = [];
+        for (const [id, job] of this._craftJobs) {
+            if (this._craftAdWait?.recipeId === id) continue;
+            job.remain -= dt;
+            changed = true;
+            if (job.remain <= 0) done.push(id);
+        }
+        for (const id of done) this.completeCraftJob(id);
+        if ((changed || done.length) && this._craftOpen) this.refreshCraftRows();
+    }
+
+    private completeCraftJob(recipeId: string) {
+        const job = this._craftJobs.get(recipeId);
+        if (!job) return;
+        this._craftJobs.delete(recipeId);
+        if (this._craftAdWait?.recipeId === recipeId) this._craftAdWait = null;
+        this.mergeOrPlaceInBag({ id: job.out.id, count: job.out.count });
+        this.syncFarmFromBag();
+        this._quests?.noteCraft(recipeId, 1);
+        this.refreshHotbarIcons();
+        this.refreshInvIcons();
+        this.refreshSelection();
+        this.refreshCraftRows();
+    }
+
+    private requestCraftAdBoost(recipeId: string) {
+        if (this._craftAdWait) return;
+        if (!this._craftJobs.has(recipeId)) return;
+        this._craftAdWait = { recipeId, left: CRAFT_AD_WATCH_SEC };
+        this.refreshCraftRows();
+    }
+
+    private finishCraftAdBoost(recipeId: string) {
+        const job = this._craftJobs.get(recipeId);
+        if (!job) return;
+        job.remain = 0;
+        this.completeCraftJob(recipeId);
+    }
+
+    private hitCraftClose(uiX: number, uiY: number): boolean {
+        if (!this._craftCloseBtn?.isValid || !this._craftCloseBtn.active || !this._craftPanel?.isValid) {
+            return false;
+        }
+        const ui = this._craftCloseBtn.getComponent(UITransform);
+        if (!ui) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const bx = this._craftPanel.position.x + this._craftCloseBtn.position.x;
+        const by = this._craftPanel.position.y + this._craftCloseBtn.position.y;
+        if (Math.abs(x - bx) <= ui.contentSize.width * 0.5 && Math.abs(y - by) <= ui.contentSize.height * 0.5) {
+            this.setCraftOpen(false);
+            return true;
+        }
+        return false;
+    }
+
+    private hitCraftPanel(uiX: number, uiY: number): boolean {
+        if (!this._craftPanel?.isValid || !this._craftPanel.active) return false;
+        const ui = this._craftPanel.getComponent(UITransform);
+        if (!ui) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const p = this._craftPanel.position;
+        return (
+            Math.abs(x - p.x) <= ui.contentSize.width * 0.5 &&
+            Math.abs(y - p.y) <= ui.contentSize.height * 0.5
+        );
+    }
+
+    private hitCraftRow(uiX: number, uiY: number): boolean {
+        if (!this._craftOpen || !this._craftPanel?.isValid) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        for (const row of this._craftRows) {
+            if (this._craftJobs.has(row.recipe.id)) continue;
+            const btn = row.craftBtn;
+            const ui = btn.getComponent(UITransform);
+            if (!ui) continue;
+            const bx =
+                this._craftPanel.position.x + row.root.position.x + btn.position.x;
+            const by =
+                this._craftPanel.position.y + row.root.position.y + btn.position.y;
+            if (
+                Math.abs(x - bx) <= ui.contentSize.width * 0.5 &&
+                Math.abs(y - by) <= ui.contentSize.height * 0.5
+            ) {
+                this.tryCraftRecipe(row.recipe);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hitCraftAd(uiX: number, uiY: number): boolean {
+        if (!this._craftOpen || !this._craftPanel?.isValid) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        for (const row of this._craftRows) {
+            if (!row.adBtn.active || !this._craftJobs.has(row.recipe.id)) continue;
+            const ui = row.adBtn.getComponent(UITransform);
+            if (!ui) continue;
+            const bx =
+                this._craftPanel.position.x + row.root.position.x + row.adBtn.position.x;
+            const by =
+                this._craftPanel.position.y + row.root.position.y + row.adBtn.position.y;
+            if (
+                Math.abs(x - bx) <= ui.contentSize.width * 0.5 &&
+                Math.abs(y - by) <= ui.contentSize.height * 0.5
+            ) {
+                this.requestCraftAdBoost(row.recipe.id);
+                return true;
+            }
+        }
+        return false;
     }
 
     private refreshChestIcons() {
@@ -1838,6 +2577,14 @@ export class FarmHUD extends Component {
                 if (this.hitChestClose(uiX, uiY) || this.hitTakeAll(uiX, uiY)) {
                     this._suppressTap = true;
                 }
+            } else if (this._craftOpen) {
+                if (
+                    this.hitCraftClose(uiX, uiY) ||
+                    this.hitCraftAd(uiX, uiY) ||
+                    this.hitCraftRow(uiX, uiY)
+                ) {
+                    this._suppressTap = true;
+                }
             } else if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
                 this.setBagOpen(false);
                 this._suppressTap = true;
@@ -1937,11 +2684,14 @@ export class FarmHUD extends Component {
         if (e.keyCode === KeyCode.DIGIT_7 || e.keyCode === KeyCode.NUM_7) pickSlot(6);
         if (e.keyCode === KeyCode.KEY_B || e.keyCode === KeyCode.TAB) this.toggleBag();
         if (e.keyCode === KeyCode.ESCAPE) {
+            if (this.node.getComponent(GmPanel)?.isOpen) return;
             if (this._chestOpen) this.setChestOpen(false);
+            else if (this._craftOpen) this.setCraftOpen(false);
             else if (this._bagOpen) this.setBagOpen(false);
         }
         if (e.keyCode === KeyCode.SPACE || e.keyCode === KeyCode.KEY_E) {
-            if (this._chestOpen || this._bagOpen) return;
+            if (this._chestOpen || this._craftOpen || this._bagOpen) return;
+            if (this.node.getComponent(FishingMinigame)?.isOpen) return;
             this.farm?.tryAct();
         }
     }

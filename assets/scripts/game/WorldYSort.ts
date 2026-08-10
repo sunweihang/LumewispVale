@@ -2,10 +2,13 @@ import { _decorator, Component, Node, UITransform } from 'cc';
 
 const { ccclass, property } = _decorator;
 
+type StaticEntry = { node: Node; y: number };
+
 /**
  * Stable painter sort for 3/4 top-down:
- * - Ground tiles always behind
- * - Props/characters sorted by foot Y (node.y for bottom-anchored sprites)
+ * - Ground tiles always behind (never Y-merged with actors)
+ * - Static props sorted once (rebuilt when hierarchy size changes)
+ * - Only movers (player / crops / grow UI) re-merge each tick
  */
 @ccclass('WorldYSort')
 export class WorldYSort extends Component {
@@ -13,6 +16,12 @@ export class WorldYSort extends Component {
     interval = 0.05;
 
     private _cd = 0;
+    /** Ground band — always drawn first, never mixed by footY with actors. */
+    private _groundOrder: Node[] = [];
+    /** Static props in draw order (behind → front by footY). */
+    private _staticActors: StaticEntry[] = [];
+    private _childCount = -1;
+    private _moverSig = '';
 
     update(dt: number) {
         this._cd -= dt;
@@ -23,29 +32,103 @@ export class WorldYSort extends Component {
 
     sortNow() {
         const world = this.node;
-        const ground: Node[] = [];
-        const actors: { node: Node; y: number }[] = [];
+        const children = world.children;
+        const childCount = children.length;
 
-        for (const child of world.children) {
-            if (this.isGround(child.name)) {
-                ground.push(child);
+        if (childCount !== this._childCount || !this._groundOrder.length) {
+            this.rebuildStatic(children);
+        }
+
+        const movers: StaticEntry[] = [];
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i]!;
+            if (this.isMover(child.name)) {
+                movers.push({ node: child, y: this.footY(child) });
+            }
+        }
+        movers.sort((a, b) => b.y - a.y);
+
+        // Skip hierarchy writes when movers haven't moved enough to change order.
+        let sig = `${childCount}|${movers.length}`;
+        for (let i = 0; i < movers.length; i++) {
+            const m = movers[i]!;
+            // Quantize to ~4px so micro-jitter doesn't thrash sibling indices.
+            sig += `|${m.node.uuid}:${(m.y / 4) | 0}`;
+        }
+        if (sig === this._moverSig && childCount === this._childCount) {
+            return;
+        }
+        this._moverSig = sig;
+
+        const ground = this._groundOrder;
+        const statics = this._staticActors;
+        const desired: Node[] = new Array(ground.length + statics.length + movers.length);
+        let di = 0;
+        for (let g = 0; g < ground.length; g++) {
+            desired[di++] = ground[g]!;
+        }
+
+        // Merge static actors with movers by footY (higher Y draws first / behind).
+        let si = 0;
+        let mi = 0;
+        while (si < statics.length || mi < movers.length) {
+            const s = si < statics.length ? statics[si] : null;
+            const m = mi < movers.length ? movers[mi] : null;
+            if (!m) {
+                desired[di++] = s!.node;
+                si++;
+                continue;
+            }
+            if (!s) {
+                desired[di++] = m.node;
+                mi++;
+                continue;
+            }
+            if (s.y >= m.y) {
+                desired[di++] = s.node;
+                si++;
             } else {
-                actors.push({ node: child, y: this.footY(child) });
+                desired[di++] = m.node;
+                mi++;
             }
         }
 
-        // Higher footY (north) draws first / behind; lower footY in front
-        actors.sort((a, b) => b.y - a.y);
-        // Base tiles under sod fringe; both still behind every actor.
+        for (let i = 0; i < desired.length; i++) {
+            const n = desired[i]!;
+            if (!n.isValid) {
+                this._childCount = -1;
+                return;
+            }
+            if (n.getSiblingIndex() !== i) n.setSiblingIndex(i);
+        }
+    }
+
+    private rebuildStatic(children: readonly Node[]) {
+        const ground: Node[] = [];
+        const staticActors: StaticEntry[] = [];
+
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i]!;
+            if (this.isMover(child.name)) continue;
+            if (this.isGround(child.name)) {
+                ground.push(child);
+            } else {
+                staticActors.push({ node: child, y: this.footY(child) });
+            }
+        }
+
+        staticActors.sort((a, b) => b.y - a.y);
         ground.sort((a, b) => this.groundRank(a.name) - this.groundRank(b.name));
 
-        let i = 0;
-        for (const n of ground) {
-            n.setSiblingIndex(i++);
-        }
-        for (const a of actors) {
-            a.node.setSiblingIndex(i++);
-        }
+        this._groundOrder = ground;
+        this._staticActors = staticActors;
+        this._childCount = children.length;
+        this._moverSig = '';
+    }
+
+    /** Nodes that move or spawn/despawn often — must Y-sort every tick. */
+    private isMover(name: string): boolean {
+        return name === 'Player' || name === 'Crop' || name === 'CropGrowUi';
     }
 
     private groundRank(name: string): number {
@@ -70,6 +153,9 @@ export class WorldYSort extends Component {
         // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
         if (name === 'lake_bridge_rail_s') return false;
         return (
+            name === '__farm_baked' ||
+            name === '__town_baked' ||
+            name === '__town_spawn' ||
             name.startsWith('tile-') ||
             name.startsWith('fringe_') ||
             name.startsWith('water_') ||

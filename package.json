@@ -7,6 +7,8 @@
   },
   "description": "Lumewisp Vale — Stardew Valley–like farming life sim (Cocos Creator 3.8.8, 1080×1920)",
   "scripts": {
-    "gen:world": "python3 tools/ui/generate_world_assets.py"
+    "gen:world": "python3 tools/ui/generate_world_assets.py",
+    "gen:config": "bash tools/luban/gen.sh",
+    "gen:quest-prefab": "python3 tools/ui/generate_quest_panel_prefab.py"
   }
 }

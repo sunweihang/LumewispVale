@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Sync Main.scene World tiles/props to the farm-only layout (editor preview).
+"""Legacy: sync Main.scene World tiles/props (editor preview only).
 
-Runtime authority remains assets/scripts/game/FarmWorldLayout.ts.
+Authoritative farm world is assets/scenes/Main.scene
+(regenerate with tools/ui/bake_farm_scene.py).
 """
 
 import json

@@ -113,6 +113,11 @@ export class TouchJoystick extends Component {
     }
 
     private begin(id: number, x: number, y: number) {
+        // Fishing minigame owns the pointer — do not track / drag / tap-steal.
+        if (InputBridge.moveLocked) {
+            InputBridge.clear();
+            return;
+        }
         // Hotbar: let FarmHUD handle via tap path (still track, but don't start stick in bar).
         this._tracking = true;
         this._dragging = false;
@@ -124,6 +129,14 @@ export class TouchJoystick extends Component {
     }
 
     private move(x: number, y: number) {
+        if (InputBridge.moveLocked) {
+            InputBridge.clear();
+            this._tracking = false;
+            this._dragging = false;
+            this._id = -1;
+            this.hideVisual();
+            return;
+        }
         const dx0 = x - this._ox;
         const dy0 = y - this._oy;
         const dist = Math.sqrt(dx0 * dx0 + dy0 * dy0);
@@ -133,6 +146,10 @@ export class TouchJoystick extends Component {
             // Full-screen panels (bag / chest): never start the stick, but keep the
             // gesture eligible for onTap — otherwise close buttons never fire.
             if (InputBridge.uiBlocking) {
+                return;
+            }
+            // GM chip / panel: block stick, still allow onTap.
+            if (InputBridge.gmUiHit?.(this._ox, this._oy)) {
                 return;
             }
             // Hotbar / backpack UI: never start the move-stick (FarmHUD owns item drags).
@@ -160,6 +177,15 @@ export class TouchJoystick extends Component {
     }
 
     private end(x: number, y: number) {
+        if (InputBridge.moveLocked) {
+            this._tracking = false;
+            this._dragging = false;
+            this._uiSlid = false;
+            this._id = -1;
+            InputBridge.clear();
+            this.hideVisual();
+            return;
+        }
         const wasDrag = this._dragging;
         const uiSlid = this._uiSlid;
         this._tracking = false;

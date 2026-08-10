@@ -1,0 +1,44 @@
+{
+  "panel": {
+    "spriteFrame": "a2ff1daa-0b00-47a1-8b82-1fee6b0c2ea6@f9941",
+    "w": 400,
+    "h": 540,
+    "file": "ui-quest-panel"
+  },
+  "tracker": {
+    "spriteFrame": "f9e5c175-643d-4b93-8934-537b20f9103e@f9941",
+    "w": 320,
+    "h": 60,
+    "file": "ui-quest-tracker"
+  },
+  "rowActive": {
+    "spriteFrame": "71d50bba-50d0-4e78-a1ae-8d30c8061ba3@f9941",
+    "w": 320,
+    "h": 56,
+    "file": "ui-quest-row-active"
+  },
+  "row": {
+    "spriteFrame": "c67602bb-d56c-46ea-a17c-8fb674595c03@f9941",
+    "w": 320,
+    "h": 48,
+    "file": "ui-quest-row"
+  },
+  "rowDone": {
+    "spriteFrame": "788cfe35-3a07-4b1a-bd2e-4d6991cf407c@f9941",
+    "w": 320,
+    "h": 48,
+    "file": "ui-quest-row-done"
+  },
+  "btnSecondary": {
+    "spriteFrame": "69b6a8f8-7068-4fc7-8de3-26b3d3a715e9@f9941",
+    "w": 132,
+    "h": 48,
+    "file": "ui-quest-btn-secondary"
+  },
+  "btnPrimary": {
+    "spriteFrame": "6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941",
+    "w": 152,
+    "h": 48,
+    "file": "ui-quest-btn-primary"
+  }
+}

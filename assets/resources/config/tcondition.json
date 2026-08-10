@@ -1,0 +1,65 @@
+[
+  {
+    "id": 1,
+    "type": 2,
+    "compare_mode": 3,
+    "desc": "采集{1} ×{0}",
+    "goto_id": 9
+  },
+  {
+    "id": 2,
+    "type": 3,
+    "compare_mode": 3,
+    "desc": "锄地 {0} 次",
+    "goto_id": 2
+  },
+  {
+    "id": 3,
+    "type": 7,
+    "compare_mode": 3,
+    "desc": "合成「{1}」×{0}",
+    "goto_id": 11
+  },
+  {
+    "id": 4,
+    "type": 4,
+    "compare_mode": 3,
+    "desc": "播种 {0} 次",
+    "goto_id": 3
+  },
+  {
+    "id": 5,
+    "type": 5,
+    "compare_mode": 3,
+    "desc": "浇水 {0} 次",
+    "goto_id": 4
+  },
+  {
+    "id": 6,
+    "type": 6,
+    "compare_mode": 3,
+    "desc": "收获 {0} 次",
+    "goto_id": 5
+  },
+  {
+    "id": 7,
+    "type": 8,
+    "compare_mode": 3,
+    "desc": "钓到鱼 {0} 条",
+    "goto_id": 6
+  },
+  {
+    "id": 8,
+    "type": 1,
+    "compare_mode": 3,
+    "desc": "背包拥有 {1} ×{0}",
+    "goto_id": 7
+  },
+  {
+    "id": 9,
+    "type": 9,
+    "compare_mode": 3,
+    "desc": "金币达到 {0}",
+    "goto_id": 0
+  }
+]

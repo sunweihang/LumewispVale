@@ -26,13 +26,13 @@
   },
   "bld-cottage-blue": {
     "texture": "988a73bf-a778-4f8e-b912-22b6a2f355c6",
-    "prefab": "3eeeb117-d083-4ead-a994-815aa206cdca",
-    "spriteFrame": "988a73bf-a778-4f8e-b912-22b6a2f355c6@f9941"
+    "spriteFrame": "988a73bf-a778-4f8e-b912-22b6a2f355c6@f9941",
+    "prefab": "3eeeb117-d083-4ead-a994-815aa206cdca"
   },
   "bld-cottage-red": {
     "texture": "a5b87678-ab64-4173-9a6b-7d409ec746e2",
-    "prefab": "ae00485f-bced-4d56-8e88-d38ce026ccaf",
-    "spriteFrame": "a5b87678-ab64-4173-9a6b-7d409ec746e2@f9941"
+    "spriteFrame": "a5b87678-ab64-4173-9a6b-7d409ec746e2@f9941",
+    "prefab": "ae00485f-bced-4d56-8e88-d38ce026ccaf"
   },
   "bld-shop": {
     "texture": "bc624b1d-9279-49d8-beed-ab9db3366b6b",
@@ -41,8 +41,8 @@
   },
   "bld-community": {
     "texture": "20cf3473-7430-45ec-bf46-fae897650692",
-    "prefab": "35a9b1a2-11b5-43c0-a6d3-fc8ca90364a5",
-    "spriteFrame": "20cf3473-7430-45ec-bf46-fae897650692@f9941"
+    "spriteFrame": "20cf3473-7430-45ec-bf46-fae897650692@f9941",
+    "prefab": "35a9b1a2-11b5-43c0-a6d3-fc8ca90364a5"
   },
   "bld-shed": {
     "texture": "d29fe7a0-beb9-42e2-8140-b88c45147ac8",
@@ -498,5 +498,160 @@
     "texture": "44766969-a397-41be-aa3e-ed2f77068bf7",
     "prefab": "",
     "spriteFrame": "44766969-a397-41be-aa3e-ed2f77068bf7@f9941"
+  },
+  "ic-rod": {
+    "texture": "0625f4d3-2b16-47a6-814c-4f89e986726c",
+    "prefab": "",
+    "spriteFrame": "0625f4d3-2b16-47a6-814c-4f89e986726c@f9941"
+  },
+  "ic-fish": {
+    "texture": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac",
+    "prefab": "",
+    "spriteFrame": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941"
+  },
+  "ic-ad-video": {
+    "texture": "a375b4ec-204f-4af5-a64f-8608d7a8e195",
+    "prefab": "",
+    "spriteFrame": "a375b4ec-204f-4af5-a64f-8608d7a8e195@f9941"
+  },
+  "prop-craftbench": {
+    "texture": "32485893-e240-4e1e-b45b-fab51b8a3f1e",
+    "prefab": "",
+    "spriteFrame": "32485893-e240-4e1e-b45b-fab51b8a3f1e@f9941"
+  },
+  "ui-craft-btn": {
+    "texture": "3eba857b-a5fc-480e-8219-0119c732d737",
+    "prefab": "",
+    "spriteFrame": "3eba857b-a5fc-480e-8219-0119c732d737@f9941"
+  },
+  "ui-fishing-panel": {
+    "texture": "d23846ce-021e-44eb-b4ea-b59a9a8effe7",
+    "prefab": "",
+    "spriteFrame": "d23846ce-021e-44eb-b4ea-b59a9a8effe7@f9941"
+  },
+  "ui-fishing-bar": {
+    "texture": "62ab3063-839a-4446-8cf0-9a2ff4610657",
+    "prefab": "",
+    "spriteFrame": "62ab3063-839a-4446-8cf0-9a2ff4610657@f9941"
+  },
+  "bld-seedshop": {
+    "texture": "99e2df50-ffc1-43d4-841a-50bacef313ce",
+    "spriteFrame": "99e2df50-ffc1-43d4-841a-50bacef313ce@f9941",
+    "prefab": ""
+  },
+  "bld-oreshop": {
+    "texture": "7a28f42c-ecf3-411b-a9bb-e99dac3b9417",
+    "spriteFrame": "7a28f42c-ecf3-411b-a9bb-e99dac3b9417@f9941",
+    "prefab": ""
+  },
+  "bld-general": {
+    "texture": "e98c0221-d710-46ea-af6d-a3373d4aca55",
+    "spriteFrame": "e98c0221-d710-46ea-af6d-a3373d4aca55@f9941",
+    "prefab": ""
+  },
+  "bld-police": {
+    "texture": "5c446ad1-a8b0-44fd-a7fa-0a473dd5de38",
+    "spriteFrame": "5c446ad1-a8b0-44fd-a7fa-0a473dd5de38@f9941",
+    "prefab": ""
+  },
+  "bld-post": {
+    "texture": "b60b5cc6-1182-4c5a-83ea-5d26dd580842",
+    "spriteFrame": "b60b5cc6-1182-4c5a-83ea-5d26dd580842@f9941",
+    "prefab": ""
+  },
+  "bld-saloon": {
+    "texture": "f0c693f9-84bd-4f47-865d-71b6d88fff29",
+    "spriteFrame": "f0c693f9-84bd-4f47-865d-71b6d88fff29@f9941",
+    "prefab": ""
+  },
+  "bld-fishshop": {
+    "texture": "c7faf8a9-42fd-4ccd-a29a-dc11bd1d0fce",
+    "spriteFrame": "c7faf8a9-42fd-4ccd-a29a-dc11bd1d0fce@f9941",
+    "prefab": ""
+  },
+  "bld-library": {
+    "texture": "8789a70e-a02a-4547-a295-35fa251f77a9",
+    "spriteFrame": "8789a70e-a02a-4547-a295-35fa251f77a9@f9941",
+    "prefab": ""
+  },
+  "bld-museum": {
+    "texture": "00fcecfd-d9f9-40b7-8824-e46f59ad3252",
+    "spriteFrame": "00fcecfd-d9f9-40b7-8824-e46f59ad3252@f9941",
+    "prefab": ""
+  },
+  "bld-carpenter": {
+    "texture": "f334f011-e1d9-4bcf-a1bf-d72b67fe01a8",
+    "spriteFrame": "f334f011-e1d9-4bcf-a1bf-d72b67fe01a8@f9941",
+    "prefab": ""
+  },
+  "bld-clinic": {
+    "texture": "52620dc8-137e-4e96-b2d1-17dedce0095a",
+    "spriteFrame": "52620dc8-137e-4e96-b2d1-17dedce0095a@f9941",
+    "prefab": ""
+  },
+  "bld-school": {
+    "texture": "8cc6c123-d526-4333-9a66-e9d9765dbd3f",
+    "spriteFrame": "8cc6c123-d526-4333-9a66-e9d9765dbd3f@f9941",
+    "prefab": ""
+  },
+  "bld-mayor": {
+    "texture": "0fbd2c56-2698-4894-8479-85885ae07b03",
+    "spriteFrame": "0fbd2c56-2698-4894-8479-85885ae07b03@f9941",
+    "prefab": ""
+  },
+  "bld-home-green": {
+    "texture": "256ce736-4fb4-483a-9dfd-56e55394411e",
+    "spriteFrame": "256ce736-4fb4-483a-9dfd-56e55394411e@f9941",
+    "prefab": ""
+  },
+  "bld-home-yellow": {
+    "texture": "00dea878-d5e9-4a12-b53c-5811968e540a",
+    "spriteFrame": "00dea878-d5e9-4a12-b53c-5811968e540a@f9941",
+    "prefab": ""
+  },
+  "bld-home-purple": {
+    "texture": "9e6ce1e4-50b3-4b2d-b3b6-40fd21521afb",
+    "spriteFrame": "9e6ce1e4-50b3-4b2d-b3b6-40fd21521afb@f9941",
+    "prefab": ""
+  },
+  "ic-copper": {
+    "texture": "1457b015-51ed-421c-8bd6-7ccccba78dd1",
+    "spriteFrame": "1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941"
+  },
+  "ic-iron": {
+    "texture": "ae905224-b7ee-4d96-9609-1637f6e69307",
+    "spriteFrame": "ae905224-b7ee-4d96-9609-1637f6e69307@f9941"
+  },
+  "ic-goldore": {
+    "texture": "38fab6f1-b10a-48ee-925e-9cc041a617ac",
+    "spriteFrame": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941"
+  },
+  "ui-quest-panel": {
+    "texture": "a2ff1daa-0b00-47a1-8b82-1fee6b0c2ea6",
+    "spriteFrame": "a2ff1daa-0b00-47a1-8b82-1fee6b0c2ea6@f9941"
+  },
+  "ui-quest-tracker": {
+    "texture": "f9e5c175-643d-4b93-8934-537b20f9103e",
+    "spriteFrame": "f9e5c175-643d-4b93-8934-537b20f9103e@f9941"
+  },
+  "ui-quest-row-active": {
+    "texture": "71d50bba-50d0-4e78-a1ae-8d30c8061ba3",
+    "spriteFrame": "71d50bba-50d0-4e78-a1ae-8d30c8061ba3@f9941"
+  },
+  "ui-quest-row": {
+    "texture": "c67602bb-d56c-46ea-a17c-8fb674595c03",
+    "spriteFrame": "c67602bb-d56c-46ea-a17c-8fb674595c03@f9941"
+  },
+  "ui-quest-row-done": {
+    "texture": "788cfe35-3a07-4b1a-bd2e-4d6991cf407c",
+    "spriteFrame": "788cfe35-3a07-4b1a-bd2e-4d6991cf407c@f9941"
+  },
+  "ui-quest-btn-secondary": {
+    "texture": "69b6a8f8-7068-4fc7-8de3-26b3d3a715e9",
+    "spriteFrame": "69b6a8f8-7068-4fc7-8de3-26b3d3a715e9@f9941"
+  },
+  "ui-quest-btn-primary": {
+    "texture": "6f6c303c-496d-4ac5-9afb-ac4842fdb889",
+    "spriteFrame": "6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941"
   }
 }

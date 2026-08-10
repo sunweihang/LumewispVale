@@ -22,5 +22,6 @@ export const NATURE_FRAMES = {
     "lilyBloom": "b22b416c-1cac-463f-af96-ab795268107e@f9941",
     "reed": "4dad16c6-f8bc-4fd6-b39d-1a90efa87b9b@f9941",
     "rockWet": "91c6ffa7-327b-488c-8d7f-ea5445f9b489@f9941",
-    "logSunk": "338cb95e-9c92-42eb-820b-701c0727681a@f9941"
+    "logSunk": "338cb95e-9c92-42eb-820b-701c0727681a@f9941",
+    "craftbench": "32485893-e240-4e1e-b45b-fab51b8a3f1e@f9941"
 }

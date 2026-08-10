@@ -420,6 +420,24 @@
       ]
     },
     {
+      "id": "prop-craftbench",
+      "kind": "prop",
+      "spriteType": "simple",
+      "designSize": [
+        96,
+        80
+      ],
+      "path": "assets/textures/props/prop-craftbench.png",
+      "prefab": "",
+      "layer": "Midground",
+      "note": "Yard crafting workbench (orthographic 3/4); walk-up craft UI",
+      "tags": [
+        "craft",
+        "workbench",
+        "craftbench"
+      ]
+    },
+    {
       "id": "tile-grass-b",
       "kind": "terrain",
       "spriteType": "simple",
@@ -1219,6 +1237,394 @@
       "tags": [
         "tool",
         "axe"
+      ]
+    },
+    {
+      "id": "ic-rod",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-rod.png",
+      "spriteFrame": "0625f4d3-2b16-47a6-814c-4f89e986726c@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "rod"
+      ]
+    },
+    {
+      "id": "ic-fish",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-fish.png",
+      "spriteFrame": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "fish"
+      ]
+    },
+    {
+      "id": "ic-ad-video",
+      "kind": "icon",
+      "path": "assets/textures/ui/ic-ad-video.png",
+      "spriteFrame": "a375b4ec-204f-4af5-a64f-8608d7a8e195@f9941"
+    },
+    {
+      "id": "ui-craft-btn",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        180,
+        66
+      ],
+      "path": "assets/textures/ui/ui-craft-btn.png",
+      "prefab": "",
+      "note": "Craftbench row button chrome (blank wood; Label overlays \u5236\u4f5c)",
+      "tags": [
+        "craft",
+        "button"
+      ]
+    },
+    {
+      "id": "ui-fishing-panel",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-panel.png",
+      "spriteFrame": "d23846ce-021e-44eb-b4ea-b59a9a8effe7@f9941",
+      "size": [
+        160,
+        584
+      ],
+      "tags": [
+        "fishing",
+        "panel",
+        "hand-pixel"
+      ]
+    },
+    {
+      "id": "ui-fishing-bar",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-bar.png",
+      "spriteFrame": "62ab3063-839a-4446-8cf0-9a2ff4610657@f9941",
+      "size": [
+        48,
+        104
+      ],
+      "tags": [
+        "fishing",
+        "bar",
+        "hand-pixel"
+      ]
+    },
+    {
+      "id": "bld-seedshop",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-seedshop.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-oreshop",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-oreshop.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-general",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-general.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-police",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-police.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-post",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-post.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-saloon",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-saloon.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-fishshop",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-fishshop.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-library",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-library.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-museum",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-museum.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-carpenter",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-carpenter.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-clinic",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-clinic.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-school",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        240
+      ],
+      "path": "assets/textures/buildings/bld-school.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-mayor",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        288,
+        256
+      ],
+      "path": "assets/textures/buildings/bld-mayor.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-home-green",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-home-green.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-home-yellow",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-home-yellow.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-home-purple",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        192,
+        224
+      ],
+      "path": "assets/textures/buildings/bld-home-purple.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "ui-quest-panel",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        400,
+        540
+      ],
+      "path": "assets/textures/ui/ui-quest-panel.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-tracker",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        60
+      ],
+      "path": "assets/textures/ui/ui-quest-tracker.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-row-active",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        56
+      ],
+      "path": "assets/textures/ui/ui-quest-row-active.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-row",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        48
+      ],
+      "path": "assets/textures/ui/ui-quest-row.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-row-done",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        320,
+        48
+      ],
+      "path": "assets/textures/ui/ui-quest-row-done.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-btn-secondary",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        132,
+        48
+      ],
+      "path": "assets/textures/ui/ui-quest-btn-secondary.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
+      ]
+    },
+    {
+      "id": "ui-quest-btn-primary",
+      "kind": "ui",
+      "spriteType": "simple",
+      "designSize": [
+        152,
+        48
+      ],
+      "path": "assets/textures/ui/ui-quest-btn-primary.png",
+      "prefab": "",
+      "note": "Quest panel chrome (AI)",
+      "tags": [
+        "quest",
+        "ui"
       ]
     }
   ]

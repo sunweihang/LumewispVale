@@ -17,12 +17,15 @@ import {
     view,
 } from 'cc';
 import { CameraFollow } from './CameraFollow';
+import { loadConfigTables } from './ConfigService';
+import { applyCraftTables } from './CraftRecipes';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
 import { FarmWorldLayout } from './FarmWorldLayout';
 import { FirstQuest } from './FirstQuest';
+import { GmPanel } from './GmPanel';
 import { INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
 import { PlayerAnimator } from './PlayerAnimator';
 import { PlayerController } from './PlayerController';
@@ -35,6 +38,10 @@ import {
     portraitVisibleSize,
 } from './PortraitFit';
 import { ensureNightWash } from './NightWash';
+import { QuestPanel } from './QuestPanel';
+import { QuestSystem } from './QuestSystem';
+import { TownShopPanel } from './TownShopPanel';
+import { TownWorldLayout } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
 import { WorldYSort } from './WorldYSort';
 
@@ -86,6 +93,11 @@ export class GameBootstrap extends Component {
             'FarmDragGhost',
             'FarmToolTip',
             'FarmInfoBoard',
+            'FishingMinigame',
+            'GmChip',
+            'GmPanel',
+            'QuestTracker',
+            'QuestPanel',
             'ScreenFill',
             'NightOverlay',
         ]) {
@@ -106,14 +118,18 @@ export class GameBootstrap extends Component {
         this._compactComponents(canvas);
 
         this.fixPropAnchors(world);
+        const isTown = TownWorldLayout.isBaked(world);
+        const isFarmBaked = FarmWorldLayout.isBaked(world);
+        const authored = isTown || isFarmBaked;
         // Match reference: map fills 1080 width; ground covers the portrait frame.
-        const frame = this.fitWorldToDesign(canvas, world);
+        // Authored scenes already have full terrain — don't expand/repaint tiles.
+        const frame = this.fitWorldToDesign(canvas, world, authored);
 
         if (!world.getComponent(WorldYSort)) {
             world.addComponent(WorldYSort);
         }
 
-        const player = this.spawnPlayer(world);
+        const player = this.spawnPlayer(world, isTown);
         const stick = this.spawnTouchControls(canvas);
 
         let follow = canvas.getComponent(CameraFollow);
@@ -121,42 +137,136 @@ export class GameBootstrap extends Component {
         follow.target = player;
         follow.world = world;
 
-        FarmWorldLayout.apply(world, frame.localW, frame.localH, () => {
+        if (authored) {
+            // Scene already contains the full world — only bind bounds / solids.
             const ctrl = player.getComponent(PlayerController);
-            ctrl?.rebuildSolids();
-            // Pond + pinned river define the final ground AABB.
             this.applyMapBounds(player, follow, this.measureMapBounds(world));
             ctrl?.rebuildSolids();
             follow.snap();
-        });
-        this.pinRiverToBottom(world, frame.localH);
-        FarmWorldLayout.placeBridge(world);
-        this.applyMapBounds(player, follow, this.measureMapBounds(world));
+        } else {
+            FarmWorldLayout.apply(world, frame.localW, frame.localH, () => {
+                const ctrl = player.getComponent(PlayerController);
+                ctrl?.rebuildSolids();
+                // Pond + pinned river define the final ground AABB.
+                this.applyMapBounds(player, follow, this.measureMapBounds(world));
+                ctrl?.rebuildSolids();
+                follow.snap();
+            });
+            this.pinRiverToBottom(world, frame.localH);
+            FarmWorldLayout.placeBridge(world);
+            this.applyMapBounds(player, follow, this.measureMapBounds(world));
+        }
 
-        let farm = canvas.getComponent(FarmSystem);
-        if (!farm) farm = canvas.addComponent(FarmSystem);
-        farm.player = player;
-        farm.world = world;
+        const oldGm = canvas.getComponent(GmPanel);
+        if (oldGm) canvas.removeComponent(oldGm);
+        let gm = canvas.addComponent(GmPanel);
 
-        let hud = canvas.getComponent(FarmHUD);
-        if (!hud) hud = canvas.addComponent(FarmHUD);
-        hud.farm = farm;
+        if (isTown) {
+            // Town: shops / boards + light FarmSystem for gold & inventory grants.
+            let farm = canvas.getComponent(FarmSystem);
+            if (!farm) farm = canvas.addComponent(FarmSystem);
+            farm.player = player;
+            farm.world = world;
 
-        // Info board: real prefab (layout in editor), not runtime node-build.
-        const oldInfoComp = canvas.getComponent(FarmInfoBoard);
-        if (oldInfoComp) canvas.removeComponent(oldInfoComp);
-        let infoBoard: FarmInfoBoard | null = null;
-        stick.onTap = (x, y) => {
-            if (infoBoard?.handleTap(x, y)) return;
-            hud!.handleTap(x, y);
-        };
-        this.mountInfoBoard(canvas, farm, follow, (info) => {
-            infoBoard = info;
-        });
-        stick.onDragStart = () => {
-            farm!.cancelPending();
-            player.getComponent(PlayerController)?.onManualMoveStart();
-        };
+            const oldShop = canvas.getComponent(TownShopPanel);
+            if (oldShop) canvas.removeComponent(oldShop);
+            const shopPanel = canvas.addComponent(TownShopPanel);
+            shopPanel.farm = farm;
+
+            stick.onTap = (x, y) => {
+                if (gm.handleTap(x, y)) return;
+                if (shopPanel.handleTap(x, y)) return;
+                const worldPt = this.screenToWorld(follow, world, x, y);
+                if (!worldPt) return;
+                const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
+                if (!hit) return;
+                if (hit.kind === 'shop') shopPanel.openShop(hit.shopId);
+                else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
+                else shopPanel.openInfo(hit.title, hit.body);
+            };
+            stick.onDragStart = () => {
+                player.getComponent(PlayerController)?.onManualMoveStart();
+            };
+        } else {
+            let farm = canvas.getComponent(FarmSystem);
+            if (!farm) farm = canvas.addComponent(FarmSystem);
+            farm.player = player;
+            farm.world = world;
+
+            let hud = canvas.getComponent(FarmHUD);
+            if (!hud) hud = canvas.addComponent(FarmHUD);
+            hud.farm = farm;
+
+            const oldQuestSys = canvas.getComponent(QuestSystem);
+            if (oldQuestSys) canvas.removeComponent(oldQuestSys);
+            const oldQuestUi = canvas.getComponent(QuestPanel);
+            if (oldQuestUi) canvas.removeComponent(oldQuestUi);
+            const quests = canvas.addComponent(QuestSystem);
+            const questPanel = canvas.addComponent(QuestPanel);
+            quests.farm = farm;
+            quests.hud = hud;
+            questPanel.bind(quests);
+            questPanel.ensureMounted();
+            hud.bindQuests(quests);
+            farm.onQuestStat((kind, param, n) => {
+                const count = n ?? 1;
+                switch (kind) {
+                    case 'gather':
+                        if (param) quests.noteGather(param, count);
+                        break;
+                    case 'till':
+                        quests.noteTill(count);
+                        break;
+                    case 'plant':
+                        quests.notePlant(count);
+                        break;
+                    case 'water':
+                        quests.noteWater(count);
+                        break;
+                    case 'harvest':
+                        quests.noteHarvest(count);
+                        break;
+                    case 'fish':
+                        quests.noteFish(count);
+                        break;
+                    case 'craft':
+                        if (param) quests.noteCraft(param, count);
+                        break;
+                }
+            });
+
+            // Info board: real prefab (layout in editor), not runtime node-build.
+            const oldInfoComp = canvas.getComponent(FarmInfoBoard);
+            if (oldInfoComp) canvas.removeComponent(oldInfoComp);
+            let infoBoard: FarmInfoBoard | null = null;
+            stick.onTap = (x, y) => {
+                if (gm.handleTap(x, y)) return;
+                if (questPanel.handleTap(x, y)) return;
+                if (infoBoard?.handleTap(x, y)) return;
+                hud!.handleTap(x, y);
+            };
+            this.mountInfoBoard(canvas, farm, follow, (info) => {
+                infoBoard = info;
+                gm.setInfoBoard(info);
+                quests.infoBoard = info;
+                info.questPanel = questPanel;
+            });
+            stick.onDragStart = () => {
+                farm!.cancelPending();
+                player.getComponent(PlayerController)?.onManualMoveStart();
+            };
+
+            loadConfigTables()
+                .then((tables) => {
+                    if (!canvas.isValid) return;
+                    applyCraftTables(tables);
+                    hud!.reloadCraftRecipes();
+                    quests.bindTables(tables);
+                })
+                .catch((err) => {
+                    console.warn('[GameBootstrap] Luban config load failed', err);
+                });
+        }
 
         follow.snap();
     }
@@ -234,6 +344,7 @@ export class GameBootstrap extends Component {
             if (
                 !n.startsWith('tile-grass') &&
                 !n.startsWith('tile-dirt') &&
+                !n.startsWith('tile-stone') &&
                 !n.startsWith('water_') &&
                 !n.startsWith('pond_')
             ) {
@@ -362,7 +473,11 @@ export class GameBootstrap extends Component {
      * - expand grass to cover the visible portrait frame
      * Layout / decor are applied by the caller after the player exists.
      */
-    private fitWorldToDesign(canvas: Node, world: Node): { localW: number; localH: number } {
+    private fitWorldToDesign(
+        canvas: Node,
+        world: Node,
+        baked = false,
+    ): { localW: number; localH: number } {
         // 等比放大 0.5 倍 → 1.5×（试手感；UI 在 Canvas 上不缩放）
         const WORLD_ZOOM = 1.5;
         const TILE = 64;
@@ -373,8 +488,11 @@ export class GameBootstrap extends Component {
         let maxY = -Infinity;
         for (const child of world.children) {
             if (!child.name.startsWith('tile-grass')) continue;
-            grass.push(child);
             const p = child.position;
+            // Baked map includes western lake-shore grass — zoom from the
+            // farm core strip only (same band used before runtime expand).
+            if (baked && (p.x < -448 || p.x > 448)) continue;
+            grass.push(child);
             minX = Math.min(minX, p.x);
             maxX = Math.max(maxX, p.x);
             minY = Math.min(minY, p.y);
@@ -394,7 +512,9 @@ export class GameBootstrap extends Component {
         // Cover the whole portrait in world-local units after this scale.
         const localW = DESIGN_W / s;
         const localH = DESIGN_H / s;
-        this.expandGrassTiles(world, grass, TILE, localW, localH);
+        if (!baked) {
+            this.expandGrassTiles(world, grass, TILE, localW, localH);
+        }
 
         world.setScale(s, s, 1);
         world.setPosition(0, 0, 0);
@@ -504,12 +624,38 @@ export class GameBootstrap extends Component {
         g.fill();
     }
 
+    /** UI coords (origin bottom-left) → world-local point under CameraFollow. */
+    private screenToWorld(
+        _follow: CameraFollow | null,
+        world: Node,
+        uiX: number,
+        uiY: number,
+    ): { x: number; y: number } | null {
+        const canvasUi = this.node.getComponent(UITransform);
+        const vis = view.getVisibleSize();
+        const hw = (canvasUi?.contentSize.width || vis.width) * 0.5;
+        const hh = (canvasUi?.contentSize.height || vis.height) * 0.5;
+        const canvasX = uiX - hw;
+        const canvasY = uiY - hh;
+        const s = Math.max(0.0001, world.scale.x);
+        return {
+            x: (canvasX - world.position.x) / s,
+            y: (canvasY - world.position.y) / s,
+        };
+    }
+
     private fixPropAnchors(world: Node) {
         for (const child of world.children) {
+            const n = child.name;
             if (
-                child.name.startsWith('tile-') ||
-                child.name.startsWith('water_') ||
-                child.name.startsWith('cliff_')
+                n === '__farm_baked' ||
+                n === '__town_baked' ||
+                n === '__town_spawn' ||
+                n.startsWith('tile-') ||
+                n.startsWith('water_') ||
+                n.startsWith('cliff_') ||
+                n.startsWith('pond_') ||
+                n.startsWith('fringe_')
             ) {
                 continue;
             }
@@ -565,13 +711,12 @@ export class GameBootstrap extends Component {
         return touch;
     }
 
-    private spawnPlayer(world: Node): Node {
+    private spawnPlayer(world: Node, isTown = false): Node {
         const player = new Node('Player');
         player.layer = world.layer;
         player.setParent(world);
-        player.setPosition(
-            new Vec3(FarmWorldLayout.PLAYER_SPAWN.x, FarmWorldLayout.PLAYER_SPAWN.y, 0),
-        );
+        const spawn = isTown ? TownWorldLayout.PLAYER_SPAWN : FarmWorldLayout.PLAYER_SPAWN;
+        player.setPosition(new Vec3(spawn.x, spawn.y, 0));
 
         const ui = player.addComponent(UITransform);
         ui.setContentSize(48, 64);

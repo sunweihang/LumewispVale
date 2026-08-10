@@ -14,7 +14,11 @@ CURSOR_ASSETS = Path("/Users/sunix/.cursor/projects/Users-Custom-LumewispVale/as
 TARGET = (0xD2, 0x9E, 0x2A)  # world.dirt
 
 JOBS = [
-    # (stem, dest, contrast boost before snapping)
+    # Prefer v3 AI drafts when present (richer grit than flat procedural).
+    # (stem, dest, contrast boost — only used by legacy lock_to_dirt)
+    ("ai-dirt-v3", ROOT / "assets/textures/terrain/tile-dirt.png", 1.0),
+    ("ai-dirt-b-v3", ROOT / "assets/textures/terrain/tile-dirt-b.png", 2.2),
+    # Fallbacks if v3 missing
     ("ai-dirt", ROOT / "assets/textures/terrain/tile-dirt.png", 1.0),
     ("ai-dirt-b", ROOT / "assets/textures/terrain/tile-dirt-b.png", 2.2),
 ]
@@ -92,16 +96,14 @@ def lock_to_dirt(im, target=TARGET, boost=1.0):
     return im
 
 
-def fit_tile_crisp(im, tw=64, th=64):
-    """Prefer a coarser intermediate so sparse pits survive (avoid sandpaper BOX mush)."""
+def fit_tile_crisp(im, tw=64, th=64, author=48):
+    """Downsample via BOX then NEAREST up — keep chunky grit clusters."""
     im = im.convert("RGBA")
     w, h = im.size
     side = min(w, h)
     left = (w - side) // 2
     top = (h - side) // 2
     im = im.crop((left, top, left + side, top + side))
-    # author-res ~32 then NEAREST×2 → keeps chunky pixel clusters
-    author = 32
     im = im.resize((author, author), Image.BOX)
     im = im.resize((tw, th), Image.NEAREST)
     return im
@@ -137,9 +139,37 @@ def patch_meta(meta_path, w=64, h=64):
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
+def grade_to_dirt(im, target=TARGET, colors=28):
+    """Shift mean toward world.dirt while keeping AI grit (no 4-color snap)."""
+    im = im.convert("RGBA")
+    mr, mg, mb = mean_rgb(im)
+    dr, dg, db = target[0] - mr, target[1] - mg, target[2] - mb
+    # Pull ~55% toward target so accents survive.
+    pull = 0.55
+    px = im.load()
+    w, h = im.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a < 40:
+                continue
+            px[x, y] = (
+                max(0, min(255, int(r + dr * pull))),
+                max(0, min(255, int(g + dg * pull))),
+                max(0, min(255, int(b + db * pull))),
+                255,
+            )
+    # Palette reduce on RGB (RGBA median-cut unsupported on some Pillow builds).
+    rgb = im.convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT).convert("RGBA")
+    return rgb
+
+
 def main():
     AI_DIR.mkdir(parents=True, exist_ok=True)
-    for stem, dest, boost in JOBS:
+    written = set()
+    for stem, dest, _boost in JOBS:
+        if dest in written:
+            continue
         src_cursor = CURSOR_ASSETS / "{}.png".format(stem)
         archived = AI_DIR / "{}.png".format(stem)
         if src_cursor.exists():
@@ -148,12 +178,25 @@ def main():
             print("MISSING", stem)
             continue
         im = Image.open(archived)
-        out = lock_to_dirt(fit_tile_crisp(im, 64, 64), boost=boost)
+        # Preserve AI detail — hard lock_to_dirt crushed tiles to ~4 colors.
+        out = grade_to_dirt(fit_tile_crisp(im, 64, 64, author=48))
         dest.parent.mkdir(parents=True, exist_ok=True)
         out.save(dest)
         patch_meta(Path(str(dest) + ".meta"))
+        written.add(dest)
         m = mean_rgb(out)
-        print("OK", dest.relative_to(ROOT), "mean", m, "→", TARGET)
+        print(
+            "OK",
+            dest.relative_to(ROOT),
+            "from",
+            stem,
+            "mean",
+            m,
+            "unique",
+            len(set(out.convert("RGB").getdata())),
+            "→",
+            TARGET,
+        )
 
 
 if __name__ == "__main__":

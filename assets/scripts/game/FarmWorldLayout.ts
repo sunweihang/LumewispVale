@@ -113,6 +113,7 @@ const SIZE: Record<string, { w: number; h: number }> = {
     bush: { w: 64, h: 64 },
     mailbox: { w: 48, h: 64 },
     shipping: { w: 96, h: 80 },
+    craftbench: { w: 96, h: 80 },
     fence: { w: 64, h: 64 },
     lily: { w: 28, h: 24 },
     lilyBloom: { w: 28, h: 24 },
@@ -336,12 +337,22 @@ export class FarmWorldLayout {
         return this._pondCells;
     }
 
+    /** True when World was authored/baked into the scene (see tools/ui/bake_farm_scene.py). */
+    static isBaked(world: Node): boolean {
+        return !!world.getChildByName('__farm_baked');
+    }
+
     static apply(
         world: Node,
         _localW: number,
         _localH: number,
         onDecorDone?: () => void,
     ) {
+        // Scene-authored farm — do not rebuild tiles/props at runtime.
+        if (this.isBaked(world)) {
+            onDecorDone?.();
+            return;
+        }
         // Rebuild lake footprint each apply (shape / pier tweaks)
         this._pondWater = null;
         this._pondCells = null;
@@ -372,6 +383,7 @@ export class FarmWorldLayout {
                 child.name.startsWith('decor_') ||
                 child.name.startsWith('prop_mailbox') ||
                 child.name.startsWith('prop_shipping') ||
+                child.name.startsWith('prop_craftbench') ||
                 child.name.startsWith('fringe_') ||
                 child.name.startsWith('pond_') ||
                 child.name === 'lake_bridge' ||
@@ -385,6 +397,81 @@ export class FarmWorldLayout {
 
     static isPondCell(ix: number, iy: number): boolean {
         return this.pondCellKeys().has(`${ix},${iy}`);
+    }
+
+    /** Pier / dock boards (walkable land over the lake). */
+    static isPierCell(ix: number, iy: number): boolean {
+        return this.lakePierKeys().has(`${ix},${iy}`);
+    }
+
+    /** One-tile land ring around pond water (shore walk lane). */
+    static isPondShoreCell(ix: number, iy: number): boolean {
+        return this.isPondShore(ix, iy);
+    }
+
+    /**
+     * Resolve a cast target (water / shore / pier) into a walk stand + aim point.
+     * Returns null when the tap is not a fishing spot.
+     */
+    static findFishingStand(
+        wx: number,
+        wy: number,
+    ): { standX: number; standY: number; waterX: number; waterY: number } | null {
+        const ix = Math.round(wx / TILE);
+        const iy = Math.round(wy / TILE);
+        const water = this.pondWaterKeys();
+        const pier = this.lakePierKeys();
+
+        const nearestWater = (sx: number, sy: number): { x: number; y: number } | null => {
+            let best: { x: number; y: number; d: number } | null = null;
+            for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -2; dx <= 2; dx++) {
+                    if (!dx && !dy) continue;
+                    const nx = sx + dx;
+                    const ny = sy + dy;
+                    if (!water.has(`${nx},${ny}`)) continue;
+                    const d = dx * dx + dy * dy;
+                    if (!best || d < best.d) best = { x: nx * TILE, y: ny * TILE, d };
+                }
+            }
+            return best ? { x: best.x, y: best.y } : null;
+        };
+
+        // Standing on shore / pier — cast into adjacent water.
+        if (!water.has(`${ix},${iy}`) && (this.isPondShore(ix, iy) || pier.has(`${ix},${iy}`))) {
+            const w = nearestWater(ix, iy);
+            if (!w) return null;
+            return { standX: ix * TILE, standY: iy * TILE, waterX: w.x, waterY: w.y };
+        }
+
+        // Tapped water — walk to the nearest shore / pier neighbor.
+        if (water.has(`${ix},${iy}`)) {
+            let best: { sx: number; sy: number; d: number } | null = null;
+            for (let r = 1; r <= 4; r++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    for (let dx = -r; dx <= r; dx++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                        const sx = ix + dx;
+                        const sy = iy + dy;
+                        const key = `${sx},${sy}`;
+                        if (water.has(key)) continue;
+                        if (!this.isPondShore(sx, sy) && !pier.has(key)) continue;
+                        const d = dx * dx + dy * dy;
+                        if (!best || d < best.d) best = { sx, sy, d };
+                    }
+                }
+                if (best) break;
+            }
+            if (!best) return null;
+            return {
+                standX: best.sx * TILE,
+                standY: best.sy * TILE,
+                waterX: ix * TILE,
+                waterY: iy * TILE,
+            };
+        }
+
+        return null;
     }
 
     /** One-tile ring around water — keep open for walking the shore. */
@@ -1160,7 +1247,7 @@ export class FarmWorldLayout {
         });
     }
 
-    /** Mailbox, yard storage chest, short L-fence around the house yard. */
+    /** Mailbox, yard storage chest, craftbench (left yard), short L-fence around the house yard. */
     private static placeYard(
         world: Node,
         loaded: Partial<Record<FrameKey, SpriteFrame>>,
@@ -1171,6 +1258,10 @@ export class FarmWorldLayout {
         if (loaded.shipping) {
             // prop_shipping = interactive storage chest (orthographic 3/4 sprite).
             this.spawnNode(world, 'prop_shipping', loaded.shipping, 'shipping', 340, 310);
+        }
+        if (loaded.craftbench) {
+            // Left yard clearing (door stays open; mailbox is ~100,330).
+            this.spawnNode(world, 'prop_craftbench', loaded.craftbench, 'craftbench', 55, 300);
         }
 
         const fenceSf = loaded.fence;
@@ -1248,7 +1339,7 @@ export class FarmWorldLayout {
                     (ix >= 4 && iy <= -1);
                 const midWild = !edge && (ix <= -3 || ix >= 3 || iy <= -3 || iy >= 5);
                 // Shore stays leafy but must leave walk corridors for pathfinding.
-                let chance = shore ? 0.55 : edge ? 0.62 : midWild ? 0.4 : 0.18;
+                let chance = shore ? 0.38 : edge ? 0.42 : midWild ? 0.28 : 0.12;
                 if (this.isDirtCell(ix, iy)) chance *= 0.45;
                 if (this.noise01(ix, iy, 31) > chance) continue;
 
@@ -1315,10 +1406,10 @@ export class FarmWorldLayout {
                 if (this.isClearingCell(ix, iy)) continue;
                 if (!this.isPondShore(ix, iy) && ix > -18) continue;
 
-                // Soft carpet
+                // Soft carpet — thinned for fill-rate / CPU (was nearly every shore cell).
                 const softRoll = this.noise01(ix, iy, 81);
-                if (softRoll > 0.12) {
-                    const count = softRoll > 0.55 ? 3 : softRoll > 0.3 ? 2 : 1;
+                if (softRoll > 0.55) {
+                    const count = softRoll > 0.85 ? 2 : 1;
                     for (let k = 0; k < count; k++) {
                         const roll = this.noise01(ix, iy, 82 + k);
                         let kind: FrameKey;
@@ -1344,7 +1435,7 @@ export class FarmWorldLayout {
                 }
 
                 // Extra shore bushes
-                if (loaded.bush && this.noise01(ix, iy, 88) > 0.55) {
+                if (loaded.bush && this.noise01(ix, iy, 88) > 0.72) {
                     this.spawnNode(
                         world,
                         `decor_bush_soft_shore_${n}`,
@@ -1355,7 +1446,7 @@ export class FarmWorldLayout {
                     );
                     n++;
                 }
-                if (loaded.rock && this.noise01(ix, iy, 90) > 0.78) {
+                if (loaded.rock && this.noise01(ix, iy, 90) > 0.88) {
                     this.spawnNode(
                         world,
                         `decor_rock_solid_shore_${n}`,
@@ -1371,7 +1462,7 @@ export class FarmWorldLayout {
     }
 
     /**
-     * Blanket weeds/tufts/pebbles — nearly every non-plot cell.
+     * Scattered weeds/tufts/pebbles — sparse enough for mobile fill-rate.
      */
     private static placeSoftClutter(
         world: Node,
@@ -1390,20 +1481,19 @@ export class FarmWorldLayout {
                 if (ix >= -10 && ix <= -2 && iy >= -4 && iy <= -1) continue;
                 // Thin litter on porch so path stays readable
                 if (ix >= 0 && ix <= 3 && iy >= 1 && iy <= 4) {
-                    if (this.noise01(ix, iy, 11) < 0.78) continue;
+                    if (this.noise01(ix, iy, 11) < 0.9) continue;
                 }
                 if (ix >= 1 && ix <= 4 && iy >= 5 && iy <= 6) {
-                    if (this.noise01(ix, iy, 12) < 0.85) continue;
+                    if (this.noise01(ix, iy, 12) < 0.92) continue;
                 }
 
                 const dirt = this.isDirtCell(ix, iy);
                 const shore = this.isPondShore(ix, iy);
-                // Cover the ground: almost every cell, denser on lake shore
-                const density = shore ? 0.96 : dirt ? 0.92 : 0.88;
+                // Was 0.88–0.96 (nearly every cell) — cut hard for heat.
+                const density = shore ? 0.42 : dirt ? 0.38 : 0.32;
                 if (this.noise01(ix, iy, 1) > density) continue;
 
-                const count =
-                    this.noise01(ix, iy, 2) > 0.35 ? (this.noise01(ix, iy, 3) > 0.55 ? 3 : 2) : 1;
+                const count = this.noise01(ix, iy, 2) > 0.72 ? 2 : 1;
                 for (let k = 0; k < count; k++) {
                     const roll = this.noise01(ix, iy, 20 + k);
                     let kind: FrameKey;
@@ -1444,7 +1534,7 @@ export class FarmWorldLayout {
                     n++;
                 }
 
-                if (dirt && this.noise01(ix, iy, 9) > 0.72 && loaded.rock) {
+                if (dirt && this.noise01(ix, iy, 9) > 0.88 && loaded.rock) {
                     this.spawnNode(
                         world,
                         `decor_soft_rock_${n}`,

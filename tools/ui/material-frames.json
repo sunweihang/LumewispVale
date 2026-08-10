@@ -2,5 +2,9 @@
   "wood": "b06191e5-aaa3-473b-a9e8-e8fd97d53fe9@f9941",
   "grass": "b303ff74-caa7-4f68-8716-f50672f84ae8@f9941",
   "dirt": "0d34ee4c-7ac4-4bbe-a1df-edd4e6ad7a6f@f9941",
-  "stone": "d59e0a71-c294-4f63-ba89-14046cf94836@f9941"
+  "stone": "d59e0a71-c294-4f63-ba89-14046cf94836@f9941",
+  "fish": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941",
+  "copper": "1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941",
+  "iron": "ae905224-b7ee-4d96-9609-1637f6e69307@f9941",
+  "goldOre": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941"
 }

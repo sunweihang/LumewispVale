@@ -1,0 +1,56 @@
+[
+  {
+    "id": 1,
+    "recipe_id": "seed_from_grass",
+    "item_id": "grass",
+    "count": 3
+  },
+  {
+    "id": 2,
+    "recipe_id": "seed_mix",
+    "item_id": "dirt",
+    "count": 2
+  },
+  {
+    "id": 3,
+    "recipe_id": "seed_mix",
+    "item_id": "grass",
+    "count": 2
+  },
+  {
+    "id": 4,
+    "recipe_id": "wood_bundle",
+    "item_id": "wood",
+    "count": 2
+  },
+  {
+    "id": 5,
+    "recipe_id": "wood_bundle",
+    "item_id": "grass",
+    "count": 1
+  },
+  {
+    "id": 6,
+    "recipe_id": "stone_pack",
+    "item_id": "stone",
+    "count": 1
+  },
+  {
+    "id": 7,
+    "recipe_id": "stone_pack",
+    "item_id": "dirt",
+    "count": 2
+  },
+  {
+    "id": 8,
+    "recipe_id": "fish_bait_seed",
+    "item_id": "fish",
+    "count": 1
+  },
+  {
+    "id": 9,
+    "recipe_id": "fish_bait_seed",
+    "item_id": "grass",
+    "count": 2
+  }
+]

@@ -69,6 +69,13 @@ JOBS = (
         # Stone body is gray — only chroma-key neon green, never mid-gray.
         "eat_mid_gray": False,
     },
+    {
+        "key": "fish",
+        "src": "ic-fish-ai-ref.png",
+        "colors": 28,
+        "strip_frame": False,
+        "eat_mid_gray": True,
+    },
 )
 
 LOGICAL = 32
@@ -413,7 +420,11 @@ def main() -> None:
         umap = json.loads(UUID_MAP.read_text(encoding="utf-8"))
 
     frames = {}
-    contact = Image.new("RGBA", (OUT_SIZE * 4 + 30, OUT_SIZE + 20), (48, 42, 36, 255))
+    contact = Image.new(
+        "RGBA",
+        (OUT_SIZE * len(JOBS) + 12 + (len(JOBS) - 1) * 6, OUT_SIZE + 20),
+        (48, 42, 36, 255),
+    )
     for i, job in enumerate(JOBS):
         out_img = process_one(job)
         out_path = OUT / "ic-{}.png".format(job["key"])
