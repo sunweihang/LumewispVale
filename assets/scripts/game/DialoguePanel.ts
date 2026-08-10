@@ -1,5 +1,6 @@
 import {
     _decorator,
+    assetManager,
     Color,
     Component,
     EventMouse,
@@ -8,6 +9,8 @@ import {
     Input,
     Label,
     Node,
+    Sprite,
+    SpriteFrame,
     UIOpacity,
     UITransform,
     Vec3,
@@ -15,13 +18,14 @@ import {
     tween,
     Tween,
 } from 'cc';
+import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { InputBridge } from './InputBridge';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
 
 export type DialogueLine = {
-    /** Empty / omit = narration (no name plate). */
+    /** Empty / omit = narration (no name plate / avatar). */
     speaker?: string;
     text: string;
 };
@@ -31,10 +35,34 @@ const BOX_H = 260;
 /** Low on the portrait frame — HUD chrome is hidden while open. */
 const BOX_Y = -780;
 
+/** Headshot above the name plate (96px nearest portrait). */
+const AVATAR = 96;
+const AVATAR_FRAME = 108;
+const NAME_PLATE_W = 220;
+const NAME_PLATE_H = 48;
+/** Name stack X — left lip of the dialogue box. */
+const NAME_STACK_X = -BOX_W * 0.5 + 130;
+
 const FADE_IN = 0.18;
 const FADE_OUT = 0.12;
 /** Block input until fade finishes + a short beat (prevents open-click eating line 1). */
 const INPUT_GUARD_SEC = FADE_IN + 0.35;
+
+/** Speaker display name → headshot SpriteFrame uuid (`@f9941`). */
+function portraitUuidForSpeaker(speaker: string): string | null {
+    const s = speaker.trim();
+    if (!s) return null;
+    if (s === '露穗' || s.includes('露穗')) return DIALOGUE_PORTRAIT_FRAMES.girl;
+    if (s.includes('艾岚') || s.includes('镇长')) return DIALOGUE_PORTRAIT_FRAMES.mayor;
+    if (s.includes('石楠') || s.includes('工匠')) return DIALOGUE_PORTRAIT_FRAMES.carpenter;
+    if (s === '路人' || s.includes('路人')) return DIALOGUE_PORTRAIT_FRAMES.passerby;
+    if (s === '你') return DIALOGUE_PORTRAIT_FRAMES.farmer;
+    return null;
+}
+
+function bodyY(hasSpeaker: boolean): number {
+    return hasSpeaker ? 78 : 96;
+}
 
 /**
  * Visual HUD that overlaps the dialogue band.
@@ -61,6 +89,8 @@ export class DialoguePanel extends Component {
     private _nameLab: Label | null = null;
     private _namePlate: Node | null = null;
     private _bodyLab: Label | null = null;
+    private _portraitRoot: Node | null = null;
+    private _portraitSp: Sprite | null = null;
     private _hintRoot: Node | null = null;
     private _hintLab: Label | null = null;
     private _hintArrow: Node | null = null;
@@ -68,6 +98,9 @@ export class DialoguePanel extends Component {
     private _rootOp: UIOpacity | null = null;
     private _hintBaseY = 0;
     private _arrowBaseY = 18;
+    private _sfCache = new Map<string, SpriteFrame>();
+    private _portraitLoadGen = 0;
+    private _hasPortrait = false;
 
     private _lines: DialogueLine[] = [];
     private _index = 0;
@@ -78,6 +111,7 @@ export class DialoguePanel extends Component {
     private _inputReady = false;
     private _busy = false;
     private _lastAdvanceAt = 0;
+    private _openedAt = 0;
     private _chromeWas: Map<string, boolean> = new Map();
     private _fadeGen = 0;
     private _fontReady = false;
@@ -149,18 +183,29 @@ export class DialoguePanel extends Component {
         if (this._nameLab) applyUiFont(this._nameLab);
         if (this._bodyLab) applyUiFont(this._bodyLab);
         if (this._hintLab) applyUiFont(this._hintLab);
+        this.ensureBodyLayout();
     }
 
     /**
-     * From GameBootstrap stick.onTap — consume while open, but only our
-     * input listeners advance (avoids mouse+touch double-step).
+     * From GameBootstrap stick.onTap — advance + consume while open.
+     * Global input listeners also call tryAdvance; 280ms debounce merges
+     * mouse+touch double-fires. Returning true after finish() keeps the
+     * tap from leaking into farm/world actions.
      */
     handleTap(_uiX: number, _uiY: number): boolean {
-        return this._open;
+        if (!this._open) return false;
+        this.tryAdvance();
+        return true;
     }
 
     private tryAdvance() {
-        if (!this._open || !this._inputReady || this._busy) return;
+        if (!this._open || this._busy) return;
+        // scheduleOnce can miss after editor hot-reload — accept taps once guard elapsed.
+        if (!this._inputReady) {
+            if (Date.now() - this._openedAt < INPUT_GUARD_SEC * 1000) return;
+            this.enableInput();
+        }
+        if (!this._inputReady) return;
         // Mouse+touch often both fire for one desktop click — one advance only.
         const now = Date.now();
         if (now - this._lastAdvanceAt < 280) return;
@@ -190,15 +235,64 @@ export class DialoguePanel extends Component {
         const line = this._lines[this._index];
         if (!line) return;
         const speaker = (line.speaker ?? '').trim();
+        const uuid = portraitUuidForSpeaker(speaker);
+        this._hasPortrait = !!uuid;
         if (this._namePlate) this._namePlate.active = !!speaker;
         if (this._nameLab) this._nameLab.string = speaker || ' ';
+        this.layoutChrome(!!speaker, this._hasPortrait);
+        this.setPortrait(uuid);
         if (this._bodyLab) {
             this._bodyLab.string = line.text;
-            // Keep copy near the top of the box (name plate steals a bit when present).
-            this._bodyLab.node.setPosition(0, speaker ? 78 : 96, 0);
+            this.ensureBodyLayout();
         }
-        if (this._hintLab) this._hintLab.string = '点击继续';
+        if (this._hintLab) {
+            this._hintLab.string = '点击继续';
+            this._hintLab.node.getComponent(UITransform)?.setContentSize(200, 32);
+        }
         this.startHintPulse();
+    }
+
+    private layoutChrome(hasSpeaker: boolean, hasPortrait: boolean) {
+        const nameY = BOX_H * 0.5 + 2;
+        if (this._namePlate) {
+            this._namePlate.setPosition(NAME_STACK_X, nameY, 0);
+        }
+        if (this._portraitRoot) {
+            // Headshot sits directly above the name plate (may peek above the box).
+            const avatarY = nameY + NAME_PLATE_H * 0.5 + 8 + AVATAR_FRAME * 0.5;
+            this._portraitRoot.setPosition(NAME_STACK_X, avatarY, 0);
+            this._portraitRoot.active = hasPortrait && hasSpeaker;
+        }
+        if (this._bodyLab) {
+            this._bodyLab.node.setPosition(0, bodyY(hasSpeaker), 0);
+        }
+    }
+
+    private setPortrait(uuid: string | null) {
+        if (!this._portraitSp || !this._portraitRoot) return;
+        if (!uuid) {
+            this._portraitLoadGen += 1;
+            this._portraitSp.spriteFrame = null;
+            this._portraitRoot.active = false;
+            return;
+        }
+        this._portraitRoot.active = true;
+        const cached = this._sfCache.get(uuid);
+        if (cached) {
+            this._portraitSp.spriteFrame = cached;
+            return;
+        }
+        const gen = ++this._portraitLoadGen;
+        assetManager.loadAny({ uuid }, (err, asset) => {
+            if (gen !== this._portraitLoadGen || !this._portraitSp?.isValid) return;
+            if (err || !asset) {
+                this._portraitSp.spriteFrame = null;
+                return;
+            }
+            const sf = asset as SpriteFrame;
+            this._sfCache.set(uuid, sf);
+            this._portraitSp.spriteFrame = sf;
+        });
     }
 
     private show() {
@@ -210,6 +304,7 @@ export class DialoguePanel extends Component {
         }
         this._open = true;
         this._inputReady = false;
+        this._openedAt = Date.now();
         this.unschedule(this.enableInput);
         this.unlisten();
         this.fadeIn();
@@ -234,20 +329,40 @@ export class DialoguePanel extends Component {
         this.stopHintPulse();
         this.unschedule(this.enableInput);
         this.unlisten();
+        // Unlock immediately — waiting for fadeOut left uiBlocking stuck when a
+        // nested play() captured prevBlocking=true mid-fade.
+        this.releaseInputLocks();
         this.fadeOut(() => {
             this.restoreChrome();
-            InputBridge.uiBlocking = this._prevBlocking;
-            // Nested reward→dialogue can stash prevBlocking=true; if nothing else
-            // owns the block, clear so move-stick / idle quest arrows keep working.
-            if (InputBridge.uiBlocking) {
-                const rewardOpen = !!(this.node.getComponent('RewardPopup') as { isOpen?: boolean } | null)
-                    ?.isOpen;
-                const questOpen = !!(this.node.getComponent('QuestPanel') as { isOpen?: boolean } | null)
-                    ?.isOpen;
-                if (!rewardOpen && !questOpen) InputBridge.uiBlocking = false;
-            }
             after?.();
         });
+    }
+
+    private releaseInputLocks() {
+        if (this.anyModalBlocking()) {
+            InputBridge.uiBlocking = true;
+        } else {
+            InputBridge.uiBlocking = false;
+        }
+        if (!this.anyMoveLockOwner()) {
+            InputBridge.moveLocked = false;
+        }
+        InputBridge.clear();
+    }
+
+    private anyModalBlocking(): boolean {
+        const rewardOpen = !!(this.node.getComponent('RewardPopup') as { isOpen?: boolean } | null)
+            ?.isOpen;
+        const questOpen = !!(this.node.getComponent('QuestPanel') as { isOpen?: boolean } | null)
+            ?.isOpen;
+        const hud = this.node.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
+        return rewardOpen || questOpen || !!hud?.isModalOpen;
+    }
+
+    private anyMoveLockOwner(): boolean {
+        const intro = this.node.getComponent('StoryIntroPanel') as { isOpen?: boolean } | null;
+        const fish = this.node.getComponent('FishingMinigame') as { isOpen?: boolean } | null;
+        return !!intro?.isOpen || !!fish?.isOpen;
     }
 
     private startHintPulse() {
@@ -387,9 +502,11 @@ export class DialoguePanel extends Component {
     private build() {
         const canvas = this.node;
 
-        // Drop leftover dimmer from older builds (full-screen black).
+        // Drop leftover dimmer / box from older builds.
         const oldDim = canvas.getChildByName('DialogueDimmer');
         if (oldDim) oldDim.destroy();
+        const oldBox = canvas.getChildByName('DialogueBox');
+        if (oldBox) oldBox.destroy();
 
         const root = new Node('DialogueBox');
         root.layer = canvas.layer;
@@ -414,25 +531,62 @@ export class DialoguePanel extends Component {
         g.stroke();
         this._root = root;
 
+        // Headshot above the name plate (not a full-body left column).
+        const portraitRoot = new Node('Portrait');
+        portraitRoot.layer = root.layer;
+        portraitRoot.setParent(root);
+        const nameY = BOX_H * 0.5 + 2;
+        portraitRoot.setPosition(
+            NAME_STACK_X,
+            nameY + NAME_PLATE_H * 0.5 + 8 + AVATAR_FRAME * 0.5,
+            0,
+        );
+        portraitRoot.addComponent(UITransform).setContentSize(AVATAR_FRAME, AVATAR_FRAME);
+        const pg = portraitRoot.addComponent(Graphics);
+        const fw = AVATAR_FRAME;
+        pg.fillColor = new Color(48, 36, 24, 255);
+        pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
+        pg.fill();
+        pg.fillColor = new Color(72, 52, 34, 255);
+        pg.roundRect(-AVATAR * 0.5 - 2, -AVATAR * 0.5 - 2, AVATAR + 4, AVATAR + 4, 12);
+        pg.fill();
+        pg.strokeColor = new Color(214, 176, 104, 255);
+        pg.lineWidth = 3;
+        pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
+        pg.stroke();
+        this._portraitRoot = portraitRoot;
+
+        const faceN = new Node('Face');
+        faceN.layer = root.layer;
+        faceN.setParent(portraitRoot);
+        faceN.setPosition(0, 0, 0);
+        const faceUt = faceN.addComponent(UITransform);
+        faceUt.setContentSize(AVATAR, AVATAR);
+        const faceSp = faceN.addComponent(Sprite);
+        faceSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        faceSp.type = Sprite.Type.SIMPLE;
+        this._portraitSp = faceSp;
+        portraitRoot.active = false;
+
         const namePlate = new Node('NamePlate');
         namePlate.layer = root.layer;
         namePlate.setParent(root);
-        namePlate.setPosition(x0 + 130, BOX_H * 0.5 + 2, 0);
-        namePlate.addComponent(UITransform).setContentSize(220, 48);
+        namePlate.setPosition(NAME_STACK_X, nameY, 0);
+        namePlate.addComponent(UITransform).setContentSize(NAME_PLATE_W, NAME_PLATE_H);
         const ng = namePlate.addComponent(Graphics);
         ng.fillColor = new Color(132, 86, 46, 255);
-        ng.roundRect(-110, -24, 220, 48, 10);
+        ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
         ng.fill();
         ng.strokeColor = new Color(240, 214, 150, 255);
         ng.lineWidth = 2;
-        ng.roundRect(-110, -24, 220, 48, 10);
+        ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
         ng.stroke();
         this._namePlate = namePlate;
 
         const nameN = new Node('Name');
         nameN.layer = namePlate.layer;
         nameN.setParent(namePlate);
-        nameN.addComponent(UITransform).setContentSize(200, 36);
+        const nameUt = nameN.addComponent(UITransform);
         const nameLab = nameN.addComponent(Label);
         styleUiLabel(nameLab, {
             size: 28,
@@ -442,15 +596,17 @@ export class DialoguePanel extends Component {
         });
         nameLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         nameLab.verticalAlign = Label.VerticalAlign.CENTER;
+        nameLab.overflow = Label.Overflow.CLAMP;
+        nameLab.enableWrapText = false;
+        nameUt.setContentSize(200, 36);
         this._nameLab = nameLab;
 
         const bodyN = new Node('Body');
         bodyN.layer = root.layer;
         bodyN.setParent(root);
         // Top-anchored: sit just under the top padding / name plate.
-        bodyN.setPosition(0, 96, 0);
+        bodyN.setPosition(0, bodyY(false), 0);
         const bodyUt = bodyN.addComponent(UITransform);
-        bodyUt.setContentSize(BOX_W - 100, 150);
         bodyUt.setAnchorPoint(0.5, 1);
         const body = bodyN.addComponent(Label);
         styleUiLabel(body, {
@@ -459,11 +615,14 @@ export class DialoguePanel extends Component {
             outline: true,
             outlineWidth: 3,
         });
+        // Overflow BEFORE size: Label(NONE) shrinks the node to the empty string,
+        // and RESIZE_HEIGHT would then wrap on that ~2-glyph width.
         body.overflow = Label.Overflow.RESIZE_HEIGHT;
         body.enableWrapText = true;
         body.horizontalAlign = Label.HorizontalAlign.LEFT;
         body.verticalAlign = Label.VerticalAlign.TOP;
         body.lineHeight = 48;
+        bodyUt.setContentSize(BOX_W - 100, 150);
         this._bodyLab = body;
 
         // Continue cue — fully inside the box (bottom-right padding ≥ 28px).
@@ -471,8 +630,8 @@ export class DialoguePanel extends Component {
         hintRoot.layer = root.layer;
         hintRoot.setParent(root);
         this._hintBaseY = y0 + 70;
-        hintRoot.setPosition(x0 + BOX_W - 100, this._hintBaseY, 0);
-        hintRoot.addComponent(UITransform).setContentSize(150, 64);
+        hintRoot.setPosition(x0 + BOX_W - 118, this._hintBaseY, 0);
+        hintRoot.addComponent(UITransform).setContentSize(200, 64);
         this._hintOp = hintRoot.addComponent(UIOpacity);
         this._hintOp.opacity = 255;
         this._hintRoot = hintRoot;
@@ -504,7 +663,7 @@ export class DialoguePanel extends Component {
         hintN.layer = root.layer;
         hintN.setParent(hintRoot);
         hintN.setPosition(0, -14, 0);
-        hintN.addComponent(UITransform).setContentSize(150, 32);
+        const hintUt = hintN.addComponent(UITransform);
         const hint = hintN.addComponent(Label);
         styleUiLabel(hint, {
             size: 24,
@@ -516,7 +675,26 @@ export class DialoguePanel extends Component {
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         hint.verticalAlign = Label.VerticalAlign.CENTER;
         hint.overflow = Label.Overflow.CLAMP;
+        hint.enableWrapText = false;
+        hintUt.setContentSize(200, 32);
         hint.string = '点击继续';
         this._hintLab = hint;
+    }
+
+    /** Keep wrap width after font / string updates (Label can shrink the node). */
+    private ensureBodyLayout() {
+        const n = this._bodyLab?.node;
+        if (!n?.isValid) return;
+        const ut = n.getComponent(UITransform);
+        if (!ut) return;
+        const hasSpeaker = !!(this._namePlate?.active);
+        const w = BOX_W - 100;
+        ut.setAnchorPoint(0.5, 1);
+        n.setPosition(0, bodyY(hasSpeaker), 0);
+        if (ut.contentSize.width < w - 1 || ut.contentSize.width > w + 1) {
+            ut.setContentSize(w, Math.max(ut.contentSize.height, 150));
+        } else if (ut.contentSize.height < 150) {
+            ut.setContentSize(w, 150);
+        }
     }
 }

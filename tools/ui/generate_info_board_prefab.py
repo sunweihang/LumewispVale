@@ -61,8 +61,8 @@ GOLD_FONT = 30
 GOLD_VAL_W, GOLD_VAL_H = 180, 52
 GOLD_VAL_X, GOLD_VAL_Y = 48, 0
 
-# Root stack (anchor top-right = 1,1): children local pos
-TOTAL_H = PANEL_H + STACK_GAP + GOLD_H + STACK_GAP + BTN
+# Root stack (anchor top-right = 1,1): panel + gold only (zoom/quest buttons removed)
+TOTAL_H = PANEL_H + STACK_GAP + GOLD_H
 
 C = {
     "outline": (54, 30, 14, 255),
@@ -681,12 +681,8 @@ def build_prefab(frames: dict, prefab_uuid: str):
     panel_x = -PANEL_W * 0.5
     panel_y = -PANEL_H * 0.5
     gold_y = -(PANEL_H + STACK_GAP + GOLD_H * 0.5)
-    btn_y = -(PANEL_H + STACK_GAP + GOLD_H + STACK_GAP + BTN * 0.5)
     # gold centered on panel: gold center x = panel center x = -PANEL_W/2
     gold_center_x = -PANEL_W * 0.5
-    btn_minus_x = gold_center_x - GOLD_W * 0.5 + BTN * 0.55
-    btn_plus_x = btn_minus_x + BTN + BTN_GAP
-    btn_quest_x = gold_center_x + GOLD_W * 0.5 - BTN * 0.55
 
     # Panel-local (center origin) for insets
     date_cx, date_cy, date_w, date_h = tl_to_local(DATE, PANEL_W, PANEL_H)
@@ -765,18 +761,6 @@ def build_prefab(frames: dict, prefab_uuid: str):
         )
     )
 
-    # Buttons
-    def add_btn(name, sf, x, y):
-        pi = b.add(prefab_info(1, 0, file_id()))
-        nid = b.add(None)
-        uit = b.add(uit_obj(nid, pi, BTN, BTN))
-        spr = b.add(sprite_obj(nid, pi, sf))
-        return nid, pi, uit, spr, x, y
-
-    minus = add_btn("BtnMinus", frames["btn_minus"], btn_minus_x, btn_y)
-    plus = add_btn("BtnPlus", frames["btn_plus"], btn_plus_x, btn_y)
-    quest = add_btn("BtnQuest", frames["btn_quest"], btn_quest_x, btn_y)
-
     # Toast
     toast_pi = b.add(prefab_info(1, 0, file_id()))
     toast_id = b.add(None)
@@ -795,15 +779,11 @@ def build_prefab(frames: dict, prefab_uuid: str):
             "_enabled": True,
             "__prefab": {"__id__": script_pi},
             "farm": None,
-            "cameraFollow": None,
             "dateLab": {"__id__": date_lab},
             "timeLab": {"__id__": time_lab},
             "goldLab": {"__id__": gold_lab},
             "toastLab": {"__id__": toast_lab},
             "needle": {"__id__": needle_id},
-            "btnMinus": {"__id__": minus[0]},
-            "btnPlus": {"__id__": plus[0]},
-            "btnQuest": {"__id__": quest[0]},
             "_id": "",
         }
     )
@@ -812,7 +792,7 @@ def build_prefab(frames: dict, prefab_uuid: str):
     b.items[root_id] = node_obj(
         "FarmInfoBoard",
         None,
-        [panel_id, gold_id, minus[0], plus[0], quest[0], toast_id],
+        [panel_id, gold_id, toast_id],
         [root_uit, root_widget, script_id],
         root_pi,
         0,
@@ -872,12 +852,6 @@ def build_prefab(frames: dict, prefab_uuid: str):
     )
     b.items[gold_lab_uit]["node"] = {"__id__": gold_lab_id}
     b.items[gold_lab]["node"] = {"__id__": gold_lab_id}
-
-    for nid, pi, uit, spr, x, y in (minus, plus, quest):
-        name = {minus[0]: "BtnMinus", plus[0]: "BtnPlus", quest[0]: "BtnQuest"}[nid]
-        b.items[nid] = node_obj(name, 1, [], [uit, spr], pi, x, y)
-        b.items[uit]["node"] = {"__id__": nid}
-        b.items[spr]["node"] = {"__id__": nid}
 
     b.items[toast_id] = node_obj(
         "Toast",

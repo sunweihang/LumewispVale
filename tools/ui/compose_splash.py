@@ -77,7 +77,6 @@ def main():
     oak = load("nature/nat-tree-oak.png")
     pine = load("nature/nat-tree-pine.png")
     blossom = load("nature/nat-tree-blossom.png")
-    meteor = load("special/spc-meteor.png")
     crate = load("props/prop-crate.png")
     barrel = load("props/prop-barrel.png")
 
@@ -93,7 +92,6 @@ def main():
     oak = scale_h(oak, 180)
     pine = scale_h(pine, 200)
     blossom = scale_h(blossom, 170)
-    meteor = scale_h(meteor, 160)
     crate = scale_h(crate, 56)
     barrel = scale_h(barrel, 56)
 
@@ -130,7 +128,6 @@ def main():
     paste(canvas, cottage, 300, 1320)
     paste(canvas, crate, 560, 1200)
     paste(canvas, barrel, 620, 1210)
-    paste(canvas, meteor, 820, 780)
 
     # Tree fringe
     for cx, fy, kind in [

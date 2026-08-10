@@ -109,7 +109,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 520,
-      "height": 408
+      "height": 320
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -145,7 +145,7 @@
     "_isAbsHorizontalCenter": true,
     "_isAbsVerticalCenter": true,
     "_originalWidth": 520,
-    "_originalHeight": 408,
+    "_originalHeight": 320,
     "_alignMode": 2,
     "_lockFlags": 0,
     "_id": ""
@@ -1285,7 +1285,7 @@
       "__id__": 1
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 39
@@ -1413,7 +1413,7 @@
       "__id__": 1
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 43
@@ -1541,7 +1541,7 @@
       "__id__": 1
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 47
@@ -1684,7 +1684,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": -260.0,
-      "y": -430,
+      "y": -342,
       "z": 0
     },
     "_lrot": {
@@ -1811,7 +1811,6 @@
       "__id__": 80
     },
     "farm": null,
-    "cameraFollow": null,
     "dateLab": {
       "__id__": 16
     },
@@ -1826,15 +1825,6 @@
     },
     "needle": {
       "__id__": 10
-    },
-    "btnMinus": {
-      "__id__": 38
-    },
-    "btnPlus": {
-      "__id__": 42
-    },
-    "btnQuest": {
-      "__id__": 46
     },
     "_id": ""
   },

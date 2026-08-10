@@ -2,11 +2,16 @@ import { _decorator, Component } from 'cc';
 import { DialogueLine, DialoguePanel } from './DialoguePanel';
 import { GameState } from './GameState';
 import { QuestSystem } from './QuestSystem';
+import { ORIGIN_STORY_PAGES, StoryIntroPanel } from './StoryIntroPanel';
 import { TutorialGuide } from './TutorialGuide';
 
 const { ccclass } = _decorator;
 
+/** Farm companion — guides all farm tutorial beats. */
+const GIRL = '露穗';
+
 type ScriptId =
+    | 'origin_story'
     | 'wake_farm'
     | 'quest_1002'
     | 'quest_1003'
@@ -14,8 +19,6 @@ type ScriptId =
     | 'quest_1005'
     | 'quest_1006'
     | 'quest_1007'
-    | 'quest_1008'
-    | 'meteor_inspect'
     | 'quest_1009'
     | 'arrive_town'
     | 'mayor_tea'
@@ -25,77 +28,78 @@ type ScriptId =
     | 'carpenter_nails'
     | 'quest_1014'
     | 'community_bell'
-    | 'ch1_done';
+    | 'ch1_done'
+    | 'girl_chat';
 
 type QueueItem = { id: ScriptId; onDone?: () => void; force?: boolean };
 
 const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
+    /** Illustrated prologue — played by StoryIntroPanel, not DialoguePanel. */
+    origin_story: [],
     wake_farm: [
-        { text: '晨光透过窗缝。你在溪谷边缘的旧农庄里醒来——这片地，如今归你了。' },
         {
-            text: '院子里荒草疯长，工具七零八落。北边林缘还隐约闪着不寻常的紫光……不过眼下，得先把家安顿好。',
+            speaker: GIRL,
+            text: '早安……你醒啦。伤还隐隐作痛吧？没关系，溪谷的风很软，会慢慢把你哄好的。',
         },
         {
-            speaker: '你',
-            text: '先把院子收拾出来吧。用手拔掉杂草，收集一些草料。',
+            speaker: GIRL,
+            text: '这里是咱们的小农庄。镇上的事不急——先把家安顿暖一点，好吗？',
+        },
+        {
+            speaker: GIRL,
+            text: '看，院子里杂草都爬到脚踝了。用手轻轻拔掉几棵，收集点草料……我在旁边陪你～',
         },
     ],
     quest_1002: [
         {
-            speaker: '你',
-            text: '草料有了。该翻几块地——选中锄头，把荒地开垦成可播种的田。',
+            speaker: GIRL,
+            text: '草料有啦，真棒。接下来选中锄头，把荒地翻成软软的田——想种什么，都从这一锄开始呢。',
         },
     ],
     quest_1003: [
         {
-            speaker: '你',
-            text: '田翻好了。走到工作台，用草料搓出种子——没有种子，再肥的土也空着。',
+            speaker: GIRL,
+            text: '田翻好了～走到工作台，用草料搓出种子。没有种子，再肥的土也会寂寞哦。',
         },
     ],
     quest_1004: [
         {
-            speaker: '你',
-            text: '种子到手。选中种子，点在翻好的田上，把希望埋进土里。',
+            speaker: GIRL,
+            text: '种子到手啦。选中它们，点在翻好的田上——把一点点希望，轻轻埋进土里。',
         },
     ],
     quest_1005: [
         {
-            speaker: '你',
-            text: '芽还嫩。选中水壶，给刚种下的作物浇一遍水。',
+            speaker: GIRL,
+            text: '芽还嫩着呢。选中水壶浇一遍水——领奖时会拿到催熟剂，像给作物一个小小的拥抱。',
         },
     ],
     quest_1006: [
         {
-            speaker: '你',
-            text: '地里有了生气……等作物成熟，空手点地块就能收获。',
+            speaker: GIRL,
+            text: '把催熟剂拖进快捷栏，点作物催熟，再空手收获。看着它们长大……真开心。',
         },
     ],
     quest_1007: [
         {
-            speaker: '你',
-            text: '桌上该有些鲜味。选中鱼竿，到湖边或码头试着钓一条。',
-        },
-    ],
-    quest_1008: [
-        { text: '湖面平静下来。可北边那抹紫光，一整天都没散。' },
-        {
-            speaker: '你',
-            text: '去林缘看看那块紫晶陨石——得亲眼确认异象。',
-        },
-    ],
-    meteor_inspect: [
-        {
-            text: '紫晶嵌在翻起的土里，边缘还烫着微光。脉动一下，又一下，像大地在低声应答。',
-        },
-        {
-            speaker: '你',
-            text: '这事得告诉镇上的人。北侧路牌通往微光溪谷镇——该去向镇长报到了。',
+            speaker: GIRL,
+            text: '桌上该添点鲜味啦。先点下方鱼竿，再跟着箭头走到西边湖边码头，点水面抛竿——我等你带回第一条鱼～',
         },
     ],
     quest_1009: [
         {
-            speaker: '你',
-            text: '走到北侧「通往小镇」的路牌，点一下就能进镇。镇长府在镇北。',
+            speaker: GIRL,
+            text: '湖面都平静下来了。农场这边，总算站稳啦。',
+        },
+        {
+            speaker: GIRL,
+            text: '该去镇上露个面了。走到东侧「通往小镇」的路牌点一下就能进镇——镇长府在镇北。去吧，我会想你的。',
+        },
+    ],
+    girl_chat: [
+        {
+            speaker: GIRL,
+            text: '嗯？找我呀。慢慢来就好，今天也要过得甜一点～有我在呢。',
         },
     ],
     arrive_town: [
@@ -122,7 +126,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: '镇长·艾岚',
-            text: '北边紫光你们农场也看见了吧？先别慌。眼下要紧的是：熟悉市集、听听镇上的委托，再去木工坊认认石楠。',
+            text: '眼下要紧的是：熟悉市集、听听镇上的委托，再去木工坊认认石楠。',
         },
         {
             speaker: '镇长·艾岚',
@@ -198,7 +202,6 @@ const QUEST_INTRO: Partial<Record<number, ScriptId>> = {
     1005: 'quest_1005',
     1006: 'quest_1006',
     1007: 'quest_1007',
-    1008: 'quest_1008',
     1009: 'quest_1009',
     1011: 'quest_1011',
     1012: 'quest_1012',
@@ -224,6 +227,7 @@ const BUILDING_FLAG: Record<string, string> = {
 @ccclass('StoryDialogue')
 export class StoryDialogue extends Component {
     dialogue: DialoguePanel | null = null;
+    intro: StoryIntroPanel | null = null;
     quests: QuestSystem | null = null;
     guide: TutorialGuide | null = null;
 
@@ -238,8 +242,10 @@ export class StoryDialogue extends Component {
         quests: QuestSystem;
         map: 'farm' | 'town' | 'mine' | 'other';
         guide?: TutorialGuide | null;
+        intro?: StoryIntroPanel | null;
     }) {
         this.dialogue = opts.dialogue;
+        this.intro = opts.intro ?? null;
         this.quests = opts.quests;
         this.guide = opts.guide ?? null;
         this._map = opts.map;
@@ -256,11 +262,18 @@ export class StoryDialogue extends Component {
         if (this._map === 'farm') {
             const active = this.quests?.activeQuest?.id ?? 0;
             if (!this.quests?.isCompleted(1001) && active === 1001) {
-                if (!GameState.hasSeenDialogue('wake_farm')) {
-                    this.enqueue('wake_farm', () => this.guide?.startWakeYardGuide());
+                const startGuide = () => this.guide?.startWakeYardGuide();
+                const needOrigin = !GameState.hasSeenDialogue('origin_story');
+                const needWake = !GameState.hasSeenDialogue('wake_farm');
+                if (needOrigin && needWake) {
+                    this.enqueue('origin_story');
+                    this.enqueue('wake_farm', startGuide);
+                } else if (needOrigin) {
+                    this.enqueue('origin_story', startGuide);
+                } else if (needWake) {
+                    this.enqueue('wake_farm', startGuide);
                 } else {
-                    // Dialogue already done this session — still offer the hollow guide once.
-                    this.guide?.startWakeYardGuide();
+                    startGuide();
                 }
             } else if (active) {
                 const intro = QUEST_INTRO[active];
@@ -283,11 +296,6 @@ export class StoryDialogue extends Component {
             }
             this.drain();
         }
-    }
-
-    playMeteorInspect(onDone?: () => void) {
-        this.enqueue('meteor_inspect', onDone, true);
-        this.drain();
     }
 
     /**
@@ -314,6 +322,28 @@ export class StoryDialogue extends Component {
             },
             true,
         );
+        this.drain();
+        return true;
+    }
+
+    /**
+     * Farm companion tap — replay wake / current quest tip, or a sweet idle line.
+     */
+    tryFarmNpc(key: string): boolean {
+        if (key !== 'girl') return false;
+        const active = this.quests?.activeQuest?.id ?? 0;
+        if (!GameState.hasSeenDialogue('wake_farm') && active === 1001) {
+            this.enqueue('wake_farm', () => this.guide?.startWakeYardGuide(), true);
+            this.drain();
+            return true;
+        }
+        const intro = active ? QUEST_INTRO[active] : undefined;
+        if (intro && SCRIPTS[intro]?.some((l) => l.speaker === GIRL)) {
+            this.enqueue(intro, undefined, true);
+            this.drain();
+            return true;
+        }
+        this.enqueue('girl_chat', undefined, true);
         this.drain();
         return true;
     }
@@ -351,6 +381,29 @@ export class StoryDialogue extends Component {
     }
 
     private playItem(item: QueueItem) {
+        if (!item.force && GameState.hasSeenDialogue(item.id)) {
+            item.onDone?.();
+            this.drain();
+            return;
+        }
+
+        if (item.id === 'origin_story') {
+            const intro = this.intro;
+            if (!intro) {
+                item.onDone?.();
+                this.drain();
+                return;
+            }
+            this._playing = true;
+            GameState.markDialogueSeen(item.id);
+            intro.play(ORIGIN_STORY_PAGES, () => {
+                this._playing = false;
+                item.onDone?.();
+                this.drain();
+            });
+            return;
+        }
+
         const panel = this.dialogue;
         const lines = SCRIPTS[item.id];
         if (!panel || !lines?.length) {
@@ -358,13 +411,9 @@ export class StoryDialogue extends Component {
             this.drain();
             return;
         }
-        if (!item.force && GameState.hasSeenDialogue(item.id)) {
-            item.onDone?.();
-            this.drain();
-            return;
-        }
         this._playing = true;
-        GameState.markDialogueSeen(item.id);
+        // Idle chat may replay; don't permanently mark it as "seen" blocking force.
+        if (item.id !== 'girl_chat') GameState.markDialogueSeen(item.id);
         panel.play(lines, () => {
             this._playing = false;
             item.onDone?.();

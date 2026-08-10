@@ -9,6 +9,7 @@ export const NATURE_FRAMES = {
     "pine": "6d416d3d-92bc-40f6-a7ca-297a9d6d83c1@f9941",
     "oak": "4db96ee3-08ea-4d42-a869-eacba7eb3cb5@f9941",
     "bush": "1102b80f-5331-4caa-87a4-338aa3be5f95@f9941",
+    "blossom": "b9de4c6c-c556-4c2f-9c93-6e3676257e09@f9941",
     "mailbox": "cd898acb-be7c-4686-989e-c1f090a5e5bb@f9941",
     "shipping": "34e92659-93e9-4eb4-857f-39fa16daf062@f9941",
     "fence": "52ecea29-5da3-4eec-9765-3cc0858e4748@f9941",
@@ -23,5 +24,7 @@ export const NATURE_FRAMES = {
     "reed": "4dad16c6-f8bc-4fd6-b39d-1a90efa87b9b@f9941",
     "rockWet": "91c6ffa7-327b-488c-8d7f-ea5445f9b489@f9941",
     "logSunk": "338cb95e-9c92-42eb-820b-701c0727681a@f9941",
-    "craftbench": "32485893-e240-4e1e-b45b-fab51b8a3f1e@f9941"
+    "craftbench": "32485893-e240-4e1e-b45b-fab51b8a3f1e@f9941",
+    "weedYellow": "95350866-26d9-4ad9-9fb8-9ac1848154e9@f9941",
+    "weedBlue": "4fb2a7a0-604c-4147-b7b4-b6c52e6e1c8d@f9941"
 }

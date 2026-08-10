@@ -34,7 +34,7 @@
 - **触控 / 鼠标**：拖拽移动；点按格子使用当前工具；杂草 / 成熟作物直接点；底部栏点选工具（桌面：1–3 选工具，空格对脚下使用）
 - **核心循环**：锄头锄地 → 种子播种 → 水壶浇水 → 点击收获；野外杂草直接点击拔除
 - **地图**：`Main.scene` 内已摆好的农场（林缘 / 小屋院子 / 可耕空地 / 湖与栈桥）；运行时不再程序铺地
-- **主线**：农场教程 → 查看紫晶陨石 → 路牌前往小镇 → 镇长/商店/公告板/社区中心（见 `docs/story-mainline.md`）
+- **主线**：农场教程 → 路牌前往小镇 → 镇长/商店/公告板/社区中心（见 `docs/story-mainline.md`）
 - 资产生成：`tools/ui/process_farm_ai_v2.py`（原图 `tools/ui/ai-source/farm-v2/`）
 - 入口：`GameBootstrap.ts` · 布局查询：`FarmWorldLayout.ts` · 玩法：`FarmSystem.ts`
 

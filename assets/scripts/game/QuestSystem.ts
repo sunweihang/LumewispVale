@@ -103,11 +103,25 @@ export class QuestSystem extends Component {
         this._water = snap.water;
         this._harvest = snap.harvest;
         this._fish = snap.fish;
+        // Retired meteor step (1008) → send players straight to the town gate.
+        if (this._activeId === 1008) {
+            this._completed.add(1008);
+            this._activeId = 1009;
+            this._awaitingClaim = false;
+        }
     }
 
-    /** Town unlocks after inspecting the meteor (or if already flagged). */
+    /** Town unlocks after the farm tutorial (fishing) — go straight to the road sign. */
     private syncMapUnlocks() {
-        if ((this._flags.get('inspect_meteor') ?? 0) >= 1 || this._completed.has(1008)) {
+        if (
+            this._completed.has(1007) ||
+            this._completed.has(1008) ||
+            this._completed.has(1009) ||
+            this._activeId === 1009 ||
+            (this._activeId !== null && this._activeId >= 1010) ||
+            (this._flags.get('enter_town') ?? 0) >= 1 ||
+            (this._flags.get('inspect_meteor') ?? 0) >= 1
+        ) {
             GameState.unlock('town');
         }
     }
@@ -319,6 +333,8 @@ export class QuestSystem extends Component {
             this.farm.seeds += count;
         } else if (item === 'parsnip') {
             this.farm.crops += count;
+        } else if (item === 'boost') {
+            this.farm.boosts += count;
         } else {
             return;
         }
@@ -367,6 +383,7 @@ export class QuestSystem extends Component {
         if (!this.farm) return 0;
         if (id === 'seeds') return this.farm.seeds;
         if (id === 'parsnip') return this.farm.crops;
+        if (id === 'boost') return this.farm.boosts;
         const mats: FarmMaterial[] = ['wood', 'grass', 'dirt', 'stone', 'fish'];
         if ((mats as string[]).includes(id)) return this.farm[id as FarmMaterial];
         return 0;
@@ -425,7 +442,6 @@ export class QuestSystem extends Component {
             fish: '鱼',
             seeds: '种子',
             parsnip: '防风草',
-            inspect_meteor: '查看陨石',
             enter_town: '抵达小镇',
             visit_mayor: '拜访镇长府',
             shop_buy: '商店购物',

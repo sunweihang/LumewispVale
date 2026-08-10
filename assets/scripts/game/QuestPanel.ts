@@ -27,6 +27,7 @@ import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
 import { REWARD_FRAMES } from './RewardFrames';
 import { TOOL_FRAMES } from './ToolFrames';
+import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const CLOSE_FRAME_UUID = TOOL_FRAMES.close;
@@ -283,6 +284,7 @@ export class QuestPanel extends Component {
     handleTap(uiX: number, uiY: number): boolean {
         if (!this._open) {
             if (this.hitHud(uiX, uiY)) {
+                playUiClick();
                 if (this.quests?.isAwaitingClaim) {
                     this.openRewardPopup();
                     return true;
@@ -301,10 +303,14 @@ export class QuestPanel extends Component {
         this.clearScrollPtr();
         const local = this.uiToCanvasLocal(uiX, uiY);
         if (this.hitNodeWorld(this.btnClose, local.x, local.y)) {
+            playUiClick();
             this.setOpen(false);
             return true;
         }
-        if (this.handleRowActionTap(local.x, local.y)) return true;
+        if (this.handleRowActionTap(local.x, local.y)) {
+            playUiClick();
+            return true;
+        }
         if (this.handleScrollBarTap(local.x, local.y)) return true;
         return true;
     }
@@ -1208,6 +1214,7 @@ export class QuestPanel extends Component {
             money: '金币',
             seeds: '种子',
             seed: '种子',
+            boost: '催熟剂',
             grass: '草料',
             wood: '木材',
             dirt: '泥土',
@@ -1237,6 +1244,7 @@ export class QuestPanel extends Component {
             return REWARD_FRAMES.gold ?? MATERIAL_FRAMES.gold ?? null;
         }
         if (k === 'seeds' || k.includes('seed')) return TOOL_FRAMES.seeds ?? null;
+        if (k === 'boost') return TOOL_FRAMES.boost ?? null;
         if (k === 'grass') return MATERIAL_FRAMES.grass ?? null;
         if (k === 'wood') return MATERIAL_FRAMES.wood ?? null;
         if (k === 'dirt') return MATERIAL_FRAMES.dirt ?? null;
@@ -1532,7 +1540,7 @@ export class QuestPanel extends Component {
         if (p.includes('seed') || q.id === 1003 || q.id === 1004) return TOOL_FRAMES.seeds ?? null;
         if (q.id === 1002) return TOOL_FRAMES.hoe ?? null;
         if (q.id === 1005) return TOOL_FRAMES.can ?? null;
-        if (q.id === 1006) return TOOL_FRAMES.hand ?? null;
+        if (q.id === 1006) return TOOL_FRAMES.boost ?? TOOL_FRAMES.hand ?? null;
         return null;
     }
 

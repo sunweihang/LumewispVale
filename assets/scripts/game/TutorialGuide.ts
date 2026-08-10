@@ -20,15 +20,18 @@ import { DialoguePanel } from './DialoguePanel';
 import { FarmHUD } from './FarmHUD';
 import { FarmSystem } from './FarmSystem';
 import { FarmWorldLayout } from './FarmWorldLayout';
+import { FishingMinigame } from './FishingMinigame';
 import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
 import { QUEST_FRAMES } from './QuestFrames';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
+import { StoryWorldHooks } from './StoryWorldHooks';
+import { TOOL_FRAMES } from './ToolFrames';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
-const { ccclass } = _decorator;
+const { ccclass, executionOrder } = _decorator;
 
 const GUIDE_ID = 'guide_wake_yard';
 const DIM_A = 150;
@@ -47,12 +50,32 @@ const ARROW_TOP_RESERVE = 380;
 const ARROW_EXTENT_UP = 48;
 /** Gap between arrow top and tip banner bottom. */
 const TIP_ARROW_GAP = 18;
+/** Bag → hotbar drag demo loop (ms). */
+const DRAG_DEMO_MS = 2200;
+/** Ghost icon size while demo-dragging an item. */
+const DRAG_GHOST = 72;
 /** Only guide weeds this close to the player (world units). */
 const GRASS_HINT_RANGE = 340;
+/**
+ * Front-yard band for quest 1001 — south of the cottage, west of the town road.
+ * Prefer these so the arrow never jumps into the house / wild fringe.
+ */
+const YARD_GRASS = { x0: -40, x1: 260, y0: 140, y1: 280 };
+/** Within this range of the pier, tip switches from “walk” to “cast”. */
+const FISH_NEAR_RANGE = 300;
+/** Within this range of the town road sign. */
+const TOWN_GATE_NEAR_RANGE = 180;
+/** Quest 1003 first-seed recipe — matches FarmHUD guided craft. */
+const FIRST_SEED_RECIPE = 'seed_from_grass';
+/** Keep the same world target this long so nearest-picking can't thrash the arrow. */
+const STICKY_MS = 1200;
+/** Prefer the stuck target until a rival is this much closer (world units²). */
+const STICKY_SWITCH_SQ = 160 * 160;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
 type HoleRect = { x: number; y: number; w: number; h: number };
+type WorldPos = { x: number; y: number };
 
 /** Continuous idle quest cue: swap tool first, then click the world target. */
 type IdleGuide = {
@@ -62,6 +85,10 @@ type IdleGuide = {
     uiDock: boolean;
     /** Arrow on hotbar only — no FarmActionHint caption (tool swap). */
     silent?: boolean;
+    /** When set, animate finger/ghost from `hole` → `dragTo` (drag demo). */
+    dragTo?: HoleRect;
+    /** Item frame for the drag ghost (e.g. boost). */
+    dragItem?: string;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -70,16 +97,20 @@ const TOOL_LABEL: Record<string, string> = {
     seeds: '种子',
     can: '水壶',
     rod: '鱼竿',
+    boost: '催熟剂',
 };
 
 /**
  * Hollow spotlight tutorial after wake_farm dialogue:
- * 1) show quest tracker → 2) select hand → 3) pull a weed.
+ * 1) show quest tracker → 2) select hand → 3) pull weeds until quest 1001 is done.
  *
  * Also: while a quest is active, keep guiding — wrong tool → arrow on hotbar,
  * then arrow on the objective (no dim mask, no tip caption under the arrow).
+ *
+ * lateUpdate after CameraFollow so world→UI holes match the snapped World pose.
  */
 @ccclass('TutorialGuide')
+@executionOrder(40)
 export class TutorialGuide extends Component {
     farm: FarmSystem | null = null;
     quests: QuestSystem | null = null;
@@ -92,6 +123,11 @@ export class TutorialGuide extends Component {
     private _tipRoot: Node | null = null;
     private _tipLab: Label | null = null;
     private _finger: Node | null = null;
+    private _dragGhost: Node | null = null;
+    private _dragGhostSp: Sprite | null = null;
+    private _dragGhostOp: UIOpacity | null = null;
+    private _trailN: Node | null = null;
+    private _trailG: Graphics | null = null;
     private _rootOp: UIOpacity | null = null;
 
     private _open = false;
@@ -99,12 +135,21 @@ export class TutorialGuide extends Component {
     private _idleUiDock = false;
     private _idleSilent = false;
     private _idleTip = '';
+    private _idleDragTo: HoleRect | null = null;
+    private _idleDragItem = '';
     private _step: GuideStep = 'quest';
     private _inputReady = false;
     private _prevBlocking = false;
     private _grassTarget: Node | null = null;
     private _grassBase = 0;
     private _hole: HoleRect = { x: 0, y: 0, w: 120, h: 120 };
+    /** Sticky idle world aim — stops nearest-target thrash + quest-dock flicker. */
+    private _stickyKey = '';
+    private _stickyNode: Node | null = null;
+    private _stickyPos: WorldPos | null = null;
+    private _stickyUntil = 0;
+    private readonly _worldPt = new Vec3();
+    private readonly _localPt = new Vec3();
 
     get isOpen() {
         return this._open;
@@ -138,13 +183,22 @@ export class TutorialGuide extends Component {
      */
     currentGuideHint(): string | null {
         if (this._open) {
-            if (this._step === 'quest') return '这是当前任务 · 点击继续';
-            if (this._step === 'hand') return '点击下方「手」以选中';
-            return '走近杂草，点击镂空处拔除';
+            if (this._step === 'quest') return '露穗：看这里呀 · 点一下继续';
+            if (this._step === 'hand') return '露穗：先点下方「手」哦';
+            return this.grassStepTip();
         }
         if (!this.quests?.activeQuest) return null;
         if (this.node.getComponent(DialoguePanel)?.isOpen) return null;
         if (this.node.getComponent(RewardPopup)?.isOpen) return null;
+        const hud = this.node.getComponent(FarmHUD);
+        // Craft / bag modals normally hide the cue — keep guided craft / boost steps.
+        if (
+            hud?.isModalOpen &&
+            !hud.needsFirstSeedCraftGuide() &&
+            !hud.needsHarvestBoostGuide()
+        ) {
+            return null;
+        }
         const guide = this.resolveIdleGuide();
         if (!guide) return null;
         if (guide.silent) return '';
@@ -200,23 +254,12 @@ export class TutorialGuide extends Component {
             return true;
         }
 
-        // grass — only the hollow accepts the dig tap; elsewhere stays blocked.
+        // grass — hollow accepts the dig; act on the locked weed (hole > sprite).
         if (inHole) {
-            console.log(
-                `[TutorialGuide] grass-step tap IN hole → tryActAtUi ` +
-                    `hole=(${this._hole.x.toFixed(0)},${this._hole.y.toFixed(0)}) ` +
-                    `${this._hole.w.toFixed(0)}x${this._hole.h.toFixed(0)} ` +
-                    `target=${this._grassTarget?.name ?? 'null'}`,
-            );
-            this.farm?.tryActAtUi(uiX, uiY);
+            const target = this._grassTarget;
+            if (target?.isValid) this.farm?.tryPullGrass(target);
+            else this.farm?.tryActAtUi(uiX, uiY);
             this.checkGrassDone();
-        } else {
-            console.log(
-                `[TutorialGuide] grass-step tap OUTSIDE hole (blocked, no FarmTap) ` +
-                    `local=(${local.x.toFixed(0)},${local.y.toFixed(0)}) ` +
-                    `hole=(${this._hole.x.toFixed(0)},${this._hole.y.toFixed(0)}) ` +
-                    `${this._hole.w.toFixed(0)}x${this._hole.h.toFixed(0)}`,
-            );
         }
         return true;
     }
@@ -303,6 +346,10 @@ export class TutorialGuide extends Component {
         this._idleSilent = false;
         this._idleUiDock = false;
         this._idleTip = '';
+        this._idleDragTo = null;
+        this._idleDragItem = '';
+        this.clearStickyTarget();
+        this.clearDragDemoChrome();
     }
 
     private canShowIdleArrow(): boolean {
@@ -312,8 +359,17 @@ export class TutorialGuide extends Component {
         // reward→dialogue restore can leave it stuck true and kill all arrows).
         if (this.node.getComponent(DialoguePanel)?.isOpen) return false;
         if (this.node.getComponent(RewardPopup)?.isOpen) return false;
-        if (this.node.getComponent(QuestPanel)?.isOpen) return false;
-        if (this.node.getComponent(FarmHUD)?.isModalOpen) return false;
+        // Quest journal open → still show arrow (points at close so guide never dies).
+        if (this.node.getComponent(FishingMinigame)?.isOpen) return false;
+        const hud = this.node.getComponent(FarmHUD);
+        // Allow arrow over craft (first seed) and bag (drag boost to hotbar).
+        if (
+            hud?.isModalOpen &&
+            !hud.needsFirstSeedCraftGuide() &&
+            !hud.needsHarvestBoostGuide()
+        ) {
+            return false;
+        }
         if (InputBridge.moveLocked) return false;
         return true;
     }
@@ -345,7 +401,19 @@ export class TutorialGuide extends Component {
         this._idleTip = '';
         this._idleUiDock = false;
         this._idleSilent = false;
+        this._idleDragTo = null;
+        this._idleDragItem = '';
+        // Keep sticky aim across brief dialogue / modal hides so the arrow
+        // doesn't re-pick a different weed/plot when it comes back.
+        this.clearDragDemoChrome();
         if (!this._open && this._root) this._root.active = false;
+    }
+
+    private clearStickyTarget() {
+        this._stickyKey = '';
+        this._stickyNode = null;
+        this._stickyPos = null;
+        this._stickyUntil = 0;
     }
 
     private setSpotlightChrome(on: boolean) {
@@ -360,12 +428,15 @@ export class TutorialGuide extends Component {
         this._idleUiDock = guide.uiDock;
         this._idleSilent = !!guide.silent;
         this._idleTip = guide.tip;
+        this._idleDragTo = guide.dragTo ?? null;
+        this._idleDragItem = guide.dragItem ?? '';
         if (this._tipLab) this._tipLab.string = guide.tip;
+        if (this._idleDragItem) this.ensureDragGhostFrame(this._idleDragItem);
     }
 
     private toolSwapTip(tool: string): string {
         const name = TOOL_LABEL[tool] ?? tool;
-        return `道具不对 · 点击下方「${name}」换上`;
+        return `露穗：换上「${name}」再继续呀`;
     }
 
     /** Wrong tool → arrow on that hotbar slot only (no caption, no quest-chip fallback). */
@@ -388,11 +459,27 @@ export class TutorialGuide extends Component {
         return { x: startX + i * (slot + gap), y: barY, w: slot, h: slot };
     }
 
+    /**
+     * Point at a world hole (edge-clamped if off-screen). Quest dock only when
+     * there is truly no world aim — never jump there just because the target left
+     * the playfield band (that was the main “乱蹦” source).
+     */
     private worldOrQuest(hole: HoleRect | null, tip: string, fallbackTip?: string): IdleGuide | null {
-        if (hole) return { hole, tip, uiDock: false };
+        const directed = this.directedHole(hole);
+        if (directed) return { hole: directed, tip, uiDock: false };
         const q = this.questHole();
         if (!q) return null;
         return { hole: q, tip: fallbackTip ?? tip, uiDock: true };
+    }
+
+    /** World node → directed hole (on-sprite or screen-edge pointer). */
+    private worldNodeGuide(node: Node | null, tip: string, fallbackTip?: string): IdleGuide | null {
+        return this.worldOrQuest(this.worldNodeHole(node), tip, fallbackTip);
+    }
+
+    /** World pos → directed hole. */
+    private worldPosGuide(pos: WorldPos | null, tip: string, fallbackTip?: string): IdleGuide | null {
+        return this.worldOrQuest(this.worldPosHole(pos), tip, fallbackTip);
     }
 
     /**
@@ -402,10 +489,28 @@ export class TutorialGuide extends Component {
     private resolveIdleGuide(): IdleGuide | null {
         const quests = this.quests;
         if (!quests?.activeQuest) return null;
+
+        // Journal open blocks movement — force close before any world step.
+        const journal = this.node.getComponent(QuestPanel);
+        if (journal?.isOpen) {
+            const hole = this.uiNodeHole(journal.btnClose);
+            if (!hole) return null;
+            this.clearStickyTarget();
+            return { hole, tip: '露穗：关掉这个，继续任务呀', uiDock: true };
+        }
+
+        // First-seed craft panel: make → wait (locked 5s) → close, then claim / next.
+        const craftGuide = this.resolveFirstSeedCraftGuide();
+        if (craftGuide) {
+            this.clearStickyTarget();
+            return craftGuide;
+        }
+
         if (quests.isAwaitingClaim) {
             const hole = this.questHole();
             if (!hole) return null;
-            return { hole, tip: '点击任务栏领取奖励', uiDock: true };
+            this.clearStickyTarget();
+            return { hole, tip: '露穗：点任务栏领奖吧～', uiDock: true };
         }
 
         const action = quests.activeGotoAction();
@@ -417,116 +522,123 @@ export class TutorialGuide extends Component {
             clickTip: string,
             world: () => HoleRect | null,
         ): IdleGuide | null => {
-            if (tool !== t) return this.toolSwapGuide(t, slot);
+            if (tool !== t) {
+                this.clearStickyTarget();
+                return this.toolSwapGuide(t, slot);
+            }
             return this.worldOrQuest(world(), clickTip);
         };
 
         switch (action) {
-            case GotoAction.SelectHand:
-                // Harvest (1006) — bare hand on mature crop, not yard weeds.
-                return needTool('hand', 'hand', '点击成熟作物收获', () =>
-                    this.playfieldPosHole(this.farm?.hintPlotPos('harvest') ?? null),
+            case GotoAction.SelectHand: {
+                // Harvest (1006): bag→hotbar boost → use on crop → hand harvest.
+                const harvestPos = this.stickyPlotPos('harvest');
+                if (!harvestPos) {
+                    const boost = this.resolveHarvestBoostGuide();
+                    if (boost) return boost;
+                    return this.worldOrQuest(null, '露穗：再等等，作物就要熟啦');
+                }
+                return needTool('hand', 'hand', '露穗：点成熟作物收获呀', () =>
+                    this.worldPosHole(harvestPos),
                 );
+            }
             case GotoAction.HintGrass:
-                return needTool('hand', 'hand', '点击目标拔除杂草', () =>
-                    this.playfieldWorldHole(this.pickHintGrass()),
+                return needTool('hand', 'hand', '露穗：点这里拔掉杂草～', () =>
+                    this.worldNodeHole(this.pickHintGrass()),
                 );
             case GotoAction.SelectHoe:
-                return needTool('hoe', 'hoe', '点击目标开垦田地', () =>
-                    this.playfieldPosHole(this.farm?.hintPlotPos('soil') ?? null),
+                return needTool('hoe', 'hoe', '露穗：点这里开垦田地哦', () =>
+                    this.worldPosHole(this.stickyPlotPos('soil')),
                 );
             case GotoAction.SelectSeeds:
-                return needTool('seeds', 'seeds', '点击翻好地块播种', () =>
-                    this.playfieldPosHole(this.farm?.hintPlotPos('tilled') ?? null),
+                return needTool('seeds', 'seeds', '露穗：点翻好的地播种呀', () =>
+                    this.worldPosHole(this.stickyPlotPos('tilled')),
                 );
             case GotoAction.SelectCan:
-                return needTool('can', 'can', '点击作物浇水', () =>
-                    this.playfieldPosHole(this.farm?.hintPlotPos('water') ?? null),
+                return needTool('can', 'can', '露穗：给作物浇点水吧', () =>
+                    this.worldPosHole(this.stickyPlotPos('water')),
                 );
             case GotoAction.SelectRod:
-                return needTool('rod', 'rod', '走到湖边，点击钓鱼', () =>
-                    this.playfieldPosHole(FarmWorldLayout.fishingHintWorld()),
-                );
-            case GotoAction.HintFarm: {
-                const soil = this.playfieldPosHole(this.farm?.hintPlotPos('soil') ?? null);
-                if (soil) {
-                    if (tool !== 'hoe') return this.toolSwapGuide('hoe', 'hoe');
-                    return { hole: soil, tip: '点击目标开垦田地', uiDock: false };
-                }
-                const tilled = this.playfieldPosHole(this.farm?.hintPlotPos('tilled') ?? null);
-                if (tilled) {
-                    if (tool !== 'seeds') return this.toolSwapGuide('seeds', 'seeds');
-                    return { hole: tilled, tip: '点击翻好地块播种', uiDock: false };
-                }
-                return this.worldOrQuest(null, '前往农田地块操作');
-            }
             case GotoAction.HintFish:
-                return needTool('rod', 'rod', '走到湖边，点击钓鱼', () =>
-                    this.playfieldPosHole(FarmWorldLayout.fishingHintWorld()),
-                );
+                return this.resolveFishGuide(tool);
+            case GotoAction.HintFarm: {
+                const soil = this.stickyPlotPos('soil');
+                if (soil) {
+                    if (tool !== 'hoe') {
+                        this.clearStickyTarget();
+                        return this.toolSwapGuide('hoe', 'hoe');
+                    }
+                    return this.worldPosGuide(soil, '露穗：点这里开垦田地哦');
+                }
+                const tilled = this.stickyPlotPos('tilled');
+                if (tilled) {
+                    if (tool !== 'seeds') {
+                        this.clearStickyTarget();
+                        return this.toolSwapGuide('seeds', 'seeds');
+                    }
+                    return this.worldPosGuide(tilled, '露穗：点翻好的地播种呀');
+                }
+                return this.worldOrQuest(null, '露穗：去田边操作一下吧');
+            }
             case GotoAction.HintCraft:
-            case GotoAction.OpenCraft:
-                return this.worldOrQuest(
-                    this.playfieldWorldHole(this.farm?.findWorldNode('prop_craftbench') ?? null),
-                    '点击工作台打开合成',
+            case GotoAction.OpenCraft: {
+                const hud = this.node.getComponent(FarmHUD);
+                if (hud?.isCraftOpen) {
+                    // Panel open mid-quest — fall through to in-panel guide above.
+                    const again = this.resolveFirstSeedCraftGuide();
+                    if (again) {
+                        this.clearStickyTarget();
+                        return again;
+                    }
+                }
+                return this.worldNodeGuide(
+                    this.farm?.findWorldNode('prop_craftbench') ?? null,
+                    '露穗：点工作台打开合成呀',
                 );
+            }
             case GotoAction.OpenBag: {
                 const bag = this.bagHole() ?? this.questHole();
                 if (!bag) return null;
-                return { hole: bag, tip: '点击打开背包', uiDock: true };
+                this.clearStickyTarget();
+                return { hole: bag, tip: '露穗：点开背包看看～', uiDock: true };
             }
             case GotoAction.HintMeteor:
-                return this.worldOrQuest(
-                    this.playfieldWorldHole(this.farm?.findWorldNode('meteor') ?? null),
-                    '走近紫晶陨石查看异象',
-                );
             case GotoAction.HintTownGate:
-                return this.worldOrQuest(
-                    this.playfieldWorldHole(this.farm?.findWorldNode('portal_town') ?? null),
-                    '点击路牌前往小镇',
-                );
+                return this.resolveTownGateGuide();
             case GotoAction.HintMayor:
-                return this.worldOrQuest(
-                    this.playfieldWorldHole(this.farm?.findWorldNode('bld_mayor', 'mayor') ?? null),
-                    '点击镇长府拜访',
+                return this.worldNodeGuide(
+                    this.farm?.findWorldNode('npc_mayor', 'bld_mayor', 'mayor') ?? null,
+                    '点击镇长·艾岚打招呼',
                 );
             default: {
                 const id = quests.activeQuest.id;
                 if (id === 1011) {
-                    return this.worldOrQuest(
-                        this.playfieldWorldHole(
-                            this.farm?.findWorldNode(
-                                'bld_seedshop',
-                                'bld_general',
-                                'seedshop',
-                                'general',
-                            ) ?? null,
-                        ),
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode(
+                            'bld_seedshop',
+                            'bld_general',
+                            'seedshop',
+                            'general',
+                        ) ?? null,
                         '走进商店，点击购买商品',
                     );
                 }
                 if (id === 1012) {
-                    return this.worldOrQuest(
-                        this.playfieldWorldHole(
-                            this.farm?.findWorldNode('bld_police', 'bld_post', 'police', 'post') ??
-                                null,
-                        ),
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_police', 'bld_post', 'police', 'post') ?? null,
                         '点击警局或邮局接任务',
                     );
                 }
                 if (id === 1013) {
-                    return this.worldOrQuest(
-                        this.playfieldWorldHole(
-                            this.farm?.findWorldNode('bld_carpenter', 'carpenter') ?? null,
-                        ),
-                        '点击木工坊了解工匠',
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('npc_carpenter', 'bld_carpenter', 'carpenter') ??
+                            null,
+                        '点击工匠·石楠打招呼',
                     );
                 }
                 if (id === 1014) {
-                    return this.worldOrQuest(
-                        this.playfieldWorldHole(
-                            this.farm?.findWorldNode('bld_community', 'community') ?? null,
-                        ),
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_community', 'community') ?? null,
                         '点击社区中心查看工程',
                     );
                 }
@@ -535,6 +647,203 @@ export class TutorialGuide extends Component {
                 return { hole: q, tip: '查看当前任务目标', uiDock: true };
             }
         }
+    }
+
+    /**
+     * Quest 1006 before the crop is mature:
+     * open bag → drag boost to hotbar → close → equip → use on crop.
+     */
+    private resolveHarvestBoostGuide(): IdleGuide | null {
+        const farm = this.farm;
+        const hud = this.node.getComponent(FarmHUD);
+        if (!farm || !hud) return null;
+        if (farm.boosts <= 0) return null;
+
+        if (!hud.isHotbarBound('boost')) {
+            this.clearStickyTarget();
+            if (!hud.isBagOpen) {
+                const bag = this.bagHole() ?? this.questHole();
+                if (!bag) return null;
+                return { hole: bag, tip: '露穗：点开背包看看～', uiDock: true };
+            }
+            const itemHole = this.uiNodeHole(hud.bagSlotNode('boost'));
+            if (!itemHole) return null;
+            const dropHole = this.uiNodeHole(hud.emptyHotbarSlotNode());
+            if (!dropHole) {
+                return { hole: itemHole, tip: '露穗：把催熟剂拖到下方快捷栏', uiDock: true };
+            }
+            return {
+                hole: itemHole,
+                tip: '露穗：按住催熟剂，拖到空快捷栏呀',
+                uiDock: true,
+                dragTo: dropHole,
+                dragItem: 'boost',
+            };
+        }
+
+        if (hud.isBagOpen) {
+            this.clearStickyTarget();
+            const close = this.uiNodeHole(hud.bagCloseBtnNode());
+            if (!close) return null;
+            return { hole: close, tip: '露穗：关掉背包继续吧', uiDock: true };
+        }
+
+        if (farm.tool !== 'boost') {
+            this.clearStickyTarget();
+            return this.toolSwapGuide('boost', 'boost');
+        }
+
+        return this.worldPosGuide(this.stickyPlotPos('grow'), '露穗：点作物用催熟剂～');
+    }
+
+    /**
+     * Quest 1003 craft modal steps (FarmHUD enforces 5s lock).
+     * Returns null when the panel is closed or this quest doesn't need it.
+     */
+    private resolveFirstSeedCraftGuide(): IdleGuide | null {
+        const hud = this.node.getComponent(FarmHUD);
+        if (!hud?.needsFirstSeedCraftGuide()) return null;
+
+        if (hud.isTutorialCraftLocked) {
+            const node = hud.craftRecipeBtnNode(FIRST_SEED_RECIPE);
+            const hole = this.uiNodeHole(node);
+            if (!hole) return null;
+            return { hole, tip: '露穗：种子正在搓呢，稍等～', uiDock: true };
+        }
+
+        if (hud.isTutorialCraftAwaitClose) {
+            const hole = this.uiNodeHole(hud.craftCloseBtnNode());
+            if (!hole) return null;
+            return { hole, tip: '露穗：关掉工作台继续吧', uiDock: true };
+        }
+
+        const btn = hud.craftRecipeBtnNode(FIRST_SEED_RECIPE);
+        const hole = this.uiNodeHole(btn);
+        if (!hole) return null;
+        return { hole, tip: '露穗：点这里制作种子呀', uiDock: true };
+    }
+
+    /** Quest 1009: directed arrow on the town road sign. */
+    private resolveTownGateGuide(): IdleGuide | null {
+        const node = this.farm?.findWorldNode('portal_town') ?? null;
+        const raw = node
+            ? { x: node.position.x, y: node.position.y }
+            : StoryWorldHooks.farmPortalPos();
+        const pos = this.stickyWorldPos('town-gate', raw);
+        const player = this.farm?.player;
+        const near =
+            !!player?.isValid &&
+            Math.hypot(player.position.x - pos.x, player.position.y - pos.y) <= TOWN_GATE_NEAR_RANGE;
+        return this.worldPosGuide(
+            pos,
+            near ? '露穗：点路牌去微光溪谷镇吧' : '露穗：跟着箭头走到东侧路牌呀',
+            '露穗：往东侧路牌走，点一下进镇～',
+        );
+    }
+
+    /**
+     * Fishing quest chain: equip rod → walk toward pier (edge arrow if off-screen)
+     * → tap water / dock to cast. Never falls back to the quest chip alone.
+     */
+    private resolveFishGuide(tool: string | undefined): IdleGuide | null {
+        if (tool !== 'rod') {
+            this.clearStickyTarget();
+            const slotHole = this.toolSlotHole('rod') ?? this.toolSlotHoleFallback('rod');
+            if (!slotHole) return null;
+            // Caption on — first fishing step is easy to miss with a silent hotbar arrow.
+            return { hole: slotHole, tip: '露穗：先点下方「鱼竿」哦', uiDock: true };
+        }
+
+        const target = this.fishGuideTarget();
+        if (this.farm?.isBusy) {
+            return this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再抛竿～');
+        }
+        if (target.near) {
+            return this.worldPosGuide(target.pos, '露穗：点码头或湖面抛竿呀', '露穗：往西边码头走，再抛竿～');
+        }
+        return this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再抛竿～');
+    }
+
+    /** Pier stand, or the nearest shore stand when the player is already lakeside. */
+    private fishGuideTarget(): { pos: WorldPos; near: boolean } {
+        const hint = FarmWorldLayout.fishingHintWorld();
+        const player = this.farm?.player;
+        if (!player?.isValid) return { pos: this.stickyWorldPos('fish', hint), near: false };
+
+        const px = player.position.x;
+        const py = player.position.y;
+        const stand = FarmWorldLayout.findFishingStand(px, py);
+        if (stand) {
+            const pos = this.stickyWorldPos('fish-stand', { x: stand.standX, y: stand.standY });
+            return { pos, near: true };
+        }
+        const dist = Math.hypot(px - hint.x, py - hint.y);
+        return {
+            pos: this.stickyWorldPos('fish', hint),
+            near: dist <= FISH_NEAR_RANGE,
+        };
+    }
+
+    /** Hold a fixed world point briefly (pier / portal) so the edge arrow stays put. */
+    private stickyWorldPos(key: string, pos: WorldPos): WorldPos {
+        const now = Date.now();
+        if (
+            this._stickyKey === key &&
+            this._stickyPos &&
+            now < this._stickyUntil
+        ) {
+            const dx = pos.x - this._stickyPos.x;
+            const dy = pos.y - this._stickyPos.y;
+            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) return this._stickyPos;
+        }
+        this._stickyKey = key;
+        this._stickyNode = null;
+        this._stickyPos = pos;
+        this._stickyUntil = now + STICKY_MS;
+        return pos;
+    }
+
+    /**
+     * World target → hole. If off the playfield, clamp to the near edge so the
+     * chevron still points toward the aim instead of jumping to the quest dock.
+     */
+    private directedHole(hole: HoleRect | null): HoleRect | null {
+        if (!hole) return null;
+        if (this.isInPlayfield(hole)) return hole;
+        const band = this.playfieldBand();
+        const pad = 56;
+        return {
+            x: Math.max(band.x0 + pad, Math.min(band.x1 - pad, hole.x)),
+            y: Math.max(band.y0 + pad, Math.min(band.y1 - pad, hole.y)),
+            w: Math.min(90, Math.max(72, hole.w)),
+            h: Math.min(90, Math.max(72, hole.h)),
+        };
+    }
+
+    /**
+     * Sticky plot aim — hold the same tile briefly so nearest-picking can't
+     * thrash the arrow between two equal-distance plots.
+     */
+    private stickyPlotPos(
+        need: 'soil' | 'tilled' | 'water' | 'grow' | 'harvest',
+    ): WorldPos | null {
+        const key = `plot:${need}`;
+        const now = Date.now();
+        const fresh = this.farm?.hintPlotPos(need) ?? null;
+        if (!fresh) {
+            if (this._stickyKey === key) this.clearStickyTarget();
+            return null;
+        }
+        if (this._stickyKey === key && this._stickyPos && now < this._stickyUntil) {
+            const dx = fresh.x - this._stickyPos.x;
+            const dy = fresh.y - this._stickyPos.y;
+            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) return this._stickyPos;
+        }
+        this._stickyKey = key;
+        this._stickyNode = null;
+        this._stickyPos = fresh;
+        this._stickyUntil = now + STICKY_MS;
+        return fresh;
     }
 
     private gotoStep(step: GuideStep) {
@@ -558,25 +867,55 @@ export class TutorialGuide extends Component {
         }
 
         if (this._tipLab) {
-            if (this._step === 'quest') this._tipLab.string = '这是当前任务 · 点击继续';
-            else if (this._step === 'hand') this._tipLab.string = '点击下方「手」以选中';
-            else this._tipLab.string = '走近杂草，点击镂空处拔除';
+            if (this._step === 'quest') this._tipLab.string = '露穗：看这里呀 · 点一下继续';
+            else if (this._step === 'hand') this._tipLab.string = '露穗：先点下方「手」哦';
+            else this._tipLab.string = this.grassStepTip();
         }
         this.refreshHole();
         this.paint();
         this.layoutChrome(true);
     }
 
+    private grassStepTip(): string {
+        const q = this.quests?.activeQuest;
+        if (q?.id === 1001) {
+            const p = this.quests!.progressOf(q);
+            const left = Math.max(1, p.target - p.current);
+            return left > 1
+                ? `露穗：点镂空处拔草呀（还剩 ${left} 棵）`
+                : '露穗：最后一棵啦，轻轻拔掉～';
+        }
+        return '露穗：走近杂草，点镂空处拔掉哦';
+    }
+
     private checkGrassDone() {
         if (this._step !== 'grass' || !this._open) return;
         const q = this.quests?.activeQuest;
+        // Quest 1001: keep the hollow until all 3 weeds are pulled.
+        if (q?.id === 1001 && this.quests) {
+            const prog = this.quests.progressOf(q);
+            if (
+                prog.current >= prog.target ||
+                this.quests.isAwaitingClaim ||
+                this.quests.isCompleted(1001)
+            ) {
+                this.finish();
+                return;
+            }
+            if (!this._grassTarget?.isValid || prog.current > this._grassBase) {
+                this._grassBase = prog.current;
+                this.clearStickyTarget();
+                this._grassTarget = this.pickHintGrass() ?? this.farm?.nearestGrass() ?? null;
+                if (this._tipLab) this._tipLab.string = this.grassStepTip();
+            }
+            return;
+        }
         if (q && this.quests!.progressOf(q).current > this._grassBase) {
             this.finish();
             return;
         }
         if (this._grassTarget && !this._grassTarget.isValid) {
             this.finish();
-            return;
         }
     }
 
@@ -674,30 +1013,45 @@ export class TutorialGuide extends Component {
         return { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5, w: x1 - x0, h: y1 - y0 };
     }
 
+    /**
+     * World actor → canvas-local hole via UITransform (matches CameraFollow snap).
+     * Manual world.position math can lag a frame and land the hollow beside the weed.
+     */
     private worldNodeHole(node: Node | null): HoleRect | null {
-        if (!node?.isValid || !this.farm?.world?.isValid) return null;
-        const world = this.farm.world;
-        const s = Math.max(0.0001, world.scale.x);
+        if (!node?.isValid) return null;
         const ui = node.getComponent(UITransform);
-        const ww = (ui?.contentSize.width ?? 64) * s;
-        const hh = (ui?.contentSize.height ?? 64) * s;
-        // Feet-anchored decor: hole centers on the sprite body.
-        const ax = ui?.anchorX ?? 0.5;
-        const ay = ui?.anchorY ?? 0;
-        const cx = world.position.x + (node.position.x + (0.5 - ax) * (ui?.contentSize.width ?? 64)) * s;
-        const cy =
-            world.position.y + (node.position.y + (0.5 - ay) * (ui?.contentSize.height ?? 64)) * s;
+        const canvasUi = this.node.getComponent(UITransform);
+        if (!ui || !canvasUi) return null;
+        const w = ui.contentSize.width;
+        const h = ui.contentSize.height;
+        const ax = ui.anchorX;
+        const ay = ui.anchorY;
+        // Sprite body center (feet-anchored decor sits above the foot).
+        this._worldPt.set(w * (0.5 - ax), h * (0.5 - ay), 0);
+        ui.convertToWorldSpaceAR(this._worldPt, this._worldPt);
+        canvasUi.convertToNodeSpaceAR(this._worldPt, this._localPt);
+        const s = Math.max(0.0001, this.farm?.world?.scale.x ?? 1);
         return {
-            x: cx,
-            y: cy,
-            w: Math.max(72, ww + 20),
-            h: Math.max(72, hh + 20),
+            x: this._localPt.x,
+            y: this._localPt.y,
+            w: Math.max(88, w * s + 28),
+            h: Math.max(88, h * s + 28),
         };
     }
 
     private worldPosHole(pos: { x: number; y: number } | null): HoleRect | null {
         if (!pos || !this.farm?.world?.isValid) return null;
         const world = this.farm.world;
+        const canvasUi = this.node.getComponent(UITransform);
+        if (!canvasUi) return null;
+        // World-local point → canvas via the World node's UITransform when present.
+        const worldUi = world.getComponent(UITransform);
+        if (worldUi) {
+            this._worldPt.set(pos.x, pos.y, 0);
+            worldUi.convertToWorldSpaceAR(this._worldPt, this._worldPt);
+            canvasUi.convertToNodeSpaceAR(this._worldPt, this._localPt);
+            return { x: this._localPt.x, y: this._localPt.y, w: 96, h: 96 };
+        }
         const s = Math.max(0.0001, world.scale.x);
         return {
             x: world.position.x + pos.x * s,
@@ -789,6 +1143,13 @@ export class TutorialGuide extends Component {
         const bot = this._hole.y - this._hole.h * 0.5 - pad;
         const { halfW, halfH } = this.canvasHalf();
 
+        // Drag demo: finger + ghost travel bag → hotbar (click bob is not enough).
+        if (!this._open && this._idleOn && this._idleDragTo) {
+            this.layoutDragDemo(halfW, halfH);
+            return;
+        }
+        this.clearDragDemoChrome();
+
         // Big chevron sits centered above the target and bobs into it.
         // Bob AFTER clamp — claim / dock targets pin to the playfield floor and
         // would otherwise eat the sine offset every frame.
@@ -832,6 +1193,115 @@ export class TutorialGuide extends Component {
         }
     }
 
+    /**
+     * Loop: press on bag item → drag down to empty hotbar → release → reset.
+     * Ghost item + dashed path make the gesture read as drag, not tap.
+     */
+    private layoutDragDemo(halfW: number, halfH: number) {
+        const finger = this._finger;
+        const dest = this._idleDragTo;
+        if (!finger || !dest) return;
+
+        const fromX = this._hole.x;
+        const fromY = this._hole.y;
+        const toX = dest.x;
+        const toY = dest.y;
+        const u = this.dragDemoProgress();
+        const px = fromX + (toX - fromX) * u;
+        const py = fromY + (toY - fromY) * u;
+        const clampX = (x: number) => Math.max(-halfW + 40, Math.min(halfW - 40, x));
+        const clampY = (y: number) => Math.max(-halfH + 60, Math.min(halfH - 50, y));
+
+        this.paintDragTrail(fromX, fromY, toX, toY, u);
+
+        if (this._dragGhost) {
+            this._dragGhost.active = true;
+            this._dragGhost.setPosition(clampX(px), clampY(py), 0);
+            if (this._dragGhostOp) {
+                // Fade while resetting to the bag cell.
+                const phase = (Date.now() % DRAG_DEMO_MS) / DRAG_DEMO_MS;
+                this._dragGhostOp.opacity = phase > 0.88 ? Math.round(255 * (1 - (phase - 0.88) / 0.12)) : 220;
+            }
+            // Keep ghost under the chevron.
+            if (this._trailN) this._dragGhost.setSiblingIndex(this._trailN.getSiblingIndex() + 1);
+            finger.setSiblingIndex(this._dragGhost.getSiblingIndex() + 1);
+        }
+
+        // Chevron rides just above the dragged icon (points into the drop slot).
+        finger.setPosition(clampX(px), clampY(py) + 52, 0);
+        finger.setScale(1, 1, 1);
+    }
+
+    /** 0 = grab on bag, 1 = drop on hotbar. Holds at ends; snaps back after drop. */
+    private dragDemoProgress(): number {
+        const t = (Date.now() % DRAG_DEMO_MS) / DRAG_DEMO_MS;
+        if (t < 0.14) return 0;
+        if (t < 0.72) {
+            const p = (t - 0.14) / 0.58;
+            // Smoothstep — reads as a finger pull, not a teleport.
+            return p * p * (3 - 2 * p);
+        }
+        if (t < 0.88) return 1;
+        return 1;
+    }
+
+    private paintDragTrail(x0: number, y0: number, x1: number, y1: number, u: number) {
+        const g = this._trailG;
+        const n = this._trailN;
+        if (!g || !n) return;
+        n.active = true;
+        g.clear();
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = dx / len;
+        const ny = dy / len;
+        const dash = 18;
+        const gap = 12;
+        const gold = new Color(255, 220, 90, 200);
+        const dim = new Color(255, 220, 90, 70);
+        let d = 0;
+        while (d < len) {
+            const a0 = d;
+            const a1 = Math.min(len, d + dash);
+            const mid = (a0 + a1) * 0.5 / len;
+            g.strokeColor = mid <= u + 0.02 ? gold : dim;
+            g.lineWidth = 5;
+            g.moveTo(x0 + nx * a0, y0 + ny * a0);
+            g.lineTo(x0 + nx * a1, y0 + ny * a1);
+            g.stroke();
+            d += dash + gap;
+        }
+        // Drop-slot ring so the destination isn't only implied by the tip text.
+        const dw = Math.max(96, this._idleDragTo?.w ?? 120) + 12;
+        const dh = Math.max(96, this._idleDragTo?.h ?? 120) + 12;
+        g.strokeColor = new Color(255, 220, 120, 220);
+        g.lineWidth = 4;
+        g.roundRect(x1 - dw * 0.5, y1 - dh * 0.5, dw, dh, 16);
+        g.stroke();
+    }
+
+    private clearDragDemoChrome() {
+        if (this._trailG) this._trailG.clear();
+        if (this._trailN) this._trailN.active = false;
+        if (this._dragGhost) this._dragGhost.active = false;
+        if (this._dragGhostOp) this._dragGhostOp.opacity = 220;
+    }
+
+    private ensureDragGhostFrame(itemId: string) {
+        const sp = this._dragGhostSp;
+        if (!sp?.isValid || !itemId) return;
+        if (sp.node.name === `Ghost_${itemId}` && sp.spriteFrame) return;
+        const uuid = (TOOL_FRAMES as Record<string, string>)[itemId];
+        if (!uuid) return;
+        sp.node.name = `Ghost_${itemId}`;
+        assetManager.loadAny({ uuid }, (err, asset) => {
+            if (err || !asset || !sp.isValid) return;
+            if (this._idleDragItem !== itemId) return;
+            sp.spriteFrame = asset as SpriteFrame;
+        });
+    }
+
     /** Canvas band between info board (top) and hotbar (bottom). */
     private playfieldBand() {
         const { halfW, halfH } = this.canvasHalf();
@@ -850,45 +1320,95 @@ export class TutorialGuide extends Component {
         return hole.x >= b.x0 && hole.x <= b.x1 && hole.y >= b.y0 && hole.y <= b.y1;
     }
 
-    /** World node → hole only if the sprite sits in the playfield (never on the clock). */
-    private playfieldWorldHole(node: Node | null): HoleRect | null {
-        const hole = this.worldNodeHole(node);
-        if (!hole || !this.isInPlayfield(hole)) return null;
-        return hole;
-    }
-
-    private playfieldPosHole(pos: { x: number; y: number } | null): HoleRect | null {
-        const hole = this.worldPosHole(pos);
-        if (!hole || !this.isInPlayfield(hole)) return null;
-        return hole;
-    }
-
     /**
-     * Nearest weed/bush beside the player that is actually in the playfield.
-     * Far / off-screen / under the clock board → ignore (caller falls back to quest chip).
+     * Sticky weed aim for quest 1001 / HintGrass.
+     * Priority: baked `*_tut_*` cluster → front-yard band → near → any.
+     * Never aim at weeds inside the cottage body.
      */
     private pickHintGrass(): Node | null {
         const farm = this.farm;
         if (!farm?.player) return null;
-        const list = farm.listGrass();
-        if (!list.length) return null;
+        const tut = farm.listTutorialGrass();
+        const list = tut.length ? tut : farm.listGrass();
+        if (!list.length) {
+            if (this._stickyKey === 'grass') this.clearStickyTarget();
+            return null;
+        }
         const px = farm.player.position.x;
         const py = farm.player.position.y;
-        let best: Node | null = null;
-        let bestSq = Number.POSITIVE_INFINITY;
         const rangeSq = GRASS_HINT_RANGE * GRASS_HINT_RANGE;
+        let bestTut: Node | null = null;
+        let bestTutSq = Number.POSITIVE_INFINITY;
+        let bestYard: Node | null = null;
+        let bestYardSq = Number.POSITIVE_INFINITY;
+        let bestNear: Node | null = null;
+        let bestNearSq = Number.POSITIVE_INFINITY;
+        let bestAny: Node | null = null;
+        let bestAnySq = Number.POSITIVE_INFINITY;
         for (let i = 0; i < list.length; i++) {
             const n = list[i]!;
-            const dx = n.position.x - px;
-            const dy = n.position.y - py;
+            const nx = n.position.x;
+            const ny = n.position.y;
+            // Cottage body — skip (arrow used to land mid-house after east-road clear).
+            if (Math.abs(nx - 220) <= 110 && ny >= 376 && ny <= 640) continue;
+            const dx = nx - px;
+            const dy = ny - py;
             const dSq = dx * dx + dy * dy;
-            if (dSq > rangeSq || dSq >= bestSq) continue;
-            const hole = this.worldNodeHole(n);
-            if (!hole || !this.isInPlayfield(hole)) continue;
-            bestSq = dSq;
-            best = n;
+            if (dSq < bestAnySq) {
+                bestAnySq = dSq;
+                bestAny = n;
+            }
+            if (dSq <= rangeSq && dSq < bestNearSq) {
+                bestNearSq = dSq;
+                bestNear = n;
+            }
+            if (n.name.includes('_tut_') && dSq < bestTutSq) {
+                bestTutSq = dSq;
+                bestTut = n;
+            }
+            if (
+                nx >= YARD_GRASS.x0 &&
+                nx <= YARD_GRASS.x1 &&
+                ny >= YARD_GRASS.y0 &&
+                ny <= YARD_GRASS.y1 &&
+                dSq < bestYardSq
+            ) {
+                bestYardSq = dSq;
+                bestYard = n;
+            }
         }
-        return best;
+        const fresh = bestTut ?? bestYard ?? bestNear ?? bestAny;
+        if (!fresh) return null;
+
+        const key = 'grass';
+        const now = Date.now();
+        if (
+            this._stickyKey === key &&
+            this._stickyNode?.isValid &&
+            now < this._stickyUntil
+        ) {
+            // Drop sticky if the locked weed was pulled / invalidated.
+            const stickyStill = list.includes(this._stickyNode);
+            if (stickyStill) {
+                const sx = this._stickyNode.position.x - px;
+                const sy = this._stickyNode.position.y - py;
+                const stickySq = sx * sx + sy * sy;
+                const rivalSq =
+                    bestTutSq < Number.POSITIVE_INFINITY
+                        ? bestTutSq
+                        : bestYardSq < Number.POSITIVE_INFINITY
+                          ? bestYardSq
+                          : bestNearSq;
+                if (rivalSq + STICKY_SWITCH_SQ >= stickySq || !(bestTut ?? bestYard ?? bestNear)) {
+                    return this._stickyNode;
+                }
+            }
+        }
+        this._stickyKey = key;
+        this._stickyNode = fresh;
+        this._stickyPos = { x: fresh.position.x, y: fresh.position.y };
+        this._stickyUntil = now + STICKY_MS;
+        return fresh;
     }
 
     private hitHole(lx: number, ly: number): boolean {
@@ -938,6 +1458,27 @@ export class TutorialGuide extends Component {
         ring.addComponent(UITransform).setContentSize(10, 10);
         this._ringN = ring;
         this._ringG = ring.addComponent(Graphics);
+
+        const trail = new Node('DragTrail');
+        trail.layer = canvas.layer;
+        trail.setParent(root);
+        trail.addComponent(UITransform).setContentSize(10, 10);
+        trail.active = false;
+        this._trailN = trail;
+        this._trailG = trail.addComponent(Graphics);
+
+        const ghost = new Node('DragGhost');
+        ghost.layer = canvas.layer;
+        ghost.setParent(root);
+        ghost.addComponent(UITransform).setContentSize(DRAG_GHOST, DRAG_GHOST);
+        ghost.active = false;
+        const ghostSp = ghost.addComponent(Sprite);
+        ghostSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        ghostSp.trim = false;
+        this._dragGhostOp = ghost.addComponent(UIOpacity);
+        this._dragGhostOp.opacity = 220;
+        this._dragGhost = ghost;
+        this._dragGhostSp = ghostSp;
 
         const finger = new Node('Finger');
         finger.layer = canvas.layer;

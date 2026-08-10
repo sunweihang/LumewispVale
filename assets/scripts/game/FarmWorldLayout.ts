@@ -1,6 +1,19 @@
-import { assetManager, Node, Sprite, SpriteFrame, UITransform } from 'cc';
+import { assetManager, Node, Sprite, SpriteFrame, UITransform, Vec3 } from 'cc';
 import { NATURE_FRAMES } from './NatureFrames';
+import { NPC_FRAMES } from './NpcFrames';
+import { NpcAnimator, NpcDir } from './NpcAnimator';
 import { TERRAIN_FRAMES } from './TerrainFrames';
+
+export type FarmNpcId = 'girl';
+
+type FarmNpcSpawn = {
+    id: FarmNpcId;
+    x: number;
+    y: number;
+    face?: NpcDir;
+    /** Optional yard stroll loop (world feet). */
+    patrol?: readonly { x: number; y: number }[];
+};
 
 const TILE = 64;
 
@@ -54,6 +67,8 @@ const SOFT_KINDS: FrameKey[] = [
     'weedBloom',
     'weedTall',
     'weedPink',
+    'weedYellow',
+    'weedBlue',
     'tuft',
     'pebble',
     'twig',
@@ -104,6 +119,9 @@ const SIZE: Record<string, { w: number; h: number }> = {
     weedBloom: { w: 40, h: 36 },
     weedTall: { w: 36, h: 40 },
     weedPink: { w: 36, h: 40 },
+    weedYellow: { w: 36, h: 40 },
+    weedBlue: { w: 36, h: 40 },
+    blossom: { w: 128, h: 160 },
     tuft: { w: 28, h: 24 },
     pebble: { w: 24, h: 18 },
     twig: { w: 32, h: 20 },
@@ -130,6 +148,26 @@ export class FarmWorldLayout {
     /** Porch path in front of the farmhouse. */
     static readonly PLAYER_SPAWN = { x: 160, y: 280 };
 
+    /**
+     * Runtime farm companion — south of the red cottage porch (cottage ≈ 220,400).
+     * Keep clear of prop_craftbench (110,295) — her tap radius must not cover the bench.
+     */
+    static readonly NPC_SPAWNS: readonly FarmNpcSpawn[] = [
+        {
+            id: 'girl',
+            x: 250,
+            y: 300,
+            face: 'down',
+            // East porch only — never cross the west-yard craftbench.
+            patrol: [
+                { x: 220, y: 300 },
+                { x: 300, y: 300 },
+                { x: 300, y: 250 },
+                { x: 220, y: 250 },
+            ],
+        },
+    ];
+
     private static _tillable: Set<string> | null = null;
     private static _pondWater: Set<string> | null = null;
     private static _pondCells: Set<string> | null = null;
@@ -140,6 +178,90 @@ export class FarmWorldLayout {
             this._tillable = new Set(TILLABLE.map(([ix, iy]) => `${ix},${iy}`));
         }
         return this._tillable;
+    }
+
+    /** Spawn idle farm NPCs once (idempotent). */
+    static spawnNpcs(world: Node): Node[] {
+        const out: Node[] = [];
+        for (const spawn of this.NPC_SPAWNS) {
+            const name = `npc_${spawn.id}`;
+            let node = world.getChildByName(name);
+            if (!node) {
+                node = new Node(name);
+                node.layer = world.layer;
+                node.setParent(world);
+
+                const ui = node.addComponent(UITransform);
+                ui.setContentSize(NPC_FRAMES.cellSize[0], NPC_FRAMES.cellSize[1]);
+                ui.setAnchorPoint(0.5, 0);
+
+                const sp = node.addComponent(Sprite);
+                sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                sp.type = Sprite.Type.SIMPLE;
+                sp.trim = false;
+
+                const anim = node.addComponent(NpcAnimator);
+                anim.fps = 8;
+                const frames = NPC_FRAMES[spawn.id];
+                anim.loadWalk(frames);
+                if (spawn.face) anim.setDir(spawn.face);
+            }
+            // Always re-apply spawn / patrol (hot-reload + layout tweaks).
+            node.setPosition(new Vec3(spawn.x, spawn.y, 0));
+            let anim = node.getComponent(NpcAnimator);
+            if (!anim) {
+                anim = node.addComponent(NpcAnimator);
+                anim.fps = 8;
+                anim.loadWalk(NPC_FRAMES[spawn.id]);
+                if (spawn.face) anim.setDir(spawn.face);
+            }
+            if (spawn.patrol && spawn.patrol.length >= 2) {
+                anim.setPatrol(spawn.patrol, { speed: 80, idleMin: 0.5, idleMax: 1.4 });
+            }
+            out.push(node);
+        }
+        return out;
+    }
+
+    /** Repeat chat when mainline farm intros already played. */
+    static npcInfo(
+        id: FarmNpcId,
+    ): { title: string; body: string } | null {
+        if (id === 'girl') {
+            return {
+                title: '露穗',
+                body: '院子里有我在呢。慢慢来，今天也要过得甜一点～',
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Hit-test a world tap against farm npc_* body (48×64 cell).
+     * Was maxDist=72 from feet — a circle that big swallowed the craftbench.
+     */
+    static findNpc(
+        world: Node,
+        wx: number,
+        wy: number,
+        maxDist = 36,
+    ): { id: FarmNpcId; node: Node; key: string } | null {
+        let best: { dist: number; id: FarmNpcId; node: Node } | null = null;
+        for (const child of world.children) {
+            if (!child.name.startsWith('npc_')) continue;
+            const id = child.name.slice(4) as FarmNpcId;
+            if (id !== 'girl') continue;
+            const ui = child.getComponent(UITransform);
+            const p = child.position;
+            // Aim at torso center, not feet — matches the drawn sprite.
+            const cx = p.x;
+            const cy = p.y + (ui ? ui.contentSize.height * 0.45 : 28);
+            const d = Math.hypot(wx - cx, wy - cy);
+            if (d > maxDist) continue;
+            if (!best || d < best.dist) best = { dist: d, id, node: child };
+        }
+        if (!best) return null;
+        return { id: best.id, node: best.node, key: best.id };
     }
 
     /**
@@ -516,16 +638,16 @@ export class FarmWorldLayout {
         if (this.farmPlotKeys().has(`${ix},${iy}`)) return true;
         // Keep decor off the pier / bridge corridor (incl. neighbors that overflow)
         if (ix >= -10 && ix <= -2 && iy >= -4 && iy <= -1) return true;
-        // Porch / path toward plots
-        if (ix >= 0 && ix <= 3 && iy >= 1 && iy <= 4) return true;
-        // House yard walkway
-        if (ix >= 1 && ix <= 4 && iy >= 4 && iy <= 6) return true;
+        // Cottage garden + porch (no wild pine/oak through the flower grounds)
+        if (ix >= -3 && ix <= 9 && iy >= 1 && iy <= 12) return true;
         // Pier mouth + approach from the farm clearing
         if (ix >= -3 && ix <= -1 && iy >= -3 && iy <= -1) return true;
         // Keep a shore walk lane along the east bank (toward plots / shed)
         if (ix === -3 && iy >= -6 && iy <= 3) return true;
         // Soft north–south lane through the eastern wild fringe
         if (ix === 3 && iy >= -10 && iy <= 3) return true;
+        // East corridor to the town gate (north fringe stays wild)
+        if (ix >= 3 && ix <= 14 && iy >= 0 && iy <= 6) return true;
         return false;
     }
 
@@ -555,6 +677,14 @@ export class FarmWorldLayout {
             (ix === -1 && iy >= 2 && iy <= 3);
         if (onPorchCore) return true;
         if (onPorchRim) return this.noise01(ix, iy, 2) > 0.35;
+
+        // East town road — yard level → right-edge gate
+        const onTownRoadCore =
+            (iy >= 3 && iy <= 4 && ix >= 3 && ix <= 14) || (iy === 5 && ix >= 4 && ix <= 8);
+        const onTownRoadRim =
+            ((iy === 2 || iy === 5) && ix >= 4 && ix <= 14) || (iy === 6 && ix >= 4 && ix <= 8);
+        if (onTownRoadCore) return true;
+        if (onTownRoadRim) return this.noise01(ix, iy, 16) > 0.32;
 
         // Yard dirt under / beside the house porch — soft blob, not a box
         if (ix >= 0 && ix <= 5 && iy >= 3 && iy <= 7) {
@@ -640,9 +770,14 @@ export class FarmWorldLayout {
         const tiles = this.indexTiles(world);
         const wanted = new Map<string, TileKind>();
 
-        for (let iy = -7; iy <= 8; iy++) {
-            for (let ix = -8; ix <= 7; ix++) {
-                wanted.set(`${ix},${iy}`, this.isDirtCell(ix, iy) ? 'dirt' : 'grass');
+        // Match wild-cover / lake AABB so trees & shore never sit on void.
+        // Pier approach/wood come from placeLakePierAndBridge.
+        for (let iy = -20; iy <= 15; iy++) {
+            for (let ix = -26; ix <= 15; ix++) {
+                const key = `${ix},${iy}`;
+                if (this.isPondCell(ix, iy)) continue;
+                if (this.lakePierKeys().has(key)) continue;
+                wanted.set(key, this.isDirtCell(ix, iy) ? 'dirt' : 'grass');
             }
         }
         for (const key of this.farmPlotKeys()) wanted.set(key, 'grass');
@@ -651,7 +786,6 @@ export class FarmWorldLayout {
             const [ix, iy] = key.split(',').map(Number);
             let node = tiles.get(key);
             if (!node) {
-                if (kind === 'grass') continue;
                 node = this.spawnTile(world, kind, ix, iy, frames);
                 tiles.set(key, node);
             } else {
@@ -803,7 +937,7 @@ export class FarmWorldLayout {
             house.setPosition(220, 400, 0);
             const ui = house.getComponent(UITransform);
             if (ui) {
-                ui.setContentSize(192, 224);
+                ui.setContentSize(288, 272);
                 ui.setAnchorPoint(0.5, 0);
             }
         }
@@ -1266,20 +1400,17 @@ export class FarmWorldLayout {
         }
         if (loaded.craftbench) {
             // Left yard clearing (door stays open; mailbox is ~100,330).
-            this.spawnNode(world, 'prop_craftbench', loaded.craftbench, 'craftbench', 55, 300);
+            this.spawnNode(world, 'prop_craftbench', loaded.craftbench, 'craftbench', 110, 295);
         }
 
         const fenceSf = loaded.fence;
         const template = world.getChildByName('fence1');
-        // Behind + right of house, open toward the field (Stardew yard)
+        // Short broken north fence — never a garden box
         const spots = [
-            { x: 96, y: 470 },
-            { x: 160, y: 470 },
-            { x: 224, y: 470 },
-            { x: 288, y: 470 },
-            { x: 352, y: 470 },
-            { x: 352, y: 406 },
-            { x: 352, y: 342 },
+            { x: 120, y: 700 },
+            { x: 184, y: 706 },
+            { x: 248, y: 698 },
+            { x: 312, y: 704 },
         ];
         spots.forEach((spot, i) => {
             if (fenceSf) {
@@ -1325,26 +1456,28 @@ export class FarmWorldLayout {
         if (!treeKinds.length) return;
 
         let n = 0;
-        for (let iy = -20; iy <= 11; iy++) {
-            for (let ix = -26; ix <= 7; ix++) {
+        for (let iy = -20; iy <= 15; iy++) {
+            for (let ix = -26; ix <= 15; ix++) {
                 if (this.isPondCell(ix, iy)) continue;
                 if (this.isClearingCell(ix, iy)) continue;
                 // Keep shed / house footprints readable
                 if (ix >= -7 && ix <= -4 && iy >= 2 && iy <= 4) continue;
                 if (ix >= 1 && ix <= 5 && iy >= 5 && iy <= 7) continue;
+                // Keep town-road spine open (north fringe stays wild)
+                if (ix >= 3 && ix <= 14 && iy >= 2 && iy <= 6) continue;
 
                 const shore = this.isPondShore(ix, iy);
                 const edge =
                     shore ||
                     ix <= -18 ||
-                    ix >= 5 ||
+                    ix >= 13 ||
                     iy <= -12 ||
-                    iy >= 8 ||
+                    iy >= 12 ||
                     (ix <= -4 && iy >= 4) ||
-                    (ix >= 4 && iy <= -1);
+                    (ix >= 4 && iy <= -1 && !(iy >= 0 && iy <= 3));
                 const midWild = !edge && (ix <= -3 || ix >= 3 || iy <= -3 || iy >= 5);
-                // Shore stays leafy but must leave walk corridors for pathfinding.
-                let chance = shore ? 0.38 : edge ? 0.42 : midWild ? 0.28 : 0.12;
+                // Slightly denser mid-field so grass doesn't read as empty lawn
+                let chance = shore ? 0.4 : edge ? 0.48 : midWild ? 0.34 : 0.2;
                 if (this.isDirtCell(ix, iy)) chance *= 0.45;
                 if (this.noise01(ix, iy, 31) > chance) continue;
 
@@ -1355,6 +1488,8 @@ export class FarmWorldLayout {
                     if (roll < 0.55) kind = 'bush';
                     else if (roll < 0.8) kind = 'pine';
                     else kind = 'oak';
+                } else if (loaded.blossom && this.noise01(ix, iy, 37) > 0.82) {
+                    kind = 'blossom';
                 } else if (roll < 0.34) kind = 'pine';
                 else if (roll < 0.68) kind = 'oak';
                 else kind = 'bush';
@@ -1364,30 +1499,34 @@ export class FarmWorldLayout {
 
                 const jx = this.noise(ix, iy + 2) * 22;
                 const jy = this.noise(ix + 2, iy) * 18;
+                const px = ix * TILE + jx;
+                const py = iy * TILE + jy;
                 // Bushes are soft cover (pickable); only trunks block pathfinding.
                 const solid = kind !== 'bush';
                 const tag = solid ? 'solid' : 'soft';
-                this.spawnNode(
-                    world,
-                    `decor_${kind}_${tag}_w${n}`,
-                    sf,
-                    kind,
-                    ix * TILE + jx,
-                    iy * TILE + jy,
-                );
-                n++;
-
-                if (kind !== 'bush' && loaded.bush && this.noise01(ix, iy, 35) > 0.4) {
-                    this.spawnNode(
-                        world,
-                        `decor_bush_soft_w${n}`,
-                        loaded.bush,
-                        'bush',
-                        ix * TILE + jx + 18,
-                        iy * TILE + jy - 10,
-                    );
-                    n++;
+                // Skip bushes that would Y-sort over a nearby canopy.
+                if (kind === 'bush') {
+                    let underCrown = false;
+                    for (const child of world.children) {
+                        const cn = child.name;
+                        if (
+                            !cn.startsWith('decor_pine_') &&
+                            !cn.startsWith('decor_oak_') &&
+                            !cn.startsWith('decor_blossom_')
+                        ) {
+                            continue;
+                        }
+                        const dx = px - child.position.x;
+                        const dy = py - child.position.y;
+                        if (dx * dx + dy * dy < 110 * 110) {
+                            underCrown = true;
+                            break;
+                        }
+                    }
+                    if (underCrown) continue;
                 }
+                this.spawnNode(world, `decor_${kind}_${tag}_w${n}`, sf, kind, px, py);
+                n++;
             }
         }
     }
@@ -1413,17 +1552,19 @@ export class FarmWorldLayout {
 
                 // Soft carpet — thinned for fill-rate / CPU (was nearly every shore cell).
                 const softRoll = this.noise01(ix, iy, 81);
-                if (softRoll > 0.55) {
-                    const count = softRoll > 0.85 ? 2 : 1;
+                if (softRoll > 0.38) {
+                    const count = softRoll > 0.72 ? 2 : 1;
                     for (let k = 0; k < count; k++) {
                         const roll = this.noise01(ix, iy, 82 + k);
                         let kind: FrameKey;
-                        if (roll < 0.18) kind = 'tuft';
-                        else if (roll < 0.34) kind = 'weedBloom';
-                        else if (roll < 0.5) kind = 'weedPink';
-                        else if (roll < 0.68) kind = 'weed';
-                        else if (roll < 0.82) kind = 'weedTall';
-                        else if (roll < 0.92) kind = 'fiber';
+                        if (roll < 0.1) kind = 'tuft';
+                        else if (roll < 0.28) kind = 'weedPink';
+                        else if (roll < 0.44) kind = 'weedYellow';
+                        else if (roll < 0.58) kind = 'weedBlue';
+                        else if (roll < 0.72) kind = 'weedBloom';
+                        else if (roll < 0.82) kind = 'weed';
+                        else if (roll < 0.9) kind = 'weedTall';
+                        else if (roll < 0.96) kind = 'fiber';
                         else kind = 'pebble';
                         const sf = loaded[kind];
                         if (!sf) continue;
@@ -1467,7 +1608,7 @@ export class FarmWorldLayout {
     }
 
     /**
-     * Scattered weeds/tufts/pebbles — sparse enough for mobile fill-rate.
+     * Scattered weeds/tufts/pebbles — denser on open grass so the lawn doesn't read empty.
      */
     private static placeSoftClutter(
         world: Node,
@@ -1476,9 +1617,31 @@ export class FarmWorldLayout {
         const available = SOFT_KINDS.filter((k) => loaded[k]);
         if (!available.length) return;
 
+        const treeFeet: Array<{ x: number; y: number }> = [];
+        for (const child of world.children) {
+            const n = child.name;
+            if (
+                n.startsWith('decor_pine_') ||
+                n.startsWith('decor_oak_') ||
+                n.startsWith('decor_blossom_')
+            ) {
+                treeFeet.push({ x: child.position.x, y: child.position.y });
+            }
+        }
+        const nearTree = (x: number, y: number, rad = 96) => {
+            const r2 = rad * rad;
+            for (let i = 0; i < treeFeet.length; i++) {
+                const t = treeFeet[i]!;
+                const dx = x - t.x;
+                const dy = y - t.y;
+                if (dx * dx + dy * dy < r2) return true;
+            }
+            return false;
+        };
+
         let n = 0;
-        for (let iy = -20; iy <= 11; iy++) {
-            for (let ix = -26; ix <= 7; ix++) {
+        for (let iy = -20; iy <= 15; iy++) {
+            for (let ix = -26; ix <= 15; ix++) {
                 if (this.isPondCell(ix, iy)) continue;
                 if (this.farmPlotKeys().has(`${ix},${iy}`)) continue;
                 // No weeds/rocks on the pier, bridge, or immediate approach
@@ -1491,33 +1654,42 @@ export class FarmWorldLayout {
                 if (ix >= 1 && ix <= 4 && iy >= 5 && iy <= 6) {
                     if (this.noise01(ix, iy, 12) < 0.92) continue;
                 }
+                // Thin litter on town-road spine so the path stays readable
+                if (iy >= 3 && iy <= 4 && ix >= 3 && ix <= 14) {
+                    if (this.noise01(ix, iy, 13) < 0.75) continue;
+                }
 
                 const dirt = this.isDirtCell(ix, iy);
                 const shore = this.isPondShore(ix, iy);
-                // Was 0.88–0.96 (nearly every cell) — cut hard for heat.
-                const density = shore ? 0.42 : dirt ? 0.38 : 0.32;
+                // Higher grass litter — open lawn was reading empty
+                const density = shore ? 0.5 : dirt ? 0.46 : 0.58;
                 if (this.noise01(ix, iy, 1) > density) continue;
 
-                const count = this.noise01(ix, iy, 2) > 0.72 ? 2 : 1;
+                let count = this.noise01(ix, iy, 2) > 0.72 ? 2 : 1;
+                if (!dirt && this.noise01(ix, iy, 3) > 0.78) count = 3;
                 for (let k = 0; k < count; k++) {
                     const roll = this.noise01(ix, iy, 20 + k);
                     let kind: FrameKey;
                     if (dirt) {
-                        // Ref dirt: dense weeds + rocks/twigs
-                        if (roll < 0.14) kind = 'pebble';
-                        else if (roll < 0.26) kind = 'twig';
-                        else if (roll < 0.36) kind = 'fiber';
-                        else if (roll < 0.5) kind = 'tuft';
-                        else if (roll < 0.7) kind = 'weed';
-                        else if (roll < 0.84) kind = 'weedTall';
-                        else kind = 'weedPink';
+                        if (roll < 0.1) kind = 'pebble';
+                        else if (roll < 0.18) kind = 'twig';
+                        else if (roll < 0.26) kind = 'fiber';
+                        else if (roll < 0.36) kind = 'tuft';
+                        else if (roll < 0.5) kind = 'weed';
+                        else if (roll < 0.6) kind = 'weedTall';
+                        else if (roll < 0.74) kind = 'weedPink';
+                        else if (roll < 0.86) kind = 'weedYellow';
+                        else kind = 'weedBloom';
                     } else {
-                        if (roll < 0.12) kind = 'tuft';
-                        else if (roll < 0.22) kind = 'fiber';
-                        else if (roll < 0.45) kind = 'weed';
-                        else if (roll < 0.62) kind = 'weedBloom';
-                        else if (roll < 0.8) kind = 'weedTall';
-                        else if (roll < 0.9) kind = 'weedPink';
+                        // Open grass: favor bright flowers over green weeds
+                        if (roll < 0.08) kind = 'tuft';
+                        else if (roll < 0.12) kind = 'fiber';
+                        else if (roll < 0.2) kind = 'weed';
+                        else if (roll < 0.28) kind = 'weedTall';
+                        else if (roll < 0.46) kind = 'weedPink';
+                        else if (roll < 0.62) kind = 'weedYellow';
+                        else if (roll < 0.76) kind = 'weedBlue';
+                        else if (roll < 0.9) kind = 'weedBloom';
                         else kind = 'pebble';
                     }
                     if (!loaded[kind]) {
@@ -1528,26 +1700,18 @@ export class FarmWorldLayout {
 
                     const jx = this.noise(ix + k * 3, iy) * 30;
                     const jy = this.noise(ix, iy + k * 5) * 26;
-                    this.spawnNode(
-                        world,
-                        `decor_soft_${kind}_${n}`,
-                        sf,
-                        kind,
-                        ix * TILE + jx,
-                        iy * TILE + jy - TILE * 0.15,
-                    );
+                    const px = ix * TILE + jx;
+                    const py = iy * TILE + jy - TILE * 0.15;
+                    if (nearTree(px, py, 96)) continue;
+                    this.spawnNode(world, `decor_soft_${kind}_${n}`, sf, kind, px, py);
                     n++;
                 }
 
                 if (dirt && this.noise01(ix, iy, 9) > 0.88 && loaded.rock) {
-                    this.spawnNode(
-                        world,
-                        `decor_soft_rock_${n}`,
-                        loaded.rock,
-                        'rock',
-                        ix * TILE + this.noise(ix, iy) * 20,
-                        iy * TILE + this.noise(iy, ix) * 16,
-                    );
+                    const rx = ix * TILE + this.noise(ix, iy) * 20;
+                    const ry = iy * TILE + this.noise(iy, ix) * 16;
+                    if (nearTree(rx, ry, 90)) continue;
+                    this.spawnNode(world, `decor_soft_rock_${n}`, loaded.rock, 'rock', rx, ry);
                     n++;
                 }
             }

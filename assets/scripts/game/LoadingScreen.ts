@@ -40,6 +40,7 @@ const HIDE_WHILE_LOADING = [
     'TouchControls',
     'StickVisual',
     'DialogueBox',
+    'StoryIntro',
     'QuestPanel',
     'TownShopPanel',
     'TownShopDimmer',

@@ -121,6 +121,10 @@ export class RewardPopup extends Component {
 
     private confirmClaim() {
         if (!this._open) return;
+        // Snapshot chip icons → bag fly, then hide chips so we don't double-draw.
+        const flies = this.collectFlyPayloads();
+        if (this._chipHost) this._chipHost.active = false;
+        this.playRewardFlies(flies);
         // Claim AFTER hide so the next quest intro dialogue does not nest while
         // this popup still owns uiBlocking (that left blocking stuck true).
         this.hide(() => {
@@ -128,9 +132,59 @@ export class RewardPopup extends Component {
         });
     }
 
+    private collectFlyPayloads(): { sf: SpriteFrame; x: number; y: number; count: number }[] {
+        const host = this._chipHost;
+        if (!host?.isValid) return [];
+        const out: { sf: SpriteFrame; x: number; y: number; count: number }[] = [];
+        for (const chip of host.children) {
+            const icon = chip.getChildByName('Icon');
+            const sf = icon?.getComponent(Sprite)?.spriteFrame ?? null;
+            if (!sf || !icon) continue;
+            const pos = this.nodeCanvasPos(icon);
+            if (!pos) continue;
+            let count = 1;
+            const lab = chip.getChildByName('Label')?.getComponent(Label)?.string ?? '';
+            const m = /x\s*(\d+)/i.exec(lab);
+            if (m) count = Math.max(1, parseInt(m[1]!, 10) || 1);
+            out.push({ sf, x: pos.x, y: pos.y, count });
+        }
+        return out;
+    }
+
+    private playRewardFlies(flies: { sf: SpriteFrame; x: number; y: number; count: number }[]) {
+        const hud = this.quests?.hud;
+        if (!hud || flies.length <= 0) return;
+        for (let i = 0; i < flies.length; i++) {
+            const f = flies[i]!;
+            const delay = i * 0.08;
+            if (delay <= 0) {
+                hud.playCanvasLootFly(f.sf, f.x, f.y, f.count);
+            } else {
+                this.scheduleOnce(() => {
+                    if (!hud.isValid) return;
+                    hud.playCanvasLootFly(f.sf, f.x, f.y, f.count);
+                }, delay);
+            }
+        }
+    }
+
+    /** Accumulate local positions up to the Canvas this component lives on. */
+    private nodeCanvasPos(node: Node): { x: number; y: number } | null {
+        let x = 0;
+        let y = 0;
+        let n: Node | null = node;
+        while (n && n !== this.node) {
+            x += n.position.x;
+            y += n.position.y;
+            n = n.parent;
+        }
+        return n === this.node ? { x, y } : null;
+    }
+
     private paint(q: CQuest) {
         if (this._titleLab) this._titleLab.string = '获得奖励';
         if (this._btnLab) this._btnLab.string = '领取';
+        if (this._chipHost) this._chipHost.active = true;
         this.rebuildChips(this.listRewards(q));
         this.applyFonts();
     }
@@ -259,6 +313,7 @@ export class RewardPopup extends Component {
             money: '金币',
             seeds: '种子',
             seed: '种子',
+            boost: '催熟剂',
             grass: '草料',
             wood: '木材',
             dirt: '泥土',
@@ -282,6 +337,7 @@ export class RewardPopup extends Component {
             return REWARD_FRAMES.gold ?? MATERIAL_FRAMES.gold ?? null;
         }
         if (k === 'seeds' || k.includes('seed')) return TOOL_FRAMES.seeds ?? null;
+        if (k === 'boost') return TOOL_FRAMES.boost ?? null;
         if (k === 'grass') return MATERIAL_FRAMES.grass ?? null;
         if (k === 'wood') return MATERIAL_FRAMES.wood ?? null;
         if (k === 'dirt') return MATERIAL_FRAMES.dirt ?? null;

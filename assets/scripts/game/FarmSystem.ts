@@ -13,6 +13,7 @@ import {
     tween,
     view,
 } from 'cc';
+import { GotoAction } from '../cfg/schema';
 import { FARM_FRAMES } from './FarmFrames';
 import { FarmWorldLayout } from './FarmWorldLayout';
 import { FishingMinigame, FishingResult } from './FishingMinigame';
@@ -29,7 +30,7 @@ const TILE = 64;
 /** Mock rewarded-ad watch duration (seconds) until a real SDK is wired. */
 const AD_WATCH_SECONDS = 1.2;
 /** World-space ad icon under the countdown (vertical stack inside one 64px tile). */
-const AD_BTN_SIZE = 28;
+const AD_BTN_SIZE = 40;
 /** Vertical gap between timer and ad icon. */
 const GROW_UI_GAP = 2;
 /** Timer label box (font size 22 — keep original). */
@@ -49,7 +50,7 @@ const ACT_MAX_SOFT_PULL = 40;
  * Pebbles / rocks need the hoe; pine / oak still need the axe.
  */
 const GRASS_NAME_RE =
-    /^decor_soft_(?:shore_)?(weed|weedBloom|weedTall|weedPink|tuft|fiber|twig)_|^decor_bush_(soft|solid)_/;
+    /^decor_soft_(?:shore_)?(weed|weedBloom|weedTall|weedPink|weedYellow|weedBlue|tuft|fiber|twig)_|^decor_bush_(soft|solid)_|^decor_garden_/;
 /** Chopable wild cover: pine / oak only. */
 const TREE_NAME_RE = /^decor_(pine|oak)_solid_/;
 /** Diggable ground litter / boulders — hoe only. */
@@ -62,7 +63,7 @@ const CRAFT_NAME_RE = /^prop_craftbench/;
 /** Axe hits needed before a tree falls. */
 const TREE_CHOPS_TO_FELL = 5;
 
-export type FarmTool = 'hand' | 'hoe' | 'seeds' | 'can' | 'axe' | 'rod';
+export type FarmTool = 'hand' | 'hoe' | 'seeds' | 'can' | 'axe' | 'rod' | 'boost';
 /** Gathered world materials that stack in the backpack. */
 export type FarmMaterial =
     | 'wood'
@@ -74,8 +75,11 @@ export type FarmMaterial =
     | 'iron'
     | 'goldOre';
 
-const ALL_TOOLS: FarmTool[] = ['hand', 'hoe', 'seeds', 'can', 'axe', 'rod'];
+const ALL_TOOLS: FarmTool[] = ['hand', 'hoe', 'seeds', 'can', 'axe', 'rod', 'boost'];
 const NEED_ROD_TIP = '请装备鱼竿';
+
+/** World interaction kinds gated by the live mainline goto. */
+type TutorialActKind = 'plot' | 'nature' | 'fish' | 'chest' | 'craft' | 'grow';
 
 type PlotPhase = 'soil' | 'tilled' | 'crop';
 type NatureAct = 'pull' | 'chop' | 'dig';
@@ -137,6 +141,8 @@ export class FarmSystem extends Component {
 
     seeds = 12;
     crops = 0;
+    /** Consumable crop accelerator (hotbar item). */
+    boosts = 0;
     /** Gathered materials (backpack sync). */
     wood = 0;
     grass = 0;
@@ -210,6 +216,11 @@ export class FarmSystem extends Component {
         this.initPlots();
         this.spawnHudLabels();
         this.refreshHud();
+    }
+
+    /** True while walking to / performing a farm job (incl. cast walk-up). */
+    get isBusy() {
+        return this._acting || !!this._pending;
     }
 
     setTool(tool: FarmTool) {
@@ -299,6 +310,7 @@ export class FarmSystem extends Component {
         this._jobGen += 1;
         this._pending = null;
         this._acting = false;
+        this.unschedule(this.forceUnlockJob);
         this.unscheduleAllCallbacks();
         const anim = this.player?.getComponent(PlayerAnimator);
         anim?.cancelAction();
@@ -314,16 +326,19 @@ export class FarmSystem extends Component {
         const aim = this.facingAimPoint();
         const chest = this.findDecorNear(aim.x, aim.y, TILE * 1.45, CHEST_NAME_RE, TILE * 0.3);
         if (chest) {
+            if (this.rejectTutorialAct('chest')) return;
             this.queueChestJob(chest.node);
             return;
         }
         const craft = this.findDecorNear(aim.x, aim.y, TILE * 1.45, CRAFT_NAME_RE, TILE * 0.3);
         if (craft) {
+            if (this.rejectTutorialAct('craft')) return;
             this.queueCraftJob(craft.node);
             return;
         }
         const nature = this.resolveNatureNear(aim.x, aim.y);
         if (nature) {
+            if (this.rejectTutorialAct('nature')) return;
             if (!this.toolMatchesNature(nature.act)) {
                 this.floatTip(this.wrongToolTipFor(nature.act));
                 return;
@@ -333,6 +348,7 @@ export class FarmSystem extends Component {
         }
         const fish = FarmWorldLayout.findFishingStand(aim.x, aim.y);
         if (fish) {
+            if (this.rejectTutorialAct('fish')) return;
             this.tryFishAt(fish);
             return;
         }
@@ -340,6 +356,7 @@ export class FarmSystem extends Component {
         if (!key) return;
         const plot = this._plots.get(key);
         if (!plot) return;
+        if (this.rejectTutorialAct('plot')) return;
         this.tryPlotWithTool(key, plot);
     }
 
@@ -355,22 +372,26 @@ export class FarmSystem extends Component {
         // Grow-boost ad chip wins over plot / nature under the same tap.
         const adKey = this.hitGrowAdKey(worldPt.x, worldPt.y);
         if (adKey) {
+            if (this.rejectTutorialAct('grow')) return;
             this.requestGrowBoost(adKey);
             return;
         }
         const chest = this.findDecorHit(worldPt.x, worldPt.y, CHEST_NAME_RE);
         if (chest) {
+            if (this.rejectTutorialAct('chest')) return;
             this.queueChestJob(chest.node);
             return;
         }
         const craft = this.findDecorHit(worldPt.x, worldPt.y, CRAFT_NAME_RE);
         if (craft) {
+            if (this.rejectTutorialAct('craft')) return;
             this.queueCraftJob(craft.node);
             return;
         }
         // Tree / rock / weed first — canopy often overlaps a farm tile.
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
+            if (this.rejectTutorialAct('nature')) return;
             const ok = this.toolMatchesNature(nature.act);
             console.log(
                 `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
@@ -388,6 +409,7 @@ export class FarmSystem extends Component {
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
         if (fish) {
+            if (this.rejectTutorialAct('fish')) return;
             console.log('[FarmTap] → fish stand', fish);
             this.tryFishAt(fish);
             return;
@@ -395,6 +417,7 @@ export class FarmSystem extends Component {
         const key = `${Math.round(worldPt.x / TILE)},${Math.round(worldPt.y / TILE)}`;
         const plot = this._plots.get(key);
         if (plot) {
+            if (this.rejectTutorialAct('plot')) return;
             console.log(`[FarmTap] → plot ${key} phase=${plot.phase}`);
             this.tryPlotWithTool(key, plot);
             return;
@@ -403,6 +426,67 @@ export class FarmSystem extends Component {
             `[FarmTap] MISS ui=(${uiX.toFixed(0)},${uiY.toFixed(0)}) ` +
                 `world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)}) tool=${this.tool}`,
         );
+    }
+
+    /**
+     * Mainline quests only allow the current goto action (walk / tool / craft…).
+     * Returns true when the tap was swallowed with a redirect tip.
+     */
+    private rejectTutorialAct(kind: TutorialActKind): boolean {
+        const tip = this.tutorialBlocks(kind);
+        if (!tip) return false;
+        this.floatTip(tip);
+        return true;
+    }
+
+    /** Tip when the live quest forbids this world interaction; null = allowed. */
+    private tutorialBlocks(kind: TutorialActKind): string | null {
+        const quests = this.node.getComponent('QuestSystem') as {
+            activeQuest?: { id: number } | null;
+            isAwaitingClaim?: boolean;
+            activeGotoAction?: () => GotoAction;
+        } | null;
+        if (!quests?.activeQuest || quests.isAwaitingClaim) return null;
+        const action = quests.activeGotoAction?.() ?? GotoAction.None;
+        switch (action) {
+            case GotoAction.HintMeteor:
+            case GotoAction.HintTownGate:
+                return '跟着箭头走到东侧路牌';
+            case GotoAction.HintMayor:
+                return '跟着箭头前往镇长府';
+            case GotoAction.SelectRod:
+            case GotoAction.HintFish:
+                if (kind === 'fish') return null;
+                return '先跟着箭头去钓鱼';
+            case GotoAction.SelectHoe:
+                if (kind === 'plot') return null;
+                return '先跟着箭头开垦田地';
+            case GotoAction.SelectSeeds:
+                if (kind === 'plot') return null;
+                return '先跟着箭头播种';
+            case GotoAction.SelectCan:
+                if (kind === 'plot') return null;
+                return '先跟着箭头浇水';
+            case GotoAction.SelectHand:
+                // Item boost on the plot — not the world ad chip.
+                if (kind === 'plot') return null;
+                if (kind === 'grow') return '请使用催熟剂催熟作物';
+                return '先跟着箭头催熟并收获作物';
+            case GotoAction.HintGrass:
+                if (kind === 'nature') return null;
+                return '先跟着箭头拔除杂草';
+            case GotoAction.HintCraft:
+            case GotoAction.OpenCraft:
+                if (kind === 'craft') return null;
+                return '先走到工作台合成种子';
+            case GotoAction.OpenBag:
+                return '先打开背包查看物品';
+            case GotoAction.HintFarm:
+                if (kind === 'plot') return null;
+                return '先跟着箭头操作农田';
+            default:
+                return null;
+        }
     }
 
     private tryFishAt(spot: {
@@ -433,6 +517,7 @@ export class FarmSystem extends Component {
             return;
         }
         if (need === 'seeds' && this.seeds <= 0) return;
+        if (need === 'boost' && this.boosts <= 0) return;
         this.queuePlotJob(key);
     }
 
@@ -511,7 +596,9 @@ export class FarmSystem extends Component {
         if (plot.phase === 'crop' && plot.stage >= 2) return 'pick';
         const need = this.neededTool(plot);
         if (need === 'hoe') return 'hoe';
-        if (need === 'hand' || need === 'seeds' || need === 'can') return 'pick';
+        if (need === 'hand' || need === 'seeds' || need === 'can' || need === 'boost') {
+            return 'pick';
+        }
         return null;
     }
 
@@ -669,22 +756,27 @@ export class FarmSystem extends Component {
             },
             () => {
                 if (this._jobGen !== gen || this._pending !== job) return;
-                // Path aborted — still act only if we ended right beside the target.
-                if (job.kind === 'nature' && this.player?.isValid) {
+                // Path aborted — still act if we ended beside the target
+                // (nature weeds, craftbench, chest).
+                if (this.player?.isValid) {
                     const pp = this.player.position;
-                    const ddx = job.targetX - pp.x;
-                    const ddy = job.targetY - pp.y;
-                    const d = Math.sqrt(ddx * ddx + ddy * ddy);
+                    const d = Math.hypot(job.targetX - pp.x, job.targetY - pp.y);
+                    const retryMax =
+                        job.kind === 'nature'
+                            ? softActMax
+                            : job.kind === 'craft' || job.kind === 'chest'
+                              ? ACT_MAX_NATURE
+                              : 0;
                     console.log(
                         `[FarmJob] walk ABORT at=(${pp.x.toFixed(1)},${pp.y.toFixed(1)}) ` +
-                            `targetDist=${d.toFixed(1)} softActMax=${softActMax}`,
+                            `targetDist=${d.toFixed(1)} retryMax=${retryMax} kind=${job.kind}`,
                     );
-                    if (d <= softActMax) {
+                    if (retryMax > 0 && d <= retryMax) {
                         this.runActionPhase(gen);
                         return;
                     }
                 } else {
-                    console.log('[FarmJob] walk ABORT (no nature retry)');
+                    console.log('[FarmJob] walk ABORT (no player)');
                 }
                 this._pending = null;
                 this._acting = false;
@@ -778,6 +870,9 @@ export class FarmSystem extends Component {
         anim?.faceToward(faceX, faceY);
         ctrl?.setLocked(true);
         this._acting = true;
+        // Hard unlock if the action clip never finishes (missing frames / hot-reload).
+        this.unschedule(this.forceUnlockJob);
+        this.scheduleOnce(this.forceUnlockJob, 2.5);
         // Chest / craftbench: no tool swing — open UI as soon as we arrive.
         if (job.kind === 'chest' || job.kind === 'craft') {
             this.scheduleOnce(() => this.completeJob(job, gen), 0.05);
@@ -791,14 +886,26 @@ export class FarmSystem extends Component {
         }
     }
 
+    private forceUnlockJob = () => {
+        if (!this._acting && !this._pending) return;
+        console.warn('[FarmJob] force-unlock stale action lock');
+        this._jobGen += 1;
+        this._pending = null;
+        this._acting = false;
+        this.player?.getComponent(PlayerAnimator)?.cancelAction();
+        this.player?.getComponent(PlayerController)?.setLocked(false);
+    };
+
     private completeJob(job: PendingJob, gen: number) {
         if (this._jobGen !== gen || this._pending !== job) {
+            this.unschedule(this.forceUnlockJob);
             this.player?.getComponent(PlayerController)?.setLocked(false);
             this._acting = false;
             return;
         }
 
         if (job.kind === 'chest') {
+            this.unschedule(this.forceUnlockJob);
             this._pending = null;
             this._acting = false;
             this.player?.getComponent(PlayerController)?.setLocked(false);
@@ -807,6 +914,7 @@ export class FarmSystem extends Component {
         }
 
         if (job.kind === 'craft') {
+            this.unschedule(this.forceUnlockJob);
             this._pending = null;
             this._acting = false;
             this.player?.getComponent(PlayerController)?.setLocked(false);
@@ -815,6 +923,7 @@ export class FarmSystem extends Component {
         }
 
         if (job.kind === 'fish') {
+            this.unschedule(this.forceUnlockJob);
             this._pending = null;
             this.beginFishingMinigame(job);
             return;
@@ -833,6 +942,7 @@ export class FarmSystem extends Component {
             }
         }
 
+        this.unschedule(this.forceUnlockJob);
         this._pending = null;
         this._acting = false;
         this.player?.getComponent(PlayerController)?.setLocked(false);
@@ -844,21 +954,34 @@ export class FarmSystem extends Component {
         if (!mini) mini = this.node.addComponent(FishingMinigame);
         const aimX = job.fishAimX ?? job.targetX;
         const aimY = job.fishAimY ?? job.targetY;
-        // Pond fish: need to track the bar — AFK should fail.
-        const difficulty = 0.32 + Math.random() * 0.28;
-        mini.open(difficulty, (result: FishingResult) => {
-            this._acting = false;
-            this.player?.getComponent(PlayerController)?.setLocked(false);
-            if (result === 'perfect' || result === 'catch') {
-                // One fish per cast; perfect only changes the tip (no double loot).
-                this.grant('fish', 1, { x: aimX, y: aimY + 20 });
-                this._onQuestStat?.('fish', undefined, 1);
-                this.floatTip(result === 'perfect' ? '完美!' : '钓到了鱼!');
-            } else {
-                this.floatTip('鱼跑掉了…');
-            }
-            this.refreshHud();
-        });
+        // First mainline cast (quest 1007): gentler bar so the tutorial lands.
+        // String lookup avoids a FarmSystem ↔ QuestSystem import cycle.
+        const quests = this.node.getComponent('QuestSystem') as {
+            activeQuest?: { id: number } | null;
+            isAwaitingClaim?: boolean;
+        } | null;
+        const tutorialCast =
+            !!quests?.activeQuest &&
+            quests.activeQuest.id === 1007 &&
+            !quests.isAwaitingClaim;
+        const difficulty = tutorialCast ? 0.18 : 0.32 + Math.random() * 0.28;
+        mini.open(
+            difficulty,
+            (result: FishingResult) => {
+                this._acting = false;
+                this.player?.getComponent(PlayerController)?.setLocked(false);
+                if (result === 'perfect' || result === 'catch') {
+                    // One fish per cast; perfect only changes the tip (no double loot).
+                    this.grant('fish', 1, { x: aimX, y: aimY + 20 });
+                    this._onQuestStat?.('fish', undefined, 1);
+                    this.floatTip(result === 'perfect' ? '完美!' : '钓到了鱼!');
+                } else {
+                    this.floatTip(tutorialCast ? '鱼跑了 · 再点码头重试' : '鱼跑掉了…');
+                }
+                this.refreshHud();
+            },
+            { tutorial: tutorialCast },
+        );
     }
 
     private applyPlotAction(key: string) {
@@ -878,6 +1001,17 @@ export class FarmSystem extends Component {
         } else if (this.tool === 'can' && plot.phase === 'crop' && !plot.watered && plot.stage < 2) {
             this.water(plot);
             this._onQuestStat?.('water', undefined, 1);
+        } else if (
+            this.tool === 'boost' &&
+            plot.phase === 'crop' &&
+            plot.watered &&
+            plot.stage < 2
+        ) {
+            if (this.boosts <= 0) return;
+            this.applyBoost(plot);
+            this.boosts -= 1;
+            this.floatTip('催熟完成！');
+            this._onInvChange?.();
         }
     }
 
@@ -1095,6 +1229,25 @@ export class FarmSystem extends Component {
         return list.filter((n) => n.isValid);
     }
 
+    /**
+     * Front-yard tutorial weeds (`*_tut_*`) for quest 1001.
+     * Prefer these over random fringe litter so the guide never drifts.
+     */
+    listTutorialGrass(): Node[] {
+        return this.listGrass().filter((n) => n.name.includes('_tut_'));
+    }
+
+    /** Walk-and-pull a specific weed (tutorial hollow may be larger than the sprite). */
+    tryPullGrass(node: Node | null) {
+        if (!node?.isValid) return;
+        if (this.rejectTutorialAct('nature')) return;
+        if (!this.toolMatchesNature('pull')) {
+            this.floatTip(this.wrongToolTipFor('pull'));
+            return;
+        }
+        this.queueNatureJob({ node, act: 'pull' });
+    }
+
     /** First matching world child (exact name or prefix). */
     findWorldNode(...names: string[]): Node | null {
         if (!this.world) return null;
@@ -1109,9 +1262,11 @@ export class FarmSystem extends Component {
 
     /**
      * World-space center of a plot matching the idle-hint need.
-     * `soil` / `tilled` / `water` (unwatered crop) / `harvest` (mature).
+     * `soil` / `tilled` / `water` (unwatered) / `grow` (watered, immature) / `harvest`.
      */
-    hintPlotPos(need: 'soil' | 'tilled' | 'water' | 'harvest'): { x: number; y: number } | null {
+    hintPlotPos(
+        need: 'soil' | 'tilled' | 'water' | 'grow' | 'harvest',
+    ): { x: number; y: number } | null {
         if (!this.player) return null;
         const px = this.player.position.x;
         const py = this.player.position.y;
@@ -1122,6 +1277,7 @@ export class FarmSystem extends Component {
             if (need === 'soil') ok = plot.phase === 'soil';
             else if (need === 'tilled') ok = plot.phase === 'tilled';
             else if (need === 'water') ok = plot.phase === 'crop' && !plot.watered && plot.stage < 2;
+            else if (need === 'grow') ok = plot.phase === 'crop' && plot.watered && plot.stage < 2;
             else if (need === 'harvest') ok = plot.phase === 'crop' && plot.stage >= 2;
             if (!ok) continue;
             const parts = key.split(',');
@@ -1130,6 +1286,50 @@ export class FarmSystem extends Component {
             if (!Number.isFinite(ix) || !Number.isFinite(iy)) continue;
             const x = ix * TILE;
             const y = iy * TILE;
+            const dx = x - px;
+            const dy = y - py;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = { x, y };
+            }
+        }
+        return best;
+    }
+
+    /** True while a mock rewarded-ad grow boost is ticking. */
+    isGrowBoostPlaying() {
+        return !!this._adWait;
+    }
+
+    /**
+     * World-local center of the nearest growing crop's ad chip
+     * (countdown stack). Used by harvest-quest idle arrows.
+     */
+    hintGrowAdPos(): { x: number; y: number } | null {
+        if (!this.player) return null;
+        const px = this.player.position.x;
+        const py = this.player.position.y;
+        let best: { x: number; y: number } | null = null;
+        let bestSq = Number.POSITIVE_INFINITY;
+        for (const [key, plot] of this._plots) {
+            if (plot.phase !== 'crop' || !plot.watered || plot.stage >= 2) continue;
+            let x: number;
+            let y: number;
+            if (plot.growUi?.isValid && plot.adBtn?.isValid) {
+                x = plot.growUi.position.x + plot.adBtn.position.x;
+                y = plot.growUi.position.y + plot.adBtn.position.y;
+            } else if (plot.tile) {
+                x = plot.tile.position.x;
+                y = plot.tile.position.y + 10;
+            } else {
+                const parts = key.split(',');
+                const ix = Number(parts[0]);
+                const iy = Number(parts[1]);
+                if (!Number.isFinite(ix) || !Number.isFinite(iy)) continue;
+                x = ix * TILE;
+                y = iy * TILE;
+            }
             const dx = x - px;
             const dy = y - py;
             const dSq = dx * dx + dy * dy;
@@ -1274,6 +1474,9 @@ export class FarmSystem extends Component {
         if (plot.phase === 'tilled') return 'seeds';
         if (plot.phase === 'crop' && plot.stage >= 2) return 'hand';
         if (plot.phase === 'crop' && !plot.watered) return 'can';
+        if (plot.phase === 'crop' && plot.watered && plot.stage < 2 && this.boosts > 0) {
+            return 'boost';
+        }
         return null;
     }
 
@@ -1281,6 +1484,7 @@ export class FarmSystem extends Component {
         const need = this.neededTool(plot);
         if (!need || this.tool !== need) return false;
         if (need === 'seeds' && this.seeds <= 0) return false;
+        if (need === 'boost' && this.boosts <= 0) return false;
         return true;
     }
 
@@ -1328,6 +1532,7 @@ export class FarmSystem extends Component {
             can: '水壶',
             axe: '斧头',
             rod: '鱼竿',
+            boost: '催熟剂',
         };
         return names[t];
     }
@@ -1340,7 +1545,17 @@ export class FarmSystem extends Component {
         if (plot.phase === 'soil') return '点击锄地';
         if (plot.phase === 'tilled') return this.seeds > 0 ? '点击播种' : '缺种子';
         if (plot.phase === 'crop' && !plot.watered) return '点击浇水';
+        if (need === 'boost') return this.boosts > 0 ? '点击催熟' : '缺催熟剂';
         return '生长中…';
+    }
+
+    /** Instantly mature a watered growing crop (consumable boost / ad finish). */
+    private applyBoost(plot: Plot) {
+        plot.grow = Math.max(0.1, this.growSeconds);
+        plot.stage = 2;
+        this.applyCropVisual(plot);
+        this.syncGrowTimer(plot);
+        this.refreshHud();
     }
 
     update(dt: number) {
@@ -1586,10 +1801,14 @@ export class FarmSystem extends Component {
         plot.growUi!.setPosition(t.x, t.y + 10, 0);
         if (plot.timer && plot.timer.string !== text) plot.timer.string = text;
         if (plot.adBtn?.isValid) {
-            const sp = plot.adBtn.getComponent(Sprite);
-            if (sp && this._adSf && sp.spriteFrame !== this._adSf) sp.spriteFrame = this._adSf;
-            const op = plot.adBtn.getComponent(UIOpacity) ?? plot.adBtn.addComponent(UIOpacity);
-            op.opacity = this._adWait ? 120 : 255;
+            // Prefer the consumable boost item — hide the ad chip while the player has one.
+            plot.adBtn.active = this.boosts <= 0;
+            if (plot.adBtn.active) {
+                const sp = plot.adBtn.getComponent(Sprite);
+                if (sp && this._adSf && sp.spriteFrame !== this._adSf) sp.spriteFrame = this._adSf;
+                const op = plot.adBtn.getComponent(UIOpacity) ?? plot.adBtn.addComponent(UIOpacity);
+                op.opacity = this._adWait ? 120 : 255;
+            }
         }
     }
 
@@ -1647,11 +1866,13 @@ export class FarmSystem extends Component {
 
     /** World-local hit-test for a crop ad chip; returns plot key when hit. */
     private hitGrowAdKey(wx: number, wy: number): string | null {
-        const pad = 8;
+        // Consumable boost hides the chip — must not steal taps onto the plot.
+        if (this.boosts > 0) return null;
+        const pad = 14;
         let bestKey: string | null = null;
         let bestSq = Infinity;
         for (const [key, plot] of this._plots) {
-            if (!plot.adBtn?.isValid || !plot.growUi?.isValid) continue;
+            if (!plot.adBtn?.isValid || !plot.adBtn.active || !plot.growUi?.isValid) continue;
             if (plot.phase !== 'crop' || !plot.watered || plot.stage >= 2) continue;
             const ui = plot.adBtn.getComponent(UITransform);
             if (!ui) continue;
@@ -1692,12 +1913,8 @@ export class FarmSystem extends Component {
             this.floatTip('加速已取消');
             return;
         }
-        plot.grow = Math.max(0.1, this.growSeconds);
-        plot.stage = 2;
-        this.applyCropVisual(plot);
-        this.syncGrowTimer(plot);
+        this.applyBoost(plot);
         this.floatTip('加速完成！');
-        this.refreshHud();
     }
 
     private spawnHudLabels() {

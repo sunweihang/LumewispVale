@@ -1,0 +1,22 @@
+开场插画 BGM / SFX（自 SpaceCard 序章轨）
+────────────────────────────────
+
+storyThemeCalm.mp3 — 平和钢琴
+  曲目：Meditation Impromptu 03
+  作者：Kevin MacLeod (incompetech.com)
+  许可：Creative Commons BY 4.0
+  https://creativecommons.org/licenses/by/4.0/
+
+storyThemeAlert.mp3 — 急促紧张
+  曲目：Volatile Reaction
+  作者：Kevin MacLeod (incompetech.com)
+  许可：Creative Commons BY 4.0
+  https://creativecommons.org/licenses/by/4.0/
+
+story-thunder-boom.mp3 — 近处落雷
+  来源：Freesound「Thunder 1」by Yoyodaman234
+  许可：CC0（详见 story-thunder-boom_LICENSE.txt）
+
+UI 点击音效（audio/ui/ui-click.mp3）
+────────────────────────────────
+  来源：TripleTown resources/audios/UIclick.mp3

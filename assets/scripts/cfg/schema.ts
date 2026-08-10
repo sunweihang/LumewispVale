@@ -142,7 +142,7 @@ export enum GotoAction {
      */
     HintCraft = 11,
     /**
-     * 提示紫晶陨石
+     * 提示通往小镇（旧陨石引导，已并入路牌）
      */
     HintMeteor = 12,
     /**

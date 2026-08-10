@@ -7,12 +7,10 @@ import {
     UITransform,
     view,
 } from 'cc';
-import { CameraFollow } from './CameraFollow';
 import { FarmSystem } from './FarmSystem';
 import { InputBridge } from './InputBridge';
 import { applyNightWash } from './NightWash';
 import { DESIGN_H, DESIGN_W } from './PortraitFit';
-import { QuestPanel } from './QuestPanel';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
@@ -43,12 +41,6 @@ export class FarmInfoBoard extends Component {
     @property(FarmSystem)
     farm: FarmSystem | null = null;
 
-    @property(CameraFollow)
-    cameraFollow: CameraFollow | null = null;
-
-    /** Runtime quest panel (opened by BtnQuest). */
-    questPanel: QuestPanel | null = null;
-
     @property(Label)
     dateLab: Label | null = null;
 
@@ -64,15 +56,6 @@ export class FarmInfoBoard extends Component {
     @property(Node)
     needle: Node | null = null;
 
-    @property(Node)
-    btnMinus: Node | null = null;
-
-    @property(Node)
-    btnPlus: Node | null = null;
-
-    @property(Node)
-    btnQuest: Node | null = null;
-
     private _toastHideAt = 0;
     private _day = 2;
     private _season = 0;
@@ -81,12 +64,6 @@ export class FarmInfoBoard extends Component {
     private _minutes = 0;
     private _acc = 0;
     private _paused = false;
-
-    private _baseWorldScale = 1;
-    private _zoom = 1;
-    private readonly _zoomMin = 0.85;
-    private readonly _zoomMax = 1.35;
-    private readonly _zoomStep = 0.1;
 
     private _nightIntensity = -1;
 
@@ -145,8 +122,6 @@ export class FarmInfoBoard extends Component {
     }
 
     start() {
-        const world = this.cameraFollow?.world;
-        if (world) this._baseWorldScale = world.scale.x;
         this.farm?.onGoldChange(() => this.refreshGold());
         this.refreshAll();
     }
@@ -238,19 +213,6 @@ export class FarmInfoBoard extends Component {
         if (!this.node.active) return false;
         const local = this.uiToLocal(uiX, uiY);
         if (!local) return false;
-        if (this.hitNode(this.btnMinus, local.x, local.y)) {
-            this.nudgeZoom(-1);
-            return true;
-        }
-        if (this.hitNode(this.btnPlus, local.x, local.y)) {
-            this.nudgeZoom(1);
-            return true;
-        }
-        if (this.hitNode(this.btnQuest, local.x, local.y)) {
-            if (this.questPanel) this.questPanel.toggle();
-            else this.showToast('任务加载中…');
-            return true;
-        }
         return this.hitRoot(local.x, local.y);
     }
 
@@ -267,9 +229,11 @@ export class FarmInfoBoard extends Component {
         if (!this.goldLab) this.goldLab = this.findLabel(['Gold', 'GoldVal']);
         if (!this.toastLab) this.toastLab = this.findLabel(['Toast']);
         if (!this.needle) this.needle = this.findNode(['Panel', 'Needle']);
-        if (!this.btnMinus) this.btnMinus = this.node.getChildByName('BtnMinus');
-        if (!this.btnPlus) this.btnPlus = this.node.getChildByName('BtnPlus');
-        if (!this.btnQuest) this.btnQuest = this.node.getChildByName('BtnQuest');
+        // Retired zoom (−/+) and board quest (!) — keep nodes out of the tree.
+        for (const name of ['BtnMinus', 'BtnPlus', 'BtnQuest']) {
+            const btn = this.node.getChildByName(name);
+            if (btn?.isValid) btn.destroy();
+        }
     }
 
     private findNode(path: string[]): Node | null {
@@ -363,19 +327,6 @@ export class FarmInfoBoard extends Component {
         if (this.goldLab) this.goldLab.string = String(this.farm?.gold ?? 0);
     }
 
-    private nudgeZoom(dir: number) {
-        const world = this.cameraFollow?.world;
-        if (!world) {
-            this.showToast(dir > 0 ? '放大' : '缩小');
-            return;
-        }
-        if (this._baseWorldScale <= 0) this._baseWorldScale = world.scale.x;
-        this._zoom = Math.max(this._zoomMin, Math.min(this._zoomMax, this._zoom + dir * this._zoomStep));
-        const s = this._baseWorldScale * this._zoom;
-        world.setScale(s, s, 1);
-        this.cameraFollow?.snap();
-    }
-
     showToast(msg: string) {
         if (!this.toastLab) return;
         this.toastLab.string = msg;
@@ -400,18 +351,6 @@ export class FarmInfoBoard extends Component {
             x: uiX - halfW - this.node.position.x,
             y: uiY - halfH - this.node.position.y,
         };
-    }
-
-    private hitNode(n: Node | null, lx: number, ly: number): boolean {
-        if (!n?.isValid || !n.active) return false;
-        const ut = n.getComponent(UITransform);
-        if (!ut) return false;
-        const hw = ut.contentSize.width * 0.5;
-        const hh = ut.contentSize.height * 0.5;
-        const pad = 12;
-        const px = n.position.x;
-        const py = n.position.y;
-        return lx >= px - hw - pad && lx <= px + hw + pad && ly >= py - hh - pad && ly <= py + hh + pad;
     }
 
     private hitRoot(lx: number, ly: number): boolean {

@@ -28,7 +28,9 @@ const { ccclass } = _decorator;
 
 export type FishingResult = 'catch' | 'perfect' | 'escape';
 
-/** Stardew-like vertical fishing bar — mouse hold lifts the green zone. */
+type CoachKind = 'hold' | 'release' | 'steady' | 'hurry' | 'ready';
+
+/** Stardew-like vertical fishing bar — hold pad lifts the green zone. */
 @ccclass('FishingMinigame')
 export class FishingMinigame extends Component {
     private _root: Node | null = null;
@@ -38,6 +40,15 @@ export class FishingMinigame extends Component {
     private _progG: Graphics | null = null;
     private _banner: Label | null = null;
     private _hint: Label | null = null;
+    private _status: Label | null = null;
+    private _holdLabel: Label | null = null;
+    private _holdG: Graphics | null = null;
+    private _holdPulse: Graphics | null = null;
+    private _fingerG: Graphics | null = null;
+    private _fingerN: Node | null = null;
+    private _coachArrowG: Graphics | null = null;
+    private _barSp: Sprite | null = null;
+    private _titleCard: Node | null = null;
 
     private _panelSf: SpriteFrame | null = null;
     private _barSf: SpriteFrame | null = null;
@@ -49,6 +60,10 @@ export class FishingMinigame extends Component {
     private _holding = false;
     private _perfect = true;
     private _ended = false;
+    private _fishIn = false;
+    private _coach: CoachKind = 'ready';
+    private _age = 0;
+    private _pulseT = 0;
 
     /** 0..1 bottom→top of track (bar bottom). */
     private _barY = 0.12;
@@ -82,6 +97,7 @@ export class FishingMinigame extends Component {
     private readonly FISH_SIZE = 32;
     /** Keep paddle almost as wide as the water column (Stardew). */
     private readonly BAR_INSET_X = 3;
+    private readonly HOLD_R = 96;
 
     get isOpen(): boolean {
         return this._active;
@@ -93,14 +109,21 @@ export class FishingMinigame extends Component {
 
     /** Seconds after open with no progress drain (reaction window). */
     private _grace = 0;
+    /** First mainline cast — longer grace + clearer copy. */
+    private _tutorial = false;
 
     /**
      * Open the minigame overlay.
      * @param difficulty 0 easy … 1 hard (shorter bar, faster fish, harsher drain).
      */
-    open(difficulty = 0.4, onDone?: (r: FishingResult) => void) {
+    open(
+        difficulty = 0.4,
+        onDone?: (r: FishingResult) => void,
+        opts?: { tutorial?: boolean },
+    ) {
         if (this._active) this.close(false);
         this._onDone = onDone ?? null;
+        this._tutorial = !!opts?.tutorial;
         this._diff = Math.max(0.15, Math.min(0.9, difficulty));
         // ~34% track easy → ~24% hard — must track the fish, not AFK.
         this._barH = 0.36 - this._diff * 0.14;
@@ -110,11 +133,16 @@ export class FishingMinigame extends Component {
         this._fishTarget = this._fishY;
         this._fishRetarget = 0.25 + Math.random() * 0.35;
         this._barY = 0.02 + Math.random() * 0.06;
-        this._progress = 0.28;
-        this._grace = 0.2;
+        // Tutorial: start fuller + give a longer reaction window before drain.
+        this._progress = this._tutorial ? 0.42 : 0.28;
+        this._grace = this._tutorial ? 1.35 : 0.35;
         this._holding = false;
         this._perfect = true;
         this._ended = false;
+        this._fishIn = false;
+        this._coach = 'ready';
+        this._age = 0;
+        this._pulseT = 0;
         this._active = true;
 
         this._prevBlocking = InputBridge.uiBlocking;
@@ -128,6 +156,8 @@ export class FishingMinigame extends Component {
             this.buildUi();
             this.bindInput(true);
             this.layoutDynamic();
+            this.paintHoldPad();
+            this.paintCoachArrow();
         });
     }
 
@@ -158,6 +188,8 @@ export class FishingMinigame extends Component {
         InputBridge.moveLocked = true;
 
         const t = Math.min(0.05, Math.max(0, dt));
+        this._age += t;
+        this._pulseT += t;
         if (this._grace > 0) this._grace = Math.max(0, this._grace - t);
 
         // Stardew-like: hold lifts hard, release falls with gravity.
@@ -202,6 +234,7 @@ export class FishingMinigame extends Component {
         const pad = 0.012;
         const fishIn =
             this._fishY + pad >= this._barY && this._fishY - pad <= this._barY + this._barH;
+        this._fishIn = fishIn;
         if (fishIn) {
             this._progress += (0.26 - this._diff * 0.05) * t;
         } else if (this._grace <= 0) {
@@ -210,12 +243,69 @@ export class FishingMinigame extends Component {
         }
         this._progress = Math.max(0, Math.min(1, this._progress));
 
+        this.refreshCoach();
         this.layoutDynamic();
+        this.paintHoldPad();
+        this.paintCoachArrow();
+        this.updateFinger();
 
         if (this._progress >= 1) {
             this.finish(this._perfect ? 'perfect' : 'catch');
         } else if (this._progress <= 0) {
             this.finish('escape');
+        }
+    }
+
+    private refreshCoach() {
+        const barMid = this._barY + this._barH * 0.5;
+        const slack = this._barH * 0.18;
+        let kind: CoachKind;
+        if (this._grace > 0.45 && this._age < 1.2) {
+            kind = 'ready';
+        } else if (this._fishIn) {
+            kind = this._progress < 0.22 ? 'hurry' : 'steady';
+        } else if (this._fishY > barMid + slack) {
+            kind = 'hold';
+        } else if (this._fishY < barMid - slack) {
+            kind = 'release';
+        } else {
+            kind = 'hold';
+        }
+        this._coach = kind;
+
+        if (this._status) {
+            const map: Record<CoachKind, string> = {
+                ready: this._tutorial ? '上钩了！按住右侧大按钮抬竿' : '上钩了！按住右侧按钮',
+                hold: '鱼在上面 · 按住抬起绿条',
+                release: '鱼在下面 · 松开让绿条落下',
+                steady: '稳住！继续套住小鱼',
+                hurry: '快跑掉了！快套住它',
+            };
+            this._status.string = map[kind];
+            this._status.color =
+                kind === 'hurry'
+                    ? new Color(255, 170, 120, 255)
+                    : kind === 'steady'
+                      ? new Color(200, 255, 170, 255)
+                      : new Color(255, 244, 214, 255);
+        }
+
+        if (this._holdLabel) {
+            if (this._holding) this._holdLabel.string = '抬竿中…';
+            else if (kind === 'release') this._holdLabel.string = '松开';
+            else this._holdLabel.string = '按住抬竿';
+        }
+
+        if (this._hint) {
+            if (this._age < 2.8 || this._tutorial) {
+                this._hint.string = '绿条套住鱼 · 右侧黄条涨满就钓到';
+            } else {
+                this._hint.string = this._fishIn ? '收线中…' : '别让鱼跑出绿条';
+            }
+        }
+
+        if (this._titleCard && this._age > 1.6) {
+            this._titleCard.active = false;
         }
     }
 
@@ -235,6 +325,9 @@ export class FishingMinigame extends Component {
             this._banner.node.active = true;
         }
         if (this._hint) this._hint.string = '';
+        if (this._status) this._status.string = '';
+        if (this._fingerN) this._fingerN.active = false;
+        if (this._titleCard) this._titleCard.active = false;
 
         const cb = this._onDone;
         this._onDone = null;
@@ -257,6 +350,15 @@ export class FishingMinigame extends Component {
         this._progG = null;
         this._banner = null;
         this._hint = null;
+        this._status = null;
+        this._holdLabel = null;
+        this._holdG = null;
+        this._holdPulse = null;
+        this._fingerG = null;
+        this._fingerN = null;
+        this._coachArrowG = null;
+        this._barSp = null;
+        this._titleCard = null;
     }
 
     private ensureFrames(done?: () => void) {
@@ -312,15 +414,20 @@ export class FishingMinigame extends Component {
         dim.setParent(root);
         dim.addComponent(UITransform).setContentSize(vis.width, vis.height);
         const dimG = dim.addComponent(Graphics);
-        dimG.fillColor = new Color(12, 18, 28, 80);
+        dimG.fillColor = new Color(10, 16, 26, 110);
         dimG.rect(-vis.width * 0.5, -vis.height * 0.5, vis.width, vis.height);
         dimG.fill();
+        // Soft spotlight on the hold pad so the click target reads first.
+        dimG.fillColor = new Color(40, 70, 40, 36);
+        dimG.circle(240, -40, 168);
+        dimG.fill();
 
+        const panelX = -200;
         const panel = new Node('Panel');
         panel.layer = root.layer;
         panel.setParent(root);
         // Left-of-center like Stardew — keep pier / player readable on the right.
-        panel.setPosition(-180, 24, 0);
+        panel.setPosition(panelX, 24, 0);
         panel.addComponent(UITransform).setContentSize(this.PANEL_W, this.PANEL_H);
         if (this._panelSf) {
             const sp = panel.addComponent(Sprite);
@@ -330,6 +437,10 @@ export class FishingMinigame extends Component {
             sp.type = Sprite.Type.SIMPLE;
         }
         this._panel = panel;
+
+        // Side callouts: what the columns mean.
+        this.makeCallout(root, panelX - 118, 40, '绿条\n套住鱼', new Color(120, 210, 90, 255));
+        this.makeCallout(root, panelX + 118, 40, '黄条\n收线', new Color(230, 200, 90, 255));
 
         const track = new Node('Track');
         track.layer = root.layer;
@@ -357,8 +468,8 @@ export class FishingMinigame extends Component {
             sp.trim = false;
             sp.type = Sprite.Type.SLICED;
             sp.spriteFrame = this._barSf;
-            // Stardew: solid opaque green paddle (AI texture, fish draws on top).
             sp.color = new Color(255, 255, 255, 255);
+            this._barSp = sp;
         }
         this._barNode = bar;
 
@@ -374,6 +485,12 @@ export class FishingMinigame extends Component {
         }
         this._fishNode = fish;
 
+        const coachArrow = new Node('CoachArrow');
+        coachArrow.layer = root.layer;
+        coachArrow.setParent(track);
+        coachArrow.addComponent(UITransform).setContentSize(40, 48);
+        this._coachArrowG = coachArrow.addComponent(Graphics);
+
         const prog = new Node('Progress');
         prog.layer = root.layer;
         prog.setParent(panel);
@@ -381,10 +498,40 @@ export class FishingMinigame extends Component {
         prog.addComponent(UITransform).setContentSize(this.PROG_W + 4, this.TRACK_H);
         this._progG = prog.addComponent(Graphics);
 
+        const title = new Node('TitleCard');
+        title.layer = root.layer;
+        title.setParent(root);
+        title.setPosition(0, vis.height * 0.5 - 140, 0);
+        title.addComponent(UITransform).setContentSize(520, 72);
+        const tg = title.addComponent(Graphics);
+        tg.fillColor = new Color(48, 34, 22, 230);
+        tg.roundRect(-260, -36, 520, 72, 16);
+        tg.fill();
+        tg.strokeColor = new Color(230, 190, 110, 255);
+        tg.lineWidth = 3;
+        tg.roundRect(-260, -36, 520, 72, 16);
+        tg.stroke();
+        const titleLabN = new Node('TitleLab');
+        titleLabN.layer = root.layer;
+        titleLabN.setParent(title);
+        titleLabN.addComponent(UITransform).setContentSize(480, 56);
+        const titleLab = titleLabN.addComponent(Label);
+        titleLab.string = this._tutorial ? '上钩了！用绿条套住小鱼' : '上钩了！';
+        titleLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        titleLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(titleLab, {
+            size: 34,
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+            outlineWidth: 3,
+            outlineColor: new Color(30, 20, 12, 220),
+        });
+        this._titleCard = title;
+
         const bannerN = new Node('Banner');
         bannerN.layer = root.layer;
         bannerN.setParent(root);
-        bannerN.setPosition(-180, 24 + this.PANEL_H * 0.5 + 36, 0);
+        bannerN.setPosition(panelX, 24 + this.PANEL_H * 0.5 + 36, 0);
         bannerN.addComponent(UITransform).setContentSize(320, 52);
         const banner = bannerN.addComponent(Label);
         banner.string = '';
@@ -403,13 +550,13 @@ export class FishingMinigame extends Component {
         const hintN = new Node('Hint');
         hintN.layer = root.layer;
         hintN.setParent(panel);
-        hintN.setPosition(0, -this.PANEL_H * 0.5 - 32, 0);
-        hintN.addComponent(UITransform).setContentSize(400, 40);
+        hintN.setPosition(0, -this.PANEL_H * 0.5 - 36, 0);
+        hintN.addComponent(UITransform).setContentSize(420, 40);
         const hint = hintN.addComponent(Label);
-        hint.string = '按住上升 · 松开下落';
+        hint.string = '绿条套住鱼 · 右侧黄条涨满就钓到';
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         styleUiLabel(hint, {
-            size: 26,
+            size: 24,
             color: new Color(240, 228, 200, 255),
             outline: true,
             outlineWidth: 3,
@@ -417,11 +564,277 @@ export class FishingMinigame extends Component {
         });
         this._hint = hint;
 
+        // Primary click target — big hold pad on the clear right half.
+        const holdX = 240;
+        const holdY = -40;
+        const hold = new Node('HoldPad');
+        hold.layer = root.layer;
+        hold.setParent(root);
+        hold.setPosition(holdX, holdY, 0);
+        hold.addComponent(UITransform).setContentSize(this.HOLD_R * 2 + 24, this.HOLD_R * 2 + 24);
+        this._holdPulse = hold.addComponent(Graphics);
+
+        const holdCore = new Node('HoldCore');
+        holdCore.layer = root.layer;
+        holdCore.setParent(hold);
+        holdCore.addComponent(UITransform).setContentSize(this.HOLD_R * 2, this.HOLD_R * 2);
+        this._holdG = holdCore.addComponent(Graphics);
+
+        const holdLabN = new Node('HoldLab');
+        holdLabN.layer = root.layer;
+        holdLabN.setParent(hold);
+        holdLabN.setPosition(0, 8, 0);
+        holdLabN.addComponent(UITransform).setContentSize(180, 48);
+        const holdLab = holdLabN.addComponent(Label);
+        holdLab.string = '按住抬竿';
+        holdLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        holdLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(holdLab, {
+            size: 32,
+            color: new Color(255, 248, 220, 255),
+            outline: true,
+            outlineWidth: 4,
+            outlineColor: new Color(28, 40, 18, 240),
+        });
+        this._holdLabel = holdLab;
+
+        const holdSubN = new Node('HoldSub');
+        holdSubN.layer = root.layer;
+        holdSubN.setParent(hold);
+        holdSubN.setPosition(0, -28, 0);
+        holdSubN.addComponent(UITransform).setContentSize(200, 32);
+        const holdSub = holdSubN.addComponent(Label);
+        holdSub.string = '松开下落';
+        holdSub.horizontalAlign = Label.HorizontalAlign.CENTER;
+        styleUiLabel(holdSub, {
+            size: 22,
+            color: new Color(220, 235, 190, 255),
+            outline: true,
+            outlineWidth: 2,
+            outlineColor: new Color(24, 32, 14, 220),
+        });
+
+        const statusN = new Node('Status');
+        statusN.layer = root.layer;
+        statusN.setParent(root);
+        statusN.setPosition(holdX, holdY + this.HOLD_R + 56, 0);
+        statusN.addComponent(UITransform).setContentSize(420, 48);
+        const statusBg = statusN.addComponent(Graphics);
+        statusBg.fillColor = new Color(36, 28, 18, 210);
+        statusBg.roundRect(-210, -24, 420, 48, 12);
+        statusBg.fill();
+        statusBg.strokeColor = new Color(210, 170, 90, 220);
+        statusBg.lineWidth = 2;
+        statusBg.roundRect(-210, -24, 420, 48, 12);
+        statusBg.stroke();
+        const statusLabN = new Node('StatusLab');
+        statusLabN.layer = root.layer;
+        statusLabN.setParent(statusN);
+        statusLabN.addComponent(UITransform).setContentSize(400, 40);
+        const status = statusLabN.addComponent(Label);
+        status.string = '上钩了！按住右侧按钮';
+        status.horizontalAlign = Label.HorizontalAlign.CENTER;
+        status.verticalAlign = Label.VerticalAlign.CENTER;
+        status.overflow = Label.Overflow.SHRINK;
+        styleUiLabel(status, {
+            size: 26,
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+            outlineWidth: 2,
+            outlineColor: new Color(30, 20, 12, 220),
+        });
+        this._status = status;
+
+        const finger = new Node('FingerHint');
+        finger.layer = root.layer;
+        finger.setParent(hold);
+        finger.setPosition(36, -52, 0);
+        finger.addComponent(UITransform).setContentSize(72, 88);
+        this._fingerG = finger.addComponent(Graphics);
+        this.paintFinger(this._fingerG);
+        this._fingerN = finger;
+
         loadUiFont().then((font) => {
             if (!font) return;
             if (bannerN.isValid) applyUiFont(banner);
             if (hintN.isValid) applyUiFont(hint);
+            if (holdLabN.isValid) applyUiFont(holdLab);
+            if (holdSubN.isValid) applyUiFont(holdSub);
+            if (statusLabN.isValid) applyUiFont(status);
+            if (titleLabN.isValid) applyUiFont(titleLab);
         });
+    }
+
+    private makeCallout(root: Node, x: number, y: number, text: string, accent: Color) {
+        const n = new Node('Callout');
+        n.layer = root.layer;
+        n.setParent(root);
+        n.setPosition(x, y, 0);
+        n.addComponent(UITransform).setContentSize(100, 72);
+        const g = n.addComponent(Graphics);
+        g.fillColor = new Color(36, 28, 18, 210);
+        g.roundRect(-50, -36, 100, 72, 12);
+        g.fill();
+        g.strokeColor = accent;
+        g.lineWidth = 2;
+        g.roundRect(-50, -36, 100, 72, 12);
+        g.stroke();
+        const labN = new Node('Lab');
+        labN.layer = root.layer;
+        labN.setParent(n);
+        labN.addComponent(UITransform).setContentSize(92, 64);
+        const lab = labN.addComponent(Label);
+        lab.string = text;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        lab.lineHeight = 28;
+        styleUiLabel(lab, {
+            size: 22,
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+            outlineWidth: 2,
+            outlineColor: new Color(24, 16, 10, 220),
+        });
+        loadUiFont().then((font) => {
+            if (font && labN.isValid) applyUiFont(lab);
+        });
+    }
+
+    private paintFinger(g: Graphics) {
+        g.clear();
+        // Simple pointing hand — taps the hold pad.
+        g.fillColor = new Color(255, 220, 170, 255);
+        g.circle(0, 18, 16);
+        g.fill();
+        g.fillColor = new Color(255, 210, 150, 255);
+        g.roundRect(-10, -28, 20, 40, 8);
+        g.fill();
+        g.strokeColor = new Color(70, 42, 22, 255);
+        g.lineWidth = 3;
+        g.circle(0, 18, 16);
+        g.stroke();
+        g.roundRect(-10, -28, 20, 40, 8);
+        g.stroke();
+    }
+
+    private paintHoldPad() {
+        const g = this._holdG;
+        const pulse = this._holdPulse;
+        if (!g) return;
+        const r = this.HOLD_R;
+        const pressed = this._holding;
+        const urgency = this._coach === 'hurry' || (!this._fishIn && this._progress < 0.28);
+        const needHold = this._coach === 'hold' || this._coach === 'ready' || this._coach === 'hurry';
+        const needRelease = this._coach === 'release';
+
+        if (pulse) {
+            pulse.clear();
+            if (!pressed && (needHold || this._age < 2.5)) {
+                const wave = 0.5 + 0.5 * Math.sin(this._pulseT * 4.2);
+                const pr = r + 10 + wave * 18;
+                pulse.strokeColor = new Color(
+                    urgency ? 255 : 160,
+                    urgency ? 140 : 220,
+                    urgency ? 90 : 120,
+                    Math.floor(70 + wave * 90),
+                );
+                pulse.lineWidth = 6;
+                pulse.circle(0, 0, pr);
+                pulse.stroke();
+            }
+        }
+
+        g.clear();
+        const body = pressed
+            ? new Color(70, 130, 48, 245)
+            : needRelease
+              ? new Color(110, 92, 48, 235)
+              : urgency
+                ? new Color(150, 110, 40, 245)
+                : new Color(92, 158, 58, 245);
+        const rim = pressed
+            ? new Color(40, 70, 28, 255)
+            : new Color(36, 52, 22, 255);
+        const hi = pressed
+            ? new Color(140, 200, 90, 200)
+            : new Color(180, 230, 120, 220);
+
+        g.fillColor = new Color(20, 28, 14, 160);
+        g.circle(4, -6, r + 4);
+        g.fill();
+        g.fillColor = body;
+        g.circle(0, pressed ? -4 : 0, r);
+        g.fill();
+        g.fillColor = hi;
+        g.circle(-18, pressed ? 18 : 22, r * 0.42);
+        g.fill();
+        g.strokeColor = rim;
+        g.lineWidth = 5;
+        g.circle(0, pressed ? -4 : 0, r);
+        g.stroke();
+        g.strokeColor = new Color(255, 236, 160, pressed ? 120 : 200);
+        g.lineWidth = 3;
+        g.circle(0, pressed ? -4 : 0, r - 10);
+        g.stroke();
+
+        // Up chevron inside pad when player should lift.
+        if (needHold && !pressed) {
+            g.fillColor = new Color(255, 248, 210, 230);
+            g.moveTo(0, 46);
+            g.lineTo(-22, 18);
+            g.lineTo(22, 18);
+            g.close();
+            g.fill();
+        } else if (needRelease && !pressed) {
+            g.fillColor = new Color(255, 230, 170, 230);
+            g.moveTo(0, -40);
+            g.lineTo(-22, -12);
+            g.lineTo(22, -12);
+            g.close();
+            g.fill();
+        }
+    }
+
+    private paintCoachArrow() {
+        const g = this._coachArrowG;
+        if (!g || !this._barNode) return;
+        g.clear();
+        if (this._ended || this._fishIn) return;
+        const barMid = this._barY + this._barH * 0.5;
+        const up = this._fishY > barMid;
+        // Draw beside the green bar inside the track.
+        const y = (-this.TRACK_H * 0.5 + this._barY * this.TRACK_H + (this._barH * this.TRACK_H) * 0.5);
+        const node = g.node;
+        node.setPosition(0, y + (up ? 48 : -48), 0);
+        const flash = 0.55 + 0.45 * Math.sin(this._pulseT * 7);
+        g.fillColor = new Color(255, 236, 140, Math.floor(140 + flash * 100));
+        if (up) {
+            g.moveTo(0, 16);
+            g.lineTo(-14, -8);
+            g.lineTo(14, -8);
+        } else {
+            g.moveTo(0, -16);
+            g.lineTo(-14, 8);
+            g.lineTo(14, 8);
+        }
+        g.close();
+        g.fill();
+    }
+
+    private updateFinger() {
+        const n = this._fingerN;
+        if (!n?.isValid) return;
+        const show =
+            !this._ended &&
+            !this._holding &&
+            (this._age < 3.2 || this._tutorial) &&
+            this._coach !== 'release';
+        n.active = show;
+        if (!show) return;
+        const bob = Math.sin(this._pulseT * 6) * 10;
+        n.setPosition(40, -48 + bob, 0);
+        const op = n.getComponent(UIOpacity) ?? n.addComponent(UIOpacity);
+        op.opacity = Math.floor(170 + Math.sin(this._pulseT * 5) * 70);
     }
 
     private layoutDynamic() {
@@ -435,11 +848,26 @@ export class FishingMinigame extends Component {
             const bw = Math.max(24, this.TRACK_W - this.BAR_INSET_X * 2);
             ui?.setContentSize(bw, bh);
             this._barNode.setPosition(0, by, 0);
+            if (this._barSp) {
+                // Bright when covering the fish; cool/dim when missing.
+                this._barSp.color = this._fishIn
+                    ? new Color(255, 255, 255, 255)
+                    : new Color(170, 200, 255, 210);
+            }
         }
 
         if (this._fishNode?.isValid) {
-            const fy = -halfH + this._fishY * th;
+            const bob = Math.sin(this._age * 9) * 2.2;
+            const fy = -halfH + this._fishY * th + bob;
             this._fishNode.setPosition(0, fy, 0);
+            const sp = this._fishNode.getComponent(Sprite);
+            if (sp) {
+                sp.color = this._fishIn
+                    ? new Color(255, 255, 255, 255)
+                    : new Color(255, 210, 200, 255);
+            }
+            const scale = this._fishIn ? 1.08 + Math.sin(this._pulseT * 10) * 0.04 : 1;
+            this._fishNode.setScale(scale, scale, 1);
         }
 
         if (this._progG) {
@@ -452,13 +880,14 @@ export class FishingMinigame extends Component {
             if (fillH > 0) {
                 const x0 = -pw * 0.5;
                 const y0 = -ph * 0.5;
-                // Stardew progress fill: pale yellow-green (not neon lime).
-                const col =
-                    this._progress > 0.7
-                        ? new Color(210, 230, 120, 255)
-                        : this._progress > 0.35
-                          ? new Color(200, 210, 90, 255)
-                          : new Color(200, 150, 60, 255);
+                const danger = this._progress < 0.22 && !this._fishIn;
+                const col = danger
+                    ? new Color(220, 110, 70, 255)
+                    : this._progress > 0.7
+                      ? new Color(210, 230, 120, 255)
+                      : this._progress > 0.35
+                        ? new Color(200, 210, 90, 255)
+                        : new Color(200, 150, 60, 255);
                 g.fillColor = col;
                 g.rect(x0, y0, pw, fillH);
                 g.fill();
@@ -470,6 +899,13 @@ export class FishingMinigame extends Component {
                 );
                 g.rect(x0, y0, Math.max(2, Math.floor(pw * 0.3)), fillH);
                 g.fill();
+                if (danger) {
+                    const flash = 0.4 + 0.6 * Math.abs(Math.sin(this._pulseT * 9));
+                    g.strokeColor = new Color(255, 180, 100, Math.floor(flash * 220));
+                    g.lineWidth = 2;
+                    g.rect(x0 - 1, y0, pw + 2, Math.max(8, fillH));
+                    g.stroke();
+                }
             }
         }
     }
@@ -483,6 +919,7 @@ export class FishingMinigame extends Component {
             input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
             input.on(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
             input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
+            input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
         } else {
             input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
             input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
@@ -490,6 +927,7 @@ export class FishingMinigame extends Component {
             input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
             input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
             input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
+            input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
             this._holding = false;
         }
     }
@@ -514,7 +952,30 @@ export class FishingMinigame extends Component {
 
     private onKeyDown(e: EventKeyboard) {
         if (!this._active || this._ended) return;
-        if (e.keyCode === KeyCode.ESCAPE) this.finish('escape');
+        if (e.keyCode === KeyCode.ESCAPE) {
+            this.finish('escape');
+            return;
+        }
+        // Space / Enter also lift — helpful when playtesting on desktop.
+        if (
+            e.keyCode === KeyCode.SPACE ||
+            e.keyCode === KeyCode.ENTER ||
+            e.keyCode === KeyCode.KEY_W ||
+            e.keyCode === KeyCode.ARROW_UP
+        ) {
+            this._holding = true;
+        }
+    }
+
+    private onKeyUp(e: EventKeyboard) {
+        if (
+            e.keyCode === KeyCode.SPACE ||
+            e.keyCode === KeyCode.ENTER ||
+            e.keyCode === KeyCode.KEY_W ||
+            e.keyCode === KeyCode.ARROW_UP
+        ) {
+            this._holding = false;
+        }
     }
 
     onDestroy() {

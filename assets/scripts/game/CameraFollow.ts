@@ -1,14 +1,17 @@
 import { _decorator, Component, Node, UITransform, Vec3 } from 'cc';
 import { DESIGN_H, DESIGN_W } from './PortraitFit';
 
-const { ccclass, property } = _decorator;
+const { ccclass, executionOrder, property } = _decorator;
 
 /**
  * Keeps the protagonist centered in the portrait frame, then clamps so the
  * camera never pans past the authored map edges (player de-centers near borders).
  * Moves World (not the UI Camera) so Canvas HUD / joystick stay screen-fixed.
+ *
+ * Runs before TutorialGuide so hollow/arrow math sees the snapped World pose.
  */
 @ccclass('CameraFollow')
+@executionOrder(-20)
 export class CameraFollow extends Component {
     @property(Node)
     target: Node | null = null;

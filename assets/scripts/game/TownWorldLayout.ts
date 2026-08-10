@@ -1,5 +1,17 @@
-import { Node, Vec3 } from 'cc';
+import { Node, Sprite, UITransform, Vec3 } from 'cc';
+import { NPC_FRAMES } from './NpcFrames';
+import { NpcAnimator, NpcDir } from './NpcAnimator';
 import { shopByBuilding } from './TownCatalog';
+
+export type TownNpcId = 'mayor' | 'carpenter' | 'passerby';
+
+type NpcSpawn = {
+    id: TownNpcId;
+    /** World node name: npc_<id> */
+    x: number;
+    y: number;
+    face?: NpcDir;
+};
 
 /**
  * Town map constants / interaction queries.
@@ -9,8 +21,102 @@ export class TownWorldLayout {
     /** South of the plaza fountain, on the stone apron. */
     static readonly PLAYER_SPAWN = { x: 0, y: -96 };
 
+    /**
+     * Foot positions for runtime NPC actors (south of building doors / plaza).
+     * bld_mayor=(448,740), bld_carpenter=(832,-348), spawn=(0,-96).
+     */
+    static readonly NPC_SPAWNS: readonly NpcSpawn[] = [
+        { id: 'mayor', x: 448, y: 660, face: 'down' },
+        { id: 'carpenter', x: 832, y: -428, face: 'left' },
+        { id: 'passerby', x: 120, y: -40, face: 'left' },
+    ];
+
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__town_baked');
+    }
+
+    /** Spawn idle town NPCs once (idempotent). */
+    static spawnNpcs(world: Node): Node[] {
+        const out: Node[] = [];
+        for (const spawn of this.NPC_SPAWNS) {
+            const name = `npc_${spawn.id}`;
+            let node = world.getChildByName(name);
+            if (!node) {
+                node = new Node(name);
+                node.layer = world.layer;
+                node.setParent(world);
+                node.setPosition(new Vec3(spawn.x, spawn.y, 0));
+
+                const ui = node.addComponent(UITransform);
+                ui.setContentSize(NPC_FRAMES.cellSize[0], NPC_FRAMES.cellSize[1]);
+                ui.setAnchorPoint(0.5, 0);
+
+                const sp = node.addComponent(Sprite);
+                sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                sp.type = Sprite.Type.SIMPLE;
+                sp.trim = false;
+
+                const anim = node.addComponent(NpcAnimator);
+                anim.fps = 8;
+                const frames = NPC_FRAMES[spawn.id];
+                anim.loadWalk(frames);
+                if (spawn.face) anim.setDir(spawn.face);
+            }
+            out.push(node);
+        }
+        return out;
+    }
+
+    /** Fallback chat when story dialogue already played. */
+    static npcInfo(
+        id: TownNpcId,
+    ): { title: string; body: string; storyFlag?: string } | null {
+        if (id === 'mayor') {
+            return {
+                title: '镇长·艾岚',
+                body: '农庄归你了。先熟悉镇子，社区中心还等着有心人。',
+                storyFlag: 'visit_mayor',
+            };
+        }
+        if (id === 'carpenter') {
+            return {
+                title: '工匠·石楠',
+                body: '扩建农舍、修路的事，随时来找我。社区中心那边的钉子，记得去看看。',
+                storyFlag: 'visit_carpenter',
+            };
+        }
+        if (id === 'passerby') {
+            return {
+                title: '路人',
+                body: '新来的农夫？先去镇长府报个到吧，艾岚镇长这会儿多半在喝茶。',
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Hit-test a world tap against npc_* feet. Prefer over buildings when close.
+     */
+    static findNpc(
+        world: Node,
+        wx: number,
+        wy: number,
+        maxDist = 72,
+    ): { id: TownNpcId; node: Node; key: string } | null {
+        let best: { dist: number; id: TownNpcId; node: Node } | null = null;
+        for (const child of world.children) {
+            if (!child.name.startsWith('npc_')) continue;
+            const id = child.name.slice(4) as TownNpcId;
+            if (id !== 'mayor' && id !== 'carpenter' && id !== 'passerby') continue;
+            const p = child.position;
+            const dx = wx - p.x;
+            const dy = wy - p.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d > maxDist) continue;
+            if (!best || d < best.dist) best = { dist: d, id, node: child };
+        }
+        if (!best) return null;
+        return { id: best.id, node: best.node, key: best.id };
     }
 
     /**
@@ -161,6 +267,12 @@ export class TownWorldLayout {
     }
 
     static nearestDoorHint(world: Node, px: number, py: number): string {
+        const npc = this.findNpc(world, px, py, 96);
+        if (npc) {
+            if (npc.id === 'mayor') return '点击与镇长·艾岚交谈';
+            if (npc.id === 'carpenter') return '点击与工匠·石楠交谈';
+            if (npc.id === 'passerby') return '点击与路人交谈';
+        }
         const hit = this.findInteract(world, px, py, 160);
         if (!hit) return '';
         if (hit.kind === 'shop') return `点击进入 ${hit.title}`;

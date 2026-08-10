@@ -20,7 +20,7 @@ JOBS = [
     ("ai-dirt", "assets/textures/terrain/tile-dirt.png", 64, 64, "tile"),
     ("ai-water", "assets/textures/terrain/tile-water.png", 64, 64, "tile"),
     ("ai-cliff", "assets/textures/terrain/tile-cliff.png", 64, 64, "tile"),
-    ("ai-farmhouse", "assets/textures/buildings/bld-cottage-red.png", 192, 224, "sprite"),
+    ("ai-farmhouse", "assets/textures/buildings/bld-cottage-red.png", 288, 272, "sprite"),
     ("ai-shed", "assets/textures/buildings/bld-shed.png", 128, 128, "sprite"),
     ("ai-oak", "assets/textures/nature/nat-tree-oak.png", 128, 160, "sprite"),
     ("ai-pine", "assets/textures/nature/nat-tree-pine.png", 96, 144, "sprite"),

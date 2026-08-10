@@ -113,6 +113,8 @@ export class TouchJoystick extends Component {
     }
 
     private begin(id: number, x: number, y: number) {
+        // Self-heal stale locks left by dialogue/reward fade races.
+        this.clearStaleInputLocks();
         // Fishing minigame owns the pointer — do not track / drag / tap-steal.
         if (InputBridge.moveLocked) {
             InputBridge.clear();
@@ -126,6 +128,35 @@ export class TouchJoystick extends Component {
         this._ox = x;
         this._oy = y;
         InputBridge.clear();
+    }
+
+    /** Drop uiBlocking / moveLocked when no real modal owns them. */
+    private clearStaleInputLocks() {
+        const canvas = this.node.parent;
+        if (!canvas) return;
+        if (InputBridge.uiBlocking) {
+            const dlg = canvas.getComponent('DialoguePanel') as { isOpen?: boolean } | null;
+            const reward = canvas.getComponent('RewardPopup') as { isOpen?: boolean } | null;
+            const quest = canvas.getComponent('QuestPanel') as { isOpen?: boolean } | null;
+            const hud = canvas.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
+            const intro = canvas.getComponent('StoryIntroPanel') as { isOpen?: boolean } | null;
+            if (
+                !dlg?.isOpen &&
+                !reward?.isOpen &&
+                !quest?.isOpen &&
+                !hud?.isModalOpen &&
+                !intro?.isOpen
+            ) {
+                InputBridge.uiBlocking = false;
+            }
+        }
+        if (InputBridge.moveLocked) {
+            const intro = canvas.getComponent('StoryIntroPanel') as { isOpen?: boolean } | null;
+            const fish = canvas.getComponent('FishingMinigame') as { isOpen?: boolean } | null;
+            if (!intro?.isOpen && !fish?.isOpen) {
+                InputBridge.moveLocked = false;
+            }
+        }
     }
 
     private move(x: number, y: number) {
@@ -142,13 +173,14 @@ export class TouchJoystick extends Component {
         const dist = Math.sqrt(dx0 * dx0 + dy0 * dy0);
 
         if (!this._dragging) {
-            if (dist < this.dragThreshold) return;
-            // Full-screen panels: never start the stick. Mark as UI slide so a
-            // scrollbar/list drag doesn't fire onTap on finger-up.
+            // Bag/chest/craft open: any small slide is a UI gesture (item drag),
+            // not a world tap — match FarmHUD's drag threshold so onTap doesn't
+            // fire after a successful bag→hotbar drop.
             if (InputBridge.uiBlocking) {
-                this._uiSlid = true;
+                if (dist >= 12) this._uiSlid = true;
                 return;
             }
+            if (dist < this.dragThreshold) return;
             // GM chip / panel: block stick, still allow onTap.
             if (InputBridge.gmUiHit?.(this._ox, this._oy)) {
                 return;

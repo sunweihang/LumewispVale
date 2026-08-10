@@ -41,7 +41,7 @@ BUILDINGS = {
     "museum": ("bld-museum", 288, 256),
     "carpenter": ("bld-carpenter", 320, 240),
     "cottage_blue": ("bld-cottage-blue", 256, 224),
-    "cottage_red": ("bld-cottage-red", 288, 224),
+    "cottage_red": ("bld-cottage-red", 288, 272),
     "home_green": ("bld-home-green", 224, 224),
     "home_yellow": ("bld-home-yellow", 256, 224),
     "home_purple": ("bld-home-purple", 224, 224),

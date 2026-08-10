@@ -31,7 +31,6 @@ PROP_POS = {
 }
 
 HIDE_PROPS = [
-    "meteor",
     "shop",
     "community",
     "cottage_red",

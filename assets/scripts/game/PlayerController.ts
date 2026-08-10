@@ -466,6 +466,9 @@ export class PlayerController extends Component {
 
         if (this._repathCooldown > 0) this._repathCooldown -= frameDt;
 
+        // Overlap a solid (pond rim / trunk) → nudge out so stick isn't dead.
+        this.unstickIfNeeded();
+
         if (this._walkingTo) {
             this.tickWalk(frameDt);
             return;

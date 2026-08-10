@@ -26,6 +26,11 @@ BRIDGE_H = 88
 BRIDGE_RAIL_H = 40
 BRIDGE_UUID = "7aa6cfc8-27bf-4b43-b089-e517d86b64a2@f9941"
 BRIDGE_RAIL_S_UUID = "42966d38-2c6d-44fb-b938-bf882cb6890f@f9941"
+SIGN_UUID = "6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941"
+# East town gate — keep in sync with StoryWorldHooks.FARM_TOWN_PORTAL
+TOWN_GATE = (13 * TILE, 4 * TILE + 36)
+# Hero cottage feet — skip soft clutter inside the building body
+COTTAGE_FOOT = (220, 400, 288, 272)
 
 HIDE_PROPS = {
     "meteor",
@@ -66,7 +71,16 @@ DECOR = [
 ]
 
 SOFT_KINDS = [
-    "weed", "weedBloom", "weedTall", "weedPink", "tuft", "pebble", "twig", "fiber",
+    "weed",
+    "weedBloom",
+    "weedTall",
+    "weedPink",
+    "weedYellow",
+    "weedBlue",
+    "tuft",
+    "pebble",
+    "twig",
+    "fiber",
 ]
 
 LAKE_PIER = [(-2, -2), (-3, -2), (-4, -2), (-5, -2), (-6, -2), (-7, -2)]
@@ -82,12 +96,15 @@ SIZE = {
     "weedBloom": (40, 36),
     "weedTall": (36, 40),
     "weedPink": (36, 40),
+    "weedYellow": (36, 40),
+    "weedBlue": (36, 40),
     "tuft": (28, 24),
     "pebble": (24, 18),
     "twig": (32, 20),
     "fiber": (20, 16),
     "pine": (96, 144),
     "oak": (128, 160),
+    "blossom": (128, 160),
     "bush": (64, 64),
     "mailbox": (48, 64),
     "shipping": (96, 80),
@@ -102,7 +119,7 @@ SIZE = {
 
 # Building sprites from Main.scene / uuid-map
 PROP_SPRITES = {
-    "cottage_red": ("a5b87678-ab64-4173-9a6b-7d409ec746e2@f9941", 192, 224),
+    "cottage_red": ("a5b87678-ab64-4173-9a6b-7d409ec746e2@f9941", 288, 272),
     "shed": ("d29fe7a0-beb9-42e2-8140-b88c45147ac8@f9941", 128, 128),
 }
 
@@ -138,8 +155,19 @@ class FarmBake:
         self.pier_wood = {f"{x},{y}" for x, y in LAKE_PIER_WOOD}
         self.water: Set[str] = set()
         self.wanted: Dict[str, str] = {}
+        # Tall canopy feet — soft litter must stay clear or it paints over leaves.
+        self.tree_feet: List[Tuple[float, float]] = []
         # list of (name, sf, x, y, w, h, ax, ay, ground)
         self.nodes: List[Tuple] = []
+
+    def near_tree_canopy(self, x: float, y: float, rad: float = 88.0) -> bool:
+        r2 = rad * rad
+        for tx, ty in self.tree_feet:
+            dx = x - tx
+            dy = y - ty
+            if dx * dx + dy * dy < r2:
+                return True
+        return False
 
     def is_lake_cell(self, ix: int, iy: int) -> bool:
         key = f"{ix},{iy}"
@@ -295,6 +323,35 @@ class FarmBake:
         if on_porch_rim:
             return noise01(ix, iy, 2) > 0.35
 
+        # East town road — yard level → right-edge gate (solid to map rim)
+        on_town_road_core = (3 <= iy <= 4 and 3 <= ix <= 14) or (
+            iy == 5 and 4 <= ix <= 8
+        )
+        on_town_road_rim = ((iy == 2 or iy == 5) and 4 <= ix <= 14) or (
+            iy == 6 and 4 <= ix <= 8
+        )
+        if on_town_road_core:
+            return True
+        if on_town_road_rim:
+            return noise01(ix, iy, 16) > 0.32
+
+        # Soft garden soil pockets (organic blobs — not a dirt rectangle)
+        # Front-left bed
+        if -1 <= ix <= 2 and 2 <= iy <= 3:
+            dx, dy = (ix - 0.4) / 1.8, (iy - 2.4) / 1.1
+            if dx * dx + dy * dy < 0.85 + noise01(ix, iy, 41) * 0.35:
+                return True
+        # Front-right bed
+        if 4 <= ix <= 7 and 2 <= iy <= 4:
+            dx, dy = (ix - 5.2) / 1.9, (iy - 2.8) / 1.2
+            if dx * dx + dy * dy < 0.8 + noise01(ix, iy, 42) * 0.4:
+                return True
+        # West drift by mailbox
+        if -2 <= ix <= 0 and 3 <= iy <= 5:
+            dx, dy = (ix + 0.6) / 1.4, (iy - 4.0) / 1.3
+            if dx * dx + dy * dy < 0.7 + noise01(ix, iy, 43) * 0.35:
+                return True
+
         if 0 <= ix <= 5 and 3 <= iy <= 7:
             cx, cy = 2.6, 5.1
             dx, dy = (ix - cx) / 2.8, (iy - cy) / 1.9
@@ -340,15 +397,17 @@ class FarmBake:
             return True
         if -10 <= ix <= -2 and -4 <= iy <= -1:
             return True
-        if 0 <= ix <= 3 and 1 <= iy <= 4:
-            return True
-        if 1 <= ix <= 4 and 4 <= iy <= 6:
+        # Cottage garden + porch (no wild pine/oak through the flower grounds)
+        if -3 <= ix <= 9 and 1 <= iy <= 12:
             return True
         if -3 <= ix <= -1 and -3 <= iy <= -1:
             return True
         if ix == -3 and -6 <= iy <= 3:
             return True
         if ix == 3 and -10 <= iy <= 3:
+            return True
+        # East corridor to the town gate (spine + shoulders; north fringe stays wild)
+        if 3 <= ix <= 14 and 0 <= iy <= 6:
             return True
         return False
 
@@ -378,10 +437,16 @@ class FarmBake:
         return self.terrain[pick]
 
     def paint_terrain(self) -> None:
-        for iy in range(-7, 9):
-            for ix in range(-8, 8):
+        # Match wild-cover / lake AABB so trees & shore never sit on void.
+        # Water + pier wood are painted later; skip those cells here.
+        for iy in range(-20, 16):
+            for ix in range(-26, 16):
+                key = f"{ix},{iy}"
+                # Pier approach/wood come from place_pier_and_bridge
+                if key in self.water or key in self.pier:
+                    continue
                 kind = "dirt" if self.is_dirt_cell(ix, iy) else "grass"
-                self.wanted[f"{ix},{iy}"] = kind
+                self.wanted[key] = kind
         for key in self.farm_plots:
             self.wanted[key] = "grass"
 
@@ -527,21 +592,143 @@ class FarmBake:
             )
         )
 
+    # Left-yard craftbench — keep clear of blossom / flower beds
+    CRAFTBENCH_POS = (110, 295)
+
     def place_yard(self) -> None:
         if "mailbox" in self.nature:
-            self.add_actor("prop_mailbox", self.nature["mailbox"], 100, 330, "mailbox")
+            self.add_actor("prop_mailbox", self.nature["mailbox"], 55, 330, "mailbox")
         if "shipping" in self.nature:
-            self.add_actor("prop_shipping", self.nature["shipping"], 340, 310, "shipping")
-        if "craftbench" in self.nature:
-            self.add_actor("prop_craftbench", self.nature["craftbench"], 55, 300, "craftbench")
+            self.add_actor("prop_shipping", self.nature["shipping"], 420, 360, "shipping")
+        # craftbench placed after garden so it is never buried under foliage
         fence_sf = self.nature.get("fence")
+        # Broken romantic fence — only short north fragment, never a box
         spots = [
-            (96, 470), (160, 470), (224, 470), (288, 470), (352, 470),
-            (352, 406), (352, 342),
+            (120, 700), (184, 706), (248, 698), (312, 704),
         ]
         if fence_sf:
             for i, (x, y) in enumerate(spots):
                 self.add_actor(f"fence_auto_{i}", fence_sf, x, y, "fence")
+        gx, gy = TOWN_GATE
+        self.nodes.append(
+            ("portal_town", SIGN_UUID, gx, gy, 64, 80, 0.5, 0.0, False)
+        )
+
+    def place_craftbench(self) -> None:
+        if "craftbench" not in self.nature:
+            return
+        x, y = self.CRAFTBENCH_POS
+        self.add_actor("prop_craftbench", self.nature["craftbench"], x, y, "craftbench")
+
+    def place_cottage_garden(self) -> None:
+        """Organic girl's garden — beds & drifts, never a hedge box through the roof."""
+        n = 0
+        # Cottage visual slab — no tall props inside (prevents roof clipping)
+        hx, hy, hw, hh = COTTAGE_FOOT
+        x0, x1 = hx - hw * 0.52, hx + hw * 0.52
+        y0, y1 = hy - 20, hy + hh + 8
+
+        def in_house(x: float, y: float, pad: float = 8) -> bool:
+            return (x0 - pad) <= x <= (x1 + pad) and (y0 - pad) <= y <= (y1 + pad)
+
+        cbx, cby = self.CRAFTBENCH_POS
+
+        def near_craft(x: float, y: float) -> bool:
+            return abs(x - cbx) < 70 and abs(y - cby) < 55
+
+        def soft(kind: str, x: float, y: float) -> None:
+            nonlocal n
+            if in_house(x, y) or near_craft(x, y):
+                return
+            sf = self.nature.get(kind)
+            if not sf:
+                return
+            self.add_actor(f"decor_garden_{kind}_soft_{n}", sf, x, y, kind)
+            n += 1
+
+        def flower(x: float, y: float) -> None:
+            roll = noise01(x * 0.031, y * 0.029, 77)
+            kind = (
+                "weedPink"
+                if roll < 0.26
+                else "weedYellow"
+                if roll < 0.46
+                else "weedBlue"
+                if roll < 0.62
+                else "weedBloom"
+                if roll < 0.8
+                else "lilyBloom"
+                if roll < 0.9 and "lilyBloom" in self.nature
+                else "weedTall"
+            )
+            soft(kind, x, y)
+
+        def bush(x: float, y: float) -> None:
+            soft("bush", x, y)
+
+        def blob_flowers(cx: float, cy: float, rx: float, ry: float, count: int, bushes: int = 0) -> None:
+            """Scatter flowers in an ellipse; optional accent bushes at rim."""
+            for i in range(count):
+                a = (i / max(1, count)) * math.pi * 2 + noise(i, 17) * 0.7
+                t = 0.35 + noise01(i, 19, 70) * 0.65
+                x = cx + math.cos(a) * rx * t + noise(i, 21) * 10
+                y = cy + math.sin(a) * ry * t + noise(21, i) * 8
+                flower(x, y)
+            for j in range(bushes):
+                a = (j / max(1, bushes)) * math.pi * 2 + 0.4
+                bush(
+                    cx + math.cos(a) * rx * 0.85 + noise(j, 23) * 12,
+                    cy + math.sin(a) * ry * 0.85 + noise(23, j) * 10,
+                )
+
+        # Asymmetric blossom trees — keep clear of craftbench apron
+        blossom_sf = self.nature.get("blossom")
+        if blossom_sf:
+            for i, (x, y) in enumerate(
+                [
+                    (-90, 520),   # west mid — behind craft, not on it
+                    (480, 640),   # far NE
+                    (-40, 160),   # SW meadow, south of craft apron
+                ]
+            ):
+                if not in_house(x, y, pad=40) and not near_craft(x, y):
+                    self.add_actor(f"decor_blossom_soft_g{i}", blossom_sf, x, y, "blossom")
+                    self.tree_feet.append((float(x), float(y)))
+
+        # Three soft flower beds (leave craftbench apron open)
+        blob_flowers(55, 220, 50, 36, 14, bushes=2)    # front-left, south of craft
+        blob_flowers(340, 270, 64, 44, 18, bushes=2)   # front-right bed
+        blob_flowers(10, 460, 48, 55, 14, bushes=2)    # west drift north of craft
+
+        # Loose meadow drift south of porch (keep door lane ~x=200–240 clear)
+        for i in range(28):
+            x = 80 + (i % 7) * 40 + noise(i, 31) * 18
+            y = 200 + (i // 7) * 28 + noise(31, i) * 14
+            if 190 <= x <= 250 and y > 250:
+                continue
+            if noise01(i, 5, 72) > 0.55:
+                flower(x, y)
+            elif noise01(i, 6, 73) > 0.7:
+                soft("tuft", x, y)
+
+        # A few lone bushes as accents (never mid-house / craft apron)
+        for x, y in (
+            (380, 320),
+            (100, 500),
+            (400, 520),
+            (160, 690),
+            (300, 695),
+        ):
+            bush(x, y)
+
+        # Tiny pebble / fiber accents on bed edges
+        for i, (x, y) in enumerate(
+            [
+                (70, 250), (120, 255), (310, 245), (360, 260),
+                (50, 380), (15, 450), (390, 400),
+            ]
+        ):
+            soft("pebble" if i % 2 == 0 else "fiber", x + noise(i, 2) * 6, y)
 
     def place_decor_list(self) -> None:
         for i, (kind, x, y, solid) in enumerate(DECOR):
@@ -556,8 +743,8 @@ class FarmBake:
         if not tree_kinds:
             return
         n = 0
-        for iy in range(-20, 12):
-            for ix in range(-26, 8):
+        for iy in range(-20, 16):
+            for ix in range(-26, 16):
                 if f"{ix},{iy}" in self.water:
                     continue
                 if self.is_clearing_cell(ix, iy):
@@ -566,18 +753,22 @@ class FarmBake:
                     continue
                 if 1 <= ix <= 5 and 5 <= iy <= 7:
                     continue
+                # Keep town-road spine open (not the whole north fringe)
+                if 3 <= ix <= 14 and 2 <= iy <= 6:
+                    continue
                 shore = self.is_pond_shore(ix, iy)
                 edge = (
                     shore
                     or ix <= -18
-                    or ix >= 5
+                    or ix >= 13
                     or iy <= -12
-                    or iy >= 8
+                    or iy >= 12
                     or (ix <= -4 and iy >= 4)
-                    or (ix >= 4 and iy <= -1)
+                    or (ix >= 4 and iy <= -1 and not (0 <= iy <= 3))
                 )
                 mid_wild = (not edge) and (ix <= -3 or ix >= 3 or iy <= -3 or iy >= 5)
-                chance = 0.38 if shore else 0.42 if edge else 0.28 if mid_wild else 0.12
+                # Slightly denser mid-field so grass doesn't read as empty lawn
+                chance = 0.4 if shore else 0.48 if edge else 0.34 if mid_wild else 0.2
                 if self.is_dirt_cell(ix, iy):
                     chance *= 0.45
                 if noise01(ix, iy, 31) > chance:
@@ -585,6 +776,9 @@ class FarmBake:
                 roll = noise01(ix, iy, 33)
                 if shore:
                     kind = "bush" if roll < 0.55 else "pine" if roll < 0.8 else "oak"
+                elif "blossom" in self.nature and noise01(ix, iy, 37) > 0.82:
+                    # Occasional pink blossom trees break up the green canopy
+                    kind = "blossom"
                 else:
                     kind = "pine" if roll < 0.34 else "oak" if roll < 0.68 else "bush"
                 if kind not in self.nature:
@@ -594,23 +788,47 @@ class FarmBake:
                 jy = noise(ix + 2, iy) * 18
                 solid = kind != "bush"
                 tag = "solid" if solid else "soft"
+                px = ix * TILE + jx
+                py = iy * TILE + jy
+                # Bushes south of a trunk paint over the whole crown — keep clear.
+                if kind == "bush" and self.near_tree_canopy(px, py, 110):
+                    continue
                 self.add_actor(
                     f"decor_{kind}_{tag}_w{n}",
                     sf,
-                    ix * TILE + jx,
-                    iy * TILE + jy,
+                    px,
+                    py,
                     kind,
                 )
                 n += 1
-                if kind != "bush" and "bush" in self.nature and noise01(ix, iy, 35) > 0.4:
-                    self.add_actor(
-                        f"decor_bush_soft_w{n}",
-                        self.nature["bush"],
-                        ix * TILE + jx + 18,
-                        iy * TILE + jy - 10,
-                        "bush",
-                    )
-                    n += 1
+                # Track canopy trunks only — never stack understory south of the foot.
+                if kind in ("pine", "oak", "blossom"):
+                    self.tree_feet.append((px, py))
+
+    def prune_under_canopy(self) -> None:
+        """Remove litter/bushes whose feet sit under a tree crown (wrong occlusion)."""
+        self.tree_feet = [
+            (node[2], node[3])
+            for node in self.nodes
+            if node[0].startswith("decor_pine_")
+            or node[0].startswith("decor_oak_")
+            or node[0].startswith("decor_blossom_")
+        ]
+
+        def bury(name: str, x: float, y: float) -> bool:
+            if name.startswith("decor_soft_"):
+                return self.near_tree_canopy(x, y, 96)
+            if name.startswith("decor_bush_") or (
+                name.startswith("decor_garden_") and "_bush_" in name
+            ):
+                return self.near_tree_canopy(x, y, 110)
+            if name.startswith("decor_rock_solid") and "rockBig" not in name:
+                return self.near_tree_canopy(x, y, 90)
+            if name.startswith("decor_garden_") and "_bush_" not in name:
+                return self.near_tree_canopy(x, y, 96)
+            return False
+
+        self.nodes = [n for n in self.nodes if not bury(n[0], n[2], n[3])]
 
     def place_lake_shore_flora(self) -> None:
         n = 0
@@ -624,61 +842,75 @@ class FarmBake:
                 if not self.is_pond_shore(ix, iy) and ix > -18:
                     continue
                 soft_roll = noise01(ix, iy, 81)
-                if soft_roll > 0.55:
-                    count = 2 if soft_roll > 0.85 else 1
+                if soft_roll > 0.38:
+                    count = 2 if soft_roll > 0.72 else 1
                     for k in range(count):
                         roll = noise01(ix, iy, 82 + k)
-                        if roll < 0.18:
+                        if roll < 0.1:
                             kind = "tuft"
-                        elif roll < 0.34:
-                            kind = "weedBloom"
-                        elif roll < 0.5:
+                        elif roll < 0.28:
                             kind = "weedPink"
-                        elif roll < 0.68:
-                            kind = "weed"
+                        elif roll < 0.44:
+                            kind = "weedYellow"
+                        elif roll < 0.58:
+                            kind = "weedBlue"
+                        elif roll < 0.72:
+                            kind = "weedBloom"
                         elif roll < 0.82:
+                            kind = "weed"
+                        elif roll < 0.9:
                             kind = "weedTall"
-                        elif roll < 0.92:
+                        elif roll < 0.96:
                             kind = "fiber"
                         else:
                             kind = "pebble"
                         sf = self.nature.get(kind)
                         if not sf:
                             continue
+                        sx = ix * TILE + noise(ix + k, iy) * 28
+                        sy = iy * TILE + noise(ix, iy + k) * 24 - 8
+                        if self.near_tree_canopy(sx, sy, 96):
+                            continue
                         self.add_actor(
                             f"decor_soft_shore_{kind}_{n}",
                             sf,
-                            ix * TILE + noise(ix + k, iy) * 28,
-                            iy * TILE + noise(ix, iy + k) * 24 - 8,
+                            sx,
+                            sy,
                             kind,
                         )
                         n += 1
                 if "bush" in self.nature and noise01(ix, iy, 88) > 0.72:
-                    self.add_actor(
-                        f"decor_bush_soft_shore_{n}",
-                        self.nature["bush"],
-                        ix * TILE + noise(ix, iy) * 16,
-                        iy * TILE + noise(iy, ix) * 14,
-                        "bush",
-                    )
-                    n += 1
+                    bx = ix * TILE + noise(ix, iy) * 16
+                    by = iy * TILE + noise(iy, ix) * 14
+                    if not self.near_tree_canopy(bx, by, 100):
+                        self.add_actor(
+                            f"decor_bush_soft_shore_{n}",
+                            self.nature["bush"],
+                            bx,
+                            by,
+                            "bush",
+                        )
+                        n += 1
                 if "rock" in self.nature and noise01(ix, iy, 90) > 0.88:
-                    self.add_actor(
-                        f"decor_rock_solid_shore_{n}",
-                        self.nature["rock"],
-                        ix * TILE + noise(ix, 3) * 12,
-                        iy * TILE + noise(3, iy) * 10,
-                        "rock",
-                    )
-                    n += 1
+                    rx = ix * TILE + noise(ix, 3) * 12
+                    ry = iy * TILE + noise(3, iy) * 10
+                    if not self.near_tree_canopy(rx, ry, 90):
+                        self.add_actor(
+                            f"decor_rock_solid_shore_{n}",
+                            self.nature["rock"],
+                            rx,
+                            ry,
+                            "rock",
+                        )
+                        n += 1
 
     def place_soft_clutter(self) -> None:
         available = [k for k in SOFT_KINDS if k in self.nature]
         if not available:
             return
         n = 0
-        for iy in range(-20, 12):
-            for ix in range(-26, 8):
+        for iy in range(-20, 16):
+            for ix in range(-26, 16):
                 key = f"{ix},{iy}"
                 if key in self.water or key in self.farm_plots or key in self.pier:
                     continue
@@ -688,42 +920,62 @@ class FarmBake:
                     continue
                 if 1 <= ix <= 4 and 5 <= iy <= 6 and noise01(ix, iy, 12) < 0.92:
                     continue
+                # Thin litter on town-road spine so the path stays readable
+                if 3 <= iy <= 4 and 3 <= ix <= 14 and noise01(ix, iy, 13) < 0.75:
+                    continue
+                # Never plant through the hero cottage body
+                cx, cy, cw, ch = COTTAGE_FOOT
+                wx, wy = ix * TILE, iy * TILE
+                if abs(wx - cx) <= cw * 0.62 and cy - 24 <= wy <= cy + ch + 48:
+                    continue
                 dirt = self.is_dirt_cell(ix, iy)
                 shore = self.is_pond_shore(ix, iy)
-                density = 0.42 if shore else 0.38 if dirt else 0.32
+                # Higher grass litter — open lawn was reading empty
+                density = 0.5 if shore else 0.46 if dirt else 0.58
                 if noise01(ix, iy, 1) > density:
                     continue
                 count = 2 if noise01(ix, iy, 2) > 0.72 else 1
+                if (not dirt) and noise01(ix, iy, 3) > 0.78:
+                    count = 3
                 for k in range(count):
                     roll = noise01(ix, iy, 20 + k)
                     if dirt:
-                        if roll < 0.14:
+                        if roll < 0.1:
                             kind = "pebble"
-                        elif roll < 0.26:
+                        elif roll < 0.18:
                             kind = "twig"
+                        elif roll < 0.26:
+                            kind = "fiber"
                         elif roll < 0.36:
-                            kind = "fiber"
+                            kind = "tuft"
                         elif roll < 0.5:
-                            kind = "tuft"
-                        elif roll < 0.7:
                             kind = "weed"
-                        elif roll < 0.84:
+                        elif roll < 0.6:
                             kind = "weedTall"
+                        elif roll < 0.74:
+                            kind = "weedPink"
+                        elif roll < 0.86:
+                            kind = "weedYellow"
                         else:
-                            kind = "weedPink"
-                    else:
-                        if roll < 0.12:
-                            kind = "tuft"
-                        elif roll < 0.22:
-                            kind = "fiber"
-                        elif roll < 0.45:
-                            kind = "weed"
-                        elif roll < 0.62:
                             kind = "weedBloom"
-                        elif roll < 0.8:
+                    else:
+                        # Open grass: favor bright flowers over green weeds
+                        if roll < 0.08:
+                            kind = "tuft"
+                        elif roll < 0.12:
+                            kind = "fiber"
+                        elif roll < 0.2:
+                            kind = "weed"
+                        elif roll < 0.28:
                             kind = "weedTall"
-                        elif roll < 0.9:
+                        elif roll < 0.46:
                             kind = "weedPink"
+                        elif roll < 0.62:
+                            kind = "weedYellow"
+                        elif roll < 0.76:
+                            kind = "weedBlue"
+                        elif roll < 0.9:
+                            kind = "weedBloom"
                         else:
                             kind = "pebble"
                     if kind not in self.nature:
@@ -733,20 +985,29 @@ class FarmBake:
                         continue
                     jx = noise(ix + k * 3, iy) * 30
                     jy = noise(ix, iy + k * 5) * 26
+                    px = ix * TILE + jx
+                    py = iy * TILE + jy - TILE * 0.15
+                    # Keep clear of tree crowns — litter with lower footY paints over leaves.
+                    if self.near_tree_canopy(px, py, 96):
+                        continue
                     self.add_actor(
                         f"decor_soft_{kind}_{n}",
                         sf,
-                        ix * TILE + jx,
-                        iy * TILE + jy - TILE * 0.15,
+                        px,
+                        py,
                         kind,
                     )
                     n += 1
                 if dirt and noise01(ix, iy, 9) > 0.88 and "rock" in self.nature:
+                    rx = ix * TILE + noise(ix, iy) * 20
+                    ry = iy * TILE + noise(iy, ix) * 16
+                    if self.near_tree_canopy(rx, ry, 90):
+                        continue
                     self.add_actor(
                         f"decor_soft_rock_{n}",
                         self.nature["rock"],
-                        ix * TILE + noise(ix, iy) * 20,
-                        iy * TILE + noise(iy, ix) * 16,
+                        rx,
+                        ry,
                         "rock",
                     )
                     n += 1
@@ -821,13 +1082,17 @@ class FarmBake:
         self.water = self.build_pond_water()
         self.paint_terrain()
         self.place_pond()
-        self.place_buildings()
+        # Garden before cottage so editor draw-order never paints hedges on the roof
         self.place_yard()
+        self.place_cottage_garden()
+        self.place_craftbench()
+        self.place_buildings()
         self.place_decor_list()
         self.place_wild_cover()
         self.place_lake_shore_flora()
         self.place_soft_clutter()
         self.place_lake_water_decor()
+        self.prune_under_canopy()
         # marker first among actors so lookup is easy; keep ground order natural
         self.nodes.insert(0, ("__farm_baked", None, 0, 0, 1, 1, 0.5, 0.5, True))
         return self.nodes
@@ -997,9 +1262,36 @@ def main() -> None:
     world["_children"] = []
     child_refs = []
 
-    # Ground nodes first, then actors (matches WorldYSort expectations roughly)
+    def foot_y(node: Tuple) -> float:
+        # (name, sf, x, y, w, h, ax, ay, ground)
+        _n, _sf, _x, y, _w, h, _ax, ay, _g = node
+        if abs(float(ay)) < 0.05:
+            return float(y)
+        return float(y) - float(h) * float(ay)
+
+    def ground_rank(name: str) -> int:
+        if name.startswith("decor_soft_") or name.startswith("decor_garden_"):
+            return 6
+        if name.startswith("decor_rock_solid") and "rockBig" not in name:
+            return 6
+        if name.startswith("pond_deco_lily"):
+            return 6
+        if name.startswith("fringe_"):
+            return 5
+        if name == "lake_bridge" or name.startswith("pond_pier_"):
+            return 4
+        if name.startswith("cliff_") or name.startswith("pond_cliff_"):
+            return 2
+        if name.startswith("water_") or name.startswith("pond_water_"):
+            return 1
+        return 0
+
+    # Ground first (tiles → water → fringe → litter), then actors by footY
+    # descending: higher Y = further north = drawn first / behind (editor + runtime).
     ground = [n for n in baked_nodes if n[0] == "__farm_baked" or (len(n) > 8 and n[8])]
     actors = [n for n in baked_nodes if n[0] != "__farm_baked" and not n[8]]
+    ground.sort(key=lambda n: (ground_rank(n[0]), -foot_y(n)))
+    actors.sort(key=lambda n: -foot_y(n))
     ordered = ground + actors
 
     for name, sf, x, y, w, h, ax, ay, _ground in ordered:

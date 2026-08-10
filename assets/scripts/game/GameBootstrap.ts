@@ -20,6 +20,7 @@ import { CameraFollow } from './CameraFollow';
 import { loadConfigTables } from './ConfigService';
 import { applyCraftTables } from './CraftRecipes';
 import { FARMER_FRAMES } from './FarmerFrames';
+import { NpcAnimator } from './NpcAnimator';
 import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
@@ -47,12 +48,14 @@ import { InputBridge } from './InputBridge';
 import { LoadingScreen } from './LoadingScreen';
 import { RewardPopup } from './RewardPopup';
 import { StoryDialogue } from './StoryDialogue';
+import { StoryIntroPanel } from './StoryIntroPanel';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TutorialGuide } from './TutorialGuide';
 import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
 import { TownWorldLayout } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
+import { ensureUiAudio } from './UiAudio';
 import { loadUiFont } from './UiFont';
 import { WorldYSort } from './WorldYSort';
 import { canTravel, travelTo } from './MapTravel';
@@ -78,6 +81,7 @@ export class GameBootstrap extends Component {
         view.on('canvas-resize', this._applyPortraitFrame, this);
 
         const canvas = this.node;
+        ensureUiAudio(canvas);
         const world = canvas.getChildByName('World');
         if (!world) {
             console.error('[GameBootstrap] World missing');
@@ -116,6 +120,7 @@ export class GameBootstrap extends Component {
             'NightOverlay',
             'DialogueDimmer',
             'DialogueBox',
+            'StoryIntro',
             'TownShopDimmer',
             'TownShopPanel',
             'RewardDimmer',
@@ -161,6 +166,8 @@ export class GameBootstrap extends Component {
         }
 
         const player = this.spawnPlayer(world, isTown ? 'town' : isMine ? 'mine' : 'farm');
+        if (isTown) TownWorldLayout.spawnNpcs(world);
+        else if (!isMine) FarmWorldLayout.spawnNpcs(world);
         const stick = this.spawnTouchControls(canvas);
 
         let follow = canvas.getComponent(CameraFollow);
@@ -208,6 +215,8 @@ export class GameBootstrap extends Component {
         if (oldStory) canvas.removeComponent(oldStory);
         const oldDialogue = canvas.getComponent(DialoguePanel);
         if (oldDialogue) canvas.removeComponent(oldDialogue);
+        const oldIntro = canvas.getComponent(StoryIntroPanel);
+        if (oldIntro) canvas.removeComponent(oldIntro);
         const oldStoryDlg = canvas.getComponent(StoryDialogue);
         if (oldStoryDlg) canvas.removeComponent(oldStoryDlg);
         const oldGuide = canvas.getComponent(TutorialGuide);
@@ -219,6 +228,7 @@ export class GameBootstrap extends Component {
         const questPanel = canvas.addComponent(QuestPanel);
         const story = canvas.addComponent(StoryWorldHooks);
         const dialogue = canvas.addComponent(DialoguePanel);
+        const storyIntro = canvas.addComponent(StoryIntroPanel);
         const storyDlg = canvas.addComponent(StoryDialogue);
         const guide = canvas.addComponent(TutorialGuide);
         const rewardPopup = canvas.addComponent(RewardPopup);
@@ -231,6 +241,7 @@ export class GameBootstrap extends Component {
         rewardPopup.bind(quests);
         storyDlg.bind({
             dialogue,
+            intro: storyIntro,
             quests,
             map: isTown ? 'town' : isMine ? 'mine' : 'farm',
             guide: isTown || isMine ? null : guide,
@@ -269,6 +280,7 @@ export class GameBootstrap extends Component {
 
             stick.onTap = (x, y) => {
                 guide.noteActivity();
+                if (storyIntro.handleTap(x, y)) return;
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
@@ -306,12 +318,11 @@ export class GameBootstrap extends Component {
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
-            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
+            const infoReady = this.mountInfoBoard(canvas, farm, (info) => {
                 infoBoard = info;
                 gm.setInfoBoard(info);
                 quests.infoBoard = info;
                 story.infoBoard = info;
-                info.questPanel = questPanel;
             });
 
             void this.finishBoot({
@@ -348,6 +359,7 @@ export class GameBootstrap extends Component {
 
             stick.onTap = (x, y) => {
                 guide.noteActivity();
+                if (storyIntro.handleTap(x, y)) return;
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
@@ -356,6 +368,23 @@ export class GameBootstrap extends Component {
                 if (infoBoard?.handleTap(x, y)) return;
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (!worldPt) return;
+                // Prefer npc_* actors when the tap lands near them.
+                const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
+                if (npcHit) {
+                    npcHit.node.getComponent(NpcAnimator)?.faceToward(
+                        player.position.x,
+                        player.position.y,
+                    );
+                    if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
+                        if (storyDlg.tryBuilding(npcHit.key)) return;
+                    }
+                    const chat = TownWorldLayout.npcInfo(npcHit.id);
+                    if (chat) {
+                        if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
+                        shopPanel.openInfo(chat.title, chat.body);
+                    }
+                    return;
+                }
                 const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
                 if (!hit) return;
                 if (hit.kind === 'travel') {
@@ -399,12 +428,11 @@ export class GameBootstrap extends Component {
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
-            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
+            const infoReady = this.mountInfoBoard(canvas, farm, (info) => {
                 infoBoard = info;
                 gm.setInfoBoard(info);
                 quests.infoBoard = info;
                 story.infoBoard = info;
-                info.questPanel = questPanel;
             });
 
             void this.finishBoot({
@@ -469,6 +497,7 @@ export class GameBootstrap extends Component {
 
             stick.onTap = (x, y) => {
                 guide.noteActivity();
+                if (storyIntro.handleTap(x, y)) return;
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
                 if (guide.handleTap(x, y)) return;
@@ -476,15 +505,28 @@ export class GameBootstrap extends Component {
                 if (questPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
                 const worldPt = this.screenToWorld(follow, world, x, y);
-                if (worldPt && story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;
+                if (worldPt) {
+                    const npcHit = FarmWorldLayout.findNpc(world, worldPt.x, worldPt.y);
+                    if (npcHit) {
+                        const anim = npcHit.node.getComponent(NpcAnimator);
+                        anim?.pausePatrol(4);
+                        anim?.faceToward(player.position.x, player.position.y);
+                        if (storyDlg.tryFarmNpc(npcHit.key)) return;
+                        const chat = FarmWorldLayout.npcInfo(npcHit.id);
+                        if (chat) {
+                            dialogue.play([{ speaker: chat.title, text: chat.body }]);
+                        }
+                        return;
+                    }
+                    if (story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;
+                }
                 hud!.handleTap(x, y);
             };
-            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
+            const infoReady = this.mountInfoBoard(canvas, farm, (info) => {
                 infoBoard = info;
                 gm.setInfoBoard(info);
                 quests.infoBoard = info;
                 story.infoBoard = info;
-                info.questPanel = questPanel;
             });
             stick.onDragStart = () => {
                 guide.noteActivity();
@@ -566,13 +608,22 @@ export class GameBootstrap extends Component {
             InputBridge.moveLocked = false;
             InputBridge.clear();
         }
-        if (canvas.isValid) storyDlg.boot();
+        if (canvas.isValid) {
+            // Re-kick farm companion patrol after boot — covers hot-reload / late component init.
+            const world = canvas.getChildByName('World');
+            const girl = world?.getChildByName('npc_girl');
+            const girlAnim = girl?.getComponent(NpcAnimator);
+            const patrol = FarmWorldLayout.NPC_SPAWNS.find((s) => s.id === 'girl')?.patrol;
+            if (girlAnim && patrol && patrol.length >= 2) {
+                girlAnim.setPatrol(patrol, { speed: 80, idleMin: 0.5, idleMax: 1.4 });
+            }
+            storyDlg.boot();
+        }
     }
 
     private mountInfoBoard(
         canvas: Node,
         farm: FarmSystem,
-        follow: CameraFollow,
         ready: (info: FarmInfoBoard) => void,
     ): Promise<FarmInfoBoard | null> {
         return new Promise((resolve) => {
@@ -599,7 +650,6 @@ export class GameBootstrap extends Component {
                 let info = node.getComponent(FarmInfoBoard);
                 if (!info) info = node.addComponent(FarmInfoBoard);
                 info.farm = farm;
-                info.cameraFollow = follow;
                 ready(info);
                 resolve(info);
             });

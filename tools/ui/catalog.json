@@ -83,8 +83,8 @@
       "kind": "building",
       "spriteType": "simple",
       "designSize": [
-        192,
-        224
+        288,
+        272
       ],
       "path": "assets/textures/buildings/bld-cottage-red.png",
       "prefab": "assets/prefabs/world/buildings/bld-cottage-red.prefab",
@@ -232,18 +232,6 @@
       ],
       "path": "assets/textures/props/prop-sign.png",
       "prefab": "assets/prefabs/world/props/prop-sign.prefab",
-      "layer": "Midground"
-    },
-    {
-      "id": "spc-meteor",
-      "kind": "special",
-      "spriteType": "simple",
-      "designSize": [
-        256,
-        256
-      ],
-      "path": "assets/textures/special/spc-meteor.png",
-      "prefab": "assets/prefabs/world/special/spc-meteor.prefab",
       "layer": "Midground"
     },
     {
@@ -1094,7 +1082,7 @@
       "spriteType": "simple",
       "designSize": [
         520,
-        408
+        320
       ],
       "path": "assets/prefabs/ui/FarmInfoBoard.prefab",
       "prefab": "assets/prefabs/ui/FarmInfoBoard.prefab",
@@ -1690,6 +1678,45 @@
         "gold",
         "ai"
       ]
+    },
+    {
+      "id": "ic-boost",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-boost.png",
+      "spriteFrame": "9d7b2992-0774-4044-8be2-4eca6808b082@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "tool",
+        "boost"
+      ]
+    },
+    {
+      "id": "nat-weed-yellow",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        36,
+        40
+      ],
+      "path": "assets/textures/nature/nat-weed-yellow.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "nat-weed-blue",
+      "kind": "nature",
+      "spriteType": "simple",
+      "designSize": [
+        36,
+        40
+      ],
+      "path": "assets/textures/nature/nat-weed-blue.png",
+      "prefab": "",
+      "layer": "Midground"
     }
   ]
 }

@@ -17,6 +17,7 @@ import {
     POST_QUEST_POOL,
     TOWN_SHOPS,
 } from './TownCatalog';
+import { playUiClick } from './UiAudio';
 import { applyUiFont } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -100,6 +101,7 @@ export class TownShopPanel extends Component {
         const local = { x: canvas.x - this._root.position.x, y: canvas.y - this._root.position.y };
         // Close chip top-right
         if (local.x > PANEL_W * 0.5 - 70 && local.y > PANEL_H * 0.5 - 70) {
+            playUiClick();
             this.close();
             return true;
         }
@@ -108,6 +110,7 @@ export class TownShopPanel extends Component {
             for (let i = 0; i < this._shop.goods.length; i++) {
                 const rowY = listTop - i * (ROW_H + 10) - ROW_H * 0.5;
                 if (Math.abs(local.y - rowY) < ROW_H * 0.5 && Math.abs(local.x) < PANEL_W * 0.42) {
+                    playUiClick();
                     this.buy(this._shop.goods[i]);
                     return true;
                 }
@@ -115,12 +118,14 @@ export class TownShopPanel extends Component {
         }
         if (this._mode === 'board' && this._quest) {
             if (local.y < -PANEL_H * 0.28 && local.y > -PANEL_H * 0.42 && Math.abs(local.x) < 160) {
+                playUiClick();
                 this.acceptQuest();
                 return true;
             }
         }
         if (this._mode === 'info') {
             if (local.y < -PANEL_H * 0.28 && Math.abs(local.x) < 160) {
+                playUiClick();
                 this.close();
                 return true;
             }

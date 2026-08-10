@@ -23,6 +23,18 @@ export class WorldYSort extends Component {
     private _childCount = -1;
     private _moverSig = '';
 
+    onEnable() {
+        this._childCount = -1;
+        this._moverSig = '';
+        this.sortNow();
+    }
+
+    start() {
+        this._childCount = -1;
+        this._moverSig = '';
+        this.sortNow();
+    }
+
     update(dt: number) {
         this._cd -= dt;
         if (this._cd > 0) return;
@@ -117,8 +129,17 @@ export class WorldYSort extends Component {
             }
         }
 
-        staticActors.sort((a, b) => b.y - a.y);
-        ground.sort((a, b) => this.groundRank(a.name) - this.groundRank(b.name));
+        // Higher footY (north) first → lower sibling index → drawn behind.
+        staticActors.sort((a, b) => b.y - a.y || a.node.uuid.localeCompare(b.node.uuid));
+        // Rank bands, then north→south within litter so soft decor is stable.
+        ground.sort((a, b) => {
+            const ra = this.groundRank(a.name);
+            const rb = this.groundRank(b.name);
+            if (ra !== rb) return ra - rb;
+            const dy = this.footY(b) - this.footY(a);
+            if (dy !== 0) return dy;
+            return a.name.localeCompare(b.name);
+        });
 
         this._groundOrder = ground;
         this._staticActors = staticActors;
@@ -128,13 +149,19 @@ export class WorldYSort extends Component {
 
     /** Nodes that move or spawn/despawn often — must Y-sort every tick. */
     private isMover(name: string): boolean {
-        return name === 'Player' || name === 'Crop' || name === 'CropGrowUi';
+        return (
+            name === 'Player' ||
+            name === 'Crop' ||
+            name === 'CropGrowUi' ||
+            name.startsWith('npc_')
+        );
     }
 
     private groundRank(name: string): number {
+        // Soft litter above fringe so flowers/weeds aren't buried under sod lips.
+        if (this.isGroundLitter(name)) return 6;
         if (name.startsWith('fringe_')) return 5;
         if (name === 'lake_bridge' || name.startsWith('pond_pier_')) return 4;
-        if (name.startsWith('pond_deco_')) return 3;
         if (name.startsWith('cliff_') || name.startsWith('pond_cliff_')) return 2;
         if (name.startsWith('water_') || name.startsWith('pond_water_')) return 1;
         return 0;
@@ -149,11 +176,32 @@ export class WorldYSort extends Component {
         return n.position.y - ui.contentSize.height * ui.anchorY;
     }
 
+    /**
+     * Short underfoot decor — always in the ground band so it never covers
+     * the player / buildings (dense flower fields were Y-sorting over the hero).
+     */
+    private isGroundLitter(name: string): boolean {
+        // Flowers / weeds / pebbles / twigs — never Y-merge with tree crowns.
+        if (name.startsWith('decor_soft_')) return true;
+        // Garden flowers/tufts stay underfoot; garden bushes still Y-sort.
+        if (name.startsWith('decor_garden_') && !name.includes('_bush_')) return true;
+        // Small rocks (not rockBig landmarks) stay underfoot.
+        if (name.startsWith('decor_rock_solid') && !name.includes('rockBig')) return true;
+        // Floating lily pads — underfoot; reeds use actor Y-sort.
+        if (name.startsWith('pond_deco_lily')) return true;
+        return false;
+    }
+
     private isGround(name: string): boolean {
         // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
         if (name === 'lake_bridge_rail_s') return false;
         // Tall mine seal faces are props — must Y-sort with timber/ore/player.
         if (name.startsWith('cliff_seal')) return false;
+        // Reeds / wet rocks / sunk logs — must Y-sort with the player (not pond_* ground).
+        if (name.startsWith('pond_deco_') && !name.startsWith('pond_deco_lily')) {
+            return false;
+        }
+        if (this.isGroundLitter(name)) return true;
         return (
             name === '__farm_baked' ||
             name === '__town_baked' ||

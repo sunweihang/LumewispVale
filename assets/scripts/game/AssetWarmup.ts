@@ -1,12 +1,23 @@
-import { Prefab, SpriteFrame, assetManager } from 'cc';
+import { AudioClip, Prefab, SpriteFrame, assetManager, resources } from 'cc';
 import { loadConfigTables } from './ConfigService';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FARM_FRAMES } from './FarmFrames';
 import { INFO_BOARD_FRAMES, INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
 import { MATERIAL_FRAMES } from './MaterialFrames';
+import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
+import { NPC_FRAMES } from './NpcFrames';
 import { QUEST_FRAMES, QUEST_PANEL_PREFAB_UUID } from './QuestFrames';
+import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
 import { TOOL_FRAMES } from './ToolFrames';
 import { loadUiFont } from './UiFont';
+
+const STORY_AUDIO_PATHS = [
+    'audio/story/storyThemeAlert',
+    'audio/story/storyThemeCalm',
+    'audio/story/story-thunder-boom',
+];
+
+const UI_AUDIO_PATHS = ['audio/ui/ui-click'];
 
 const STORY_UUIDS = [
     /** Meteor prefab */
@@ -15,6 +26,7 @@ const STORY_UUIDS = [
     '6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941',
     /** Boot splash 1080×2200 */
     '5a4ebb12-2f98-4075-a870-b9286e9ac348@f9941',
+    ...STORY_INTRO_FRAMES.panels.map((p) => p.uuid),
 ];
 
 export type WarmupProgress = (progress01: number, tip: string) => void;
@@ -38,6 +50,8 @@ function flattenUuids(value: unknown, out: Set<string>) {
 function collectSpriteUuids(): string[] {
     const set = new Set<string>();
     flattenUuids(FARMER_FRAMES, set);
+    flattenUuids(NPC_FRAMES, set);
+    flattenUuids(DIALOGUE_PORTRAIT_FRAMES, set);
     flattenUuids(TOOL_FRAMES, set);
     flattenUuids(MATERIAL_FRAMES, set);
     flattenUuids(FARM_FRAMES, set);
@@ -76,6 +90,16 @@ export async function warmupCriticalAssets(onProgress?: WarmupProgress): Promise
 
     report(0.12, '装载字体…');
     await loadUiFont();
+
+    report(0.15, '装载开场音效…');
+    await Promise.all(
+        [...STORY_AUDIO_PATHS, ...UI_AUDIO_PATHS].map(
+            (path) =>
+                new Promise<void>((resolve) => {
+                    resources.load(path, AudioClip, (_err, _clip) => resolve());
+                }),
+        ),
+    );
 
     report(0.18, '准备界面预制体…');
     await Promise.all([

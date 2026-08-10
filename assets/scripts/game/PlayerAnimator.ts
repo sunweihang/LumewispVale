@@ -166,7 +166,11 @@ export class PlayerAnimator extends Component {
             const step = 1 / Math.max(1, this.actionFps);
             const frames = this._actions[this._action][this._dir];
             const n = frames?.length || 0;
-            if (n <= 0) return;
+            // Empty / unloaded clip must not leave FarmSystem setLocked(true) forever.
+            if (n <= 0 || !frames[0]) {
+                this.finishAction();
+                return;
+            }
             if (this._time >= step) {
                 this._time -= step;
                 this._frame += 1;

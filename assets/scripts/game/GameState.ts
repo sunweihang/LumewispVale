@@ -6,6 +6,7 @@ export type StoryMapId = 'farm' | 'town' | 'mine' | 'beach' | 'forest' | 'deepMi
 export type InventorySnapshot = {
     seeds: number;
     crops: number;
+    boosts: number;
     wood: number;
     grass: number;
     dirt: number;
@@ -77,6 +78,7 @@ class GameStateStore {
     captureInventory(src: {
         seeds: number;
         crops: number;
+        boosts: number;
         wood: number;
         grass: number;
         dirt: number;
@@ -92,6 +94,7 @@ class GameStateStore {
         this.inventory = {
             seeds: src.seeds,
             crops: src.crops,
+            boosts: src.boosts,
             wood: src.wood,
             grass: src.grass,
             dirt: src.dirt,
@@ -109,6 +112,7 @@ class GameStateStore {
     applyInventory(dst: {
         seeds: number;
         crops: number;
+        boosts: number;
         wood: number;
         grass: number;
         dirt: number;
@@ -126,6 +130,7 @@ class GameStateStore {
         if (!inv) return;
         dst.seeds = inv.seeds;
         dst.crops = inv.crops;
+        dst.boosts = inv.boosts ?? 0;
         dst.wood = inv.wood;
         dst.grass = inv.grass;
         dst.dirt = inv.dirt;
@@ -167,6 +172,7 @@ export const STORY_MAT_LABELS: Record<string, string> = {
     stone: '石料',
     fish: '鱼',
     seeds: '种子',
+    boost: '催熟剂',
     parsnip: '防风草',
     copper: '铜矿石',
     iron: '铁矿石',

@@ -76,7 +76,7 @@ PROPS = {
     "timber": ("prop-timber", 96, 112),
     "sign": ("prop-sign", 64, 80),
     "craft": ("prop-craftbench", 96, 80),
-    "meteor": ("spc-meteor", 96, 96),
+    "crystalVein": ("nat-ore-crystal", 56, 64),
     "crate": ("prop-crate", 56, 56),
     "barrel": ("prop-barrel", 48, 56),
     "rails": ("prop-rails", 96, 48),
@@ -682,7 +682,7 @@ class MineBake:
         self._prop("ladder", *at(-5, 0), "bld_elevator")
         self._prop("cart", *at(6, 1), "prop_minecart")
         self._prop("craft", *at(7, 0), "bld_sorting")
-        self._prop("meteor", *at(5, 7), "spc_crystal_vein")
+        self._prop("crystalVein", *at(5, 7), "spc_crystal_vein")
 
         # Rails only north of mouth sprite top (mouth foot y=-292, h=224 → top≈-68)
         for i, (tx, ty) in enumerate([(0, 0.8), (0, 1.6), (2, 1.2), (4, 1.3), (5.5, 1.4)]):

@@ -4,7 +4,6 @@ import {
     Color,
     Component,
     EventKeyboard,
-    EventMouse,
     EventTouch,
     Graphics,
     Input,
@@ -29,6 +28,7 @@ import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
+import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
@@ -48,6 +48,7 @@ const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }>
     can: { title: '水壶', kind: '工具', desc: '给作物浇水，促进生长' },
     axe: { title: '斧头', kind: '工具', desc: '砍伐野外的松树和橡树' },
     rod: { title: '鱼竿', kind: '工具', desc: '在湖边或码头抛竿钓鱼' },
+    boost: { title: '催熟剂', kind: '道具', desc: '点在生长中的作物上，立刻催熟' },
     parsnip: { title: '防风草', kind: '作物', desc: '刚收获的作物，可以出售或食用' },
     wood: { title: '木头', kind: '材料', desc: '砍伐树木获得，可用于建造' },
     grass: { title: '草料', kind: '材料', desc: '拔除杂草与灌木获得' },
@@ -58,6 +59,8 @@ const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }>
     iron: { title: '铁矿石', kind: '矿石', desc: '矿洞深处的硬脉，锻造常用' },
     goldOre: { title: '金矿石', kind: '矿石', desc: '稀有闪光矿脉' },
 };
+
+const FIRST_HARVEST_QUEST = 1006;
 
 const MATERIAL_FRAME_UUID: Record<FarmMaterial, string> = {
     wood: MATERIAL_FRAMES.wood,
@@ -96,28 +99,26 @@ const BAR_H = SLOT + BAR_PAD_Y;
 /** Hotbar sits below FarmActionHint (−560) and the quest tracker dock. */
 const BAR_Y = -860;
 const TIP_HIDE_SEC = 2.4;
-const TIP_SLOT_GAP = 36;
 
 /** One baked badge (warm wood plate + pack); bottom flush with slot tops. */
 const BAG_BTN = Math.round(120 * UI_SCALE);
 const CLOSE_BTN = Math.round(56 * UI_SCALE);
-/** Full bag is 4 rows × 7; bottom dock is row 4 (also the always-visible toolbar). */
+/** Backpack storage only (3×7). Bottom dock is a separate hotkey bar. */
 const INV_COLS = 7;
-const INV_ROWS = 4;
 const INV_STORAGE_ROWS = 3;
-const HOTBAR_BASE = INV_STORAGE_ROWS * INV_COLS;
-/** Dock slot 0 is permanently the bare hand — never swapped or overwritten. */
-const HAND_SLOT = HOTBAR_BASE;
+const BAG_SLOTS = INV_STORAGE_ROWS * INV_COLS;
+/** Hotkey slot 0 is permanently the bare hand — never swapped or overwritten. */
+const HAND_HOT = 0;
 /** Same cell size for storage + dock so columns line up as one grid. */
 const INV_SLOT = SLOT;
 const INV_GAP = GAP;
 const INV_PAD = Math.round(22 * UI_SCALE);
 const INV_TITLE_H = Math.round(48 * UI_SCALE);
-/** Gap between storage rows and the 4th-row dock inside the unified bag. */
+/** Gap between storage rows and the hotkey dock inside the bag chrome. */
 const INV_DOCK_GAP = Math.round(12 * UI_SCALE);
 const DRAG_THRESH = 16;
 
-/** Yard chest: dual-grid panel (chest ↔ backpack + dock row 4). */
+/** Yard chest: dual-grid panel (chest ↔ backpack + hotkey dock). */
 const CHEST_COLS = 7;
 const CHEST_ROWS = 3;
 const CHEST_SLOTS = CHEST_COLS * CHEST_ROWS;
@@ -149,11 +150,15 @@ const CRAFT_COST_ICON = Math.round(36 * UI_SCALE);
 const CRAFT_COST_CELL_W = Math.round(100 * UI_SCALE);
 const CRAFT_COST_SLOTS = 2;
 const CRAFT_COL_GAP = Math.round(14 * UI_SCALE);
-/** Ad chip sits at the right; progress bar stretches from costs → ad. */
+/** Ad chip sits at the right; progress shares the 制作 slot (tucks left when ad shows). */
 const CRAFT_AD_SZ = Math.round(52 * UI_SCALE);
 const CRAFT_BAR_H = Math.round(40 * UI_SCALE);
 /** Mock rewarded-ad watch (seconds), same cadence as crop boost. */
 const CRAFT_AD_WATCH_SEC = 1.2;
+/** Quest 1003 first seed — short guided craft, then force close before claim. */
+const FIRST_SEED_RECIPE = 'seed_from_grass';
+const FIRST_SEED_QUEST = 1003;
+const FIRST_SEED_CRAFT_SEC = 5;
 
 function isFarmTool(id: InvItemId): id is FarmTool {
     return (
@@ -162,17 +167,18 @@ function isFarmTool(id: InvItemId): id is FarmTool {
         id === 'seeds' ||
         id === 'can' ||
         id === 'axe' ||
-        id === 'rod'
+        id === 'rod' ||
+        id === 'boost'
     );
 }
 
-function isHandLockedSlot(index: number): boolean {
-    return index === HAND_SLOT;
+function isHandHot(index: number): boolean {
+    return index === HAND_HOT;
 }
 
 /**
- * Backpack HUD: 4×7 grid. Bottom row is always visible (toolbar = bag row 4);
- * open bag reveals the upper 3 storage rows as one continuous panel.
+ * Backpack HUD: 3×7 storage + always-visible hotkey dock.
+ * Hotkeys are shortcuts (item stays in the bag); drag bag → dock to assign.
  */
 @ccclass('FarmHUD')
 export class FarmHUD extends Component {
@@ -200,8 +206,10 @@ export class FarmHUD extends Component {
     private _invCells: { root: Node; icon: Sprite | null; count: Label | null }[] = [];
     private _frames: Partial<Record<InvItemId | keyof typeof TOOL_FRAMES, SpriteFrame>> = {};
 
-    /** Full backpack stacks (INV_ROWS × INV_COLS); indices HOTBAR_BASE.. are row 4 / toolbar. */
+    /** Backpack storage stacks only (BAG_SLOTS). */
     private _backpack: (InvStack | null)[] = [];
+    /** Hotkey bar: item ids that reference stacks in the backpack (slot 0 = hand). */
+    private _hotbar: (InvItemId | null)[] = [];
     private _bagOpen = false;
 
     /** Yard chest storage (separate from backpack). */
@@ -231,6 +239,11 @@ export class FarmHUD extends Component {
         barGfx: Graphics;
         barLab: Label;
         barW: number;
+        /** Progress slot matching 制作 when ad is hidden. */
+        barXNoAd: number;
+        /** Progress slot ending just before the ad chip. */
+        barXWithAd: number;
+        barWWithAd: number;
         adBtn: Node;
         adOp: UIOpacity | null;
     }[] = [];
@@ -241,16 +254,24 @@ export class FarmHUD extends Component {
     >();
     /** Mock rewarded-ad boost while a craft is running. */
     private _craftAdWait: { recipeId: string; left: number } | null = null;
+    /** First-seed tutorial: block close / ad / other recipes while crafting. */
+    private _tutorialCraftLock = false;
+    /** First-seed tutorial: after craft finishes, guide player to close panel. */
+    private _tutorialCraftAwaitClose = false;
 
     private _drag: {
-        /** Absolute backpack index, or chest index when from === 'chest'. */
+        /** Bag / chest / hotbar index depending on `from`. */
         index: number;
-        from: 'bag' | 'chest';
+        from: 'bag' | 'chest' | 'hotbar';
         item: InvItemId;
         active: boolean;
         ox: number;
         oy: number;
     } | null = null;
+    /** Last UI pointer pos while a bag/chest press is alive. */
+    private _ptrX = 0;
+    private _ptrY = 0;
+    private _ptrDown = false;
     /** After a real drag-drop, skip the trailing joystick tap. */
     private _suppressTap = false;
     /** Layer for loot-fly icons (above hotbar / tip). */
@@ -291,25 +312,23 @@ export class FarmHUD extends Component {
             }
         });
         input.on(Input.EventType.KEY_DOWN, this.onKey, this);
-        input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
-        input.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
-        input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
-        input.on(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
-        input.on(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
-        input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
-        input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        // CRITICAL: use Canvas node touch (capture), NOT global `input`.
+        // Global mouse/touch moves are swallowed while the cursor is over UI
+        // nodes (panel / slots), so bag→hotbar drag never received MOVE/END.
+        // Node touch unifies mouse + finger on desktop and mobile.
+        this.node.on(Node.EventType.TOUCH_START, this.onNodeTouchStart, this, true);
+        this.node.on(Node.EventType.TOUCH_MOVE, this.onNodeTouchMove, this, true);
+        this.node.on(Node.EventType.TOUCH_END, this.onNodeTouchEnd, this, true);
+        this.node.on(Node.EventType.TOUCH_CANCEL, this.onNodeTouchEnd, this, true);
     }
 
     onDestroy() {
         InputBridge.uiBlocking = false;
         input.off(Input.EventType.KEY_DOWN, this.onKey, this);
-        input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
-        input.off(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
-        input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
-        input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
-        input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
-        input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
-        input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        this.node.off(Node.EventType.TOUCH_START, this.onNodeTouchStart, this, true);
+        this.node.off(Node.EventType.TOUCH_MOVE, this.onNodeTouchMove, this, true);
+        this.node.off(Node.EventType.TOUCH_END, this.onNodeTouchEnd, this, true);
+        this.node.off(Node.EventType.TOUCH_CANCEL, this.onNodeTouchEnd, this, true);
     }
 
     update(dt: number) {
@@ -332,54 +351,89 @@ export class FarmHUD extends Component {
             return;
         }
         if (this._chestOpen) {
-            if (this.hitChestClose(uiX, uiY) || this.hitTakeAll(uiX, uiY)) return;
-            if (this.hitChestSlot(uiX, uiY, true) >= 0) return;
-            if (this.hitChestBagSlot(uiX, uiY, true) >= 0) return;
-            if (this.hitHotbar(uiX, uiY, true)) return;
+            if (this.hitChestClose(uiX, uiY) || this.hitTakeAll(uiX, uiY)) {
+                playUiClick();
+                return;
+            }
+            if (this.hitChestSlot(uiX, uiY, true) >= 0) {
+                playUiClick();
+                return;
+            }
+            if (this.hitChestBagSlot(uiX, uiY, true) >= 0) {
+                playUiClick();
+                return;
+            }
+            if (this.hitHotbar(uiX, uiY, true)) {
+                playUiClick();
+                return;
+            }
             if (this.hitChestPanel(uiX, uiY)) return;
+            playUiClick();
             this.setChestOpen(false);
             return;
         }
         if (this._craftOpen) {
+            if (this._tutorialCraftLock) {
+                // First-seed guide: swallow all taps while the 5s craft runs.
+                return;
+            }
             if (
                 this.hitCraftClose(uiX, uiY) ||
                 this.hitCraftAd(uiX, uiY) ||
                 this.hitCraftRow(uiX, uiY)
             ) {
+                playUiClick();
                 return;
             }
-            if (this.hitHotbar(uiX, uiY, true)) return;
+            if (this.hitHotbar(uiX, uiY, true)) {
+                playUiClick();
+                return;
+            }
             if (this.hitCraftPanel(uiX, uiY)) return;
+            // Outside tap closes — unless tutorial still needs an explicit close.
+            if (this._tutorialCraftAwaitClose) return;
+            playUiClick();
             this.setCraftOpen(false);
             return;
         }
         if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
+            playUiClick();
             this.setBagOpen(false);
             return;
         }
         if (!this._bagOpen && this.hitBagBtn(uiX, uiY)) {
+            playUiClick();
             this.toggleBag();
             return;
         }
         if (this._bagOpen) {
-            if (this.hitHotbar(uiX, uiY, true)) return;
-            if (this.hitInvSlot(uiX, uiY, true) >= 0) return;
+            if (this.hitHotbar(uiX, uiY, true)) {
+                playUiClick();
+                return;
+            }
+            if (this.hitInvSlot(uiX, uiY, true) >= 0) {
+                playUiClick();
+                return;
+            }
             if (this.hitPanel(uiX, uiY)) return;
             // Dimmer / outside → close
+            playUiClick();
             this.setBagOpen(false);
             return;
         }
-        if (this.hitHotbar(uiX, uiY, false)) return;
+        if (this.hitHotbar(uiX, uiY, false)) {
+            playUiClick();
+            return;
+        }
         this.hideTip();
         this.farm?.tryActAtUi(uiX, uiY);
     }
 
     private initBackpack() {
-        this._backpack = new Array(INV_COLS * INV_ROWS).fill(null);
-        // Starter tools sit in row 4 (toolbar), not duplicated in storage.
-        // Slot 0 is always bare hand and cannot be replaced.
+        this._backpack = new Array(BAG_SLOTS).fill(null);
+        this._hotbar = new Array(SLOT_COUNT).fill(null);
+        // Tools live in the backpack; hotbar only holds shortcuts (hand is locked).
         const starter: InvStack[] = [
-            { id: 'hand', count: 1 },
             { id: 'hoe', count: 1 },
             { id: 'seeds', count: Math.max(1, this.farm?.seeds ?? 12) },
             { id: 'can', count: 1 },
@@ -387,7 +441,11 @@ export class FarmHUD extends Component {
             { id: 'rod', count: 1 },
         ];
         starter.forEach((s, i) => {
-            this._backpack[HOTBAR_BASE + i] = s;
+            this._backpack[i] = s;
+        });
+        this._hotbar[HAND_HOT] = 'hand';
+        starter.forEach((s, i) => {
+            this._hotbar[i + 1] = s.id;
         });
         this._chest = new Array(CHEST_SLOTS).fill(null);
         // A few yard leftovers so the chest feels lived-in on first open.
@@ -397,12 +455,90 @@ export class FarmHUD extends Component {
     }
 
     private hotbarItem(i: number): InvItemId | null {
-        return this._backpack[HOTBAR_BASE + i]?.id ?? null;
+        return this._hotbar[i] ?? null;
     }
 
     /** Bag / chest / craft modal covering the playfield. */
     get isModalOpen() {
         return this._bagOpen || this._chestOpen || this._craftOpen;
+    }
+
+    get isCraftOpen() {
+        return this._craftOpen;
+    }
+
+    /** First-seed guided craft is running — input locked except waiting. */
+    get isTutorialCraftLocked() {
+        return this._tutorialCraftLock;
+    }
+
+    /** First-seed craft done — TutorialGuide should point at the close button. */
+    get isTutorialCraftAwaitClose() {
+        return this._tutorialCraftAwaitClose;
+    }
+
+    /** True while quest 1003 still needs the in-panel craft / close guide. */
+    needsFirstSeedCraftGuide() {
+        if (!this._craftOpen) return false;
+        if (this._tutorialCraftLock || this._tutorialCraftAwaitClose) return true;
+        const q = this._quests?.activeQuest;
+        return !!q && q.id === FIRST_SEED_QUEST && !this._quests!.isAwaitingClaim;
+    }
+
+    /** Craft-row «制作» button for tutorial holes. */
+    craftRecipeBtnNode(recipeId: string): Node | null {
+        if (!this._craftOpen) return null;
+        for (const row of this._craftRows) {
+            if (row.recipe.id !== recipeId) continue;
+            if (this._craftJobs.has(recipeId)) return row.progressRoot?.isValid ? row.progressRoot : row.root;
+            return row.craftBtn?.isValid ? row.craftBtn : null;
+        }
+        return null;
+    }
+
+    craftCloseBtnNode(): Node | null {
+        if (!this._craftOpen || !this._craftCloseBtn?.isValid || !this._craftCloseBtn.active) return null;
+        return this._craftCloseBtn;
+    }
+
+    get isBagOpen() {
+        return this._bagOpen;
+    }
+
+    /** True when an item id is bound on the hotkey dock (not slot 0). */
+    isHotbarBound(itemId: string): boolean {
+        for (let i = 0; i < this._hotbar.length; i++) {
+            if (isHandHot(i)) continue;
+            if (this._hotbar[i] === itemId) return true;
+        }
+        return false;
+    }
+
+    /** Bag storage cell for an item — tutorial drag source. */
+    bagSlotNode(itemId: string): Node | null {
+        if (!this._bagOpen || !this._panel?.isValid) return null;
+        const idx = this._backpack.findIndex((s) => s?.id === itemId);
+        if (idx < 0) return null;
+        const cell = this._invCells[idx];
+        return cell?.root?.isValid ? cell.root : null;
+    }
+
+    bagCloseBtnNode(): Node | null {
+        if (!this._bagOpen || !this._closeBtn?.isValid || !this._closeBtn.active) return null;
+        return this._closeBtn;
+    }
+
+    /**
+     * Quest 1006: bag is open for drag-to-hotbar / close before using boost.
+     * Lets TutorialGuide keep the arrow over the bag modal.
+     */
+    needsHarvestBoostGuide() {
+        if (!this._bagOpen) return false;
+        const q = this._quests?.activeQuest;
+        if (!q || q.id !== FIRST_HARVEST_QUEST || this._quests!.isAwaitingClaim) return false;
+        if ((this.farm?.boosts ?? 0) <= 0) return false;
+        if (this.farm?.hintPlotPos('harvest')) return false;
+        return true;
     }
 
     /** Dock slot node for an item — used by TutorialGuide arrows. */
@@ -416,26 +552,83 @@ export class FarmHUD extends Component {
         return named?.isValid ? named : null;
     }
 
+    /** First empty hotkey cell (not hand) — tutorial drag drop target. */
+    emptyHotbarSlotNode(): Node | null {
+        if (!this._bar?.isValid) return null;
+        for (let i = 0; i < this._slots.length; i++) {
+            if (isHandHot(i)) continue;
+            if (this._hotbar[i]) continue;
+            const s = this._slots[i];
+            if (s?.root?.isValid) return s.root;
+        }
+        // Full dock: still point at a bindable slot (assign overwrites).
+        for (let i = 0; i < this._slots.length; i++) {
+            if (isHandHot(i)) continue;
+            const s = this._slots[i];
+            if (s?.root?.isValid) return s.root;
+        }
+        return null;
+    }
+
     private ensureHandSlot() {
-        this._backpack[HAND_SLOT] = { id: 'hand', count: 1 };
+        this._hotbar[HAND_HOT] = 'hand';
     }
 
     private swapBag(a: number, b: number) {
         if (a < 0 || b < 0 || a === b) return;
         if (a >= this._backpack.length || b >= this._backpack.length) return;
-        // Bare hand is locked to dock slot 0.
-        if (isHandLockedSlot(a) || isHandLockedSlot(b)) return;
         if (this._backpack[a]?.id === 'hand' || this._backpack[b]?.id === 'hand') return;
         const tmp = this._backpack[a];
         this._backpack[a] = this._backpack[b];
         this._backpack[b] = tmp;
+    }
+
+    private swapHotbar(a: number, b: number) {
+        if (a < 0 || b < 0 || a === b) return;
+        if (a >= this._hotbar.length || b >= this._hotbar.length) return;
+        if (isHandHot(a) || isHandHot(b)) return;
+        const tmp = this._hotbar[a];
+        this._hotbar[a] = this._hotbar[b];
+        this._hotbar[b] = tmp;
         this.ensureHandSlot();
+    }
+
+    /** Assign a backpack item onto a hotkey slot (item stays in the bag). */
+    private assignHotbar(hotIdx: number, item: InvItemId) {
+        if (hotIdx < 0 || hotIdx >= this._hotbar.length || isHandHot(hotIdx)) return;
+        if (item === 'hand') return;
+        this._hotbar[hotIdx] = item;
+        this.ensureHandSlot();
+    }
+
+    private clearHotbar(hotIdx: number) {
+        if (hotIdx < 0 || hotIdx >= this._hotbar.length || isHandHot(hotIdx)) return;
+        const was = this._hotbar[hotIdx];
+        this._hotbar[hotIdx] = null;
+        this.ensureHandSlot();
+        if (was && this.farm?.tool === was) this.farm.setTool('hand');
+    }
+
+    /** Drop hotkey bindings whose stacks no longer exist in the backpack. */
+    private pruneHotbar() {
+        for (let i = 0; i < this._hotbar.length; i++) {
+            if (isHandHot(i)) continue;
+            const id = this._hotbar[i];
+            if (!id) continue;
+            if (!this._backpack.some((s) => s?.id === id)) this._hotbar[i] = null;
+        }
+        this.ensureHandSlot();
+        const cur = this.farm?.tool;
+        if (cur && cur !== 'hand' && !this._backpack.some((s) => s?.id === cur)) {
+            this.farm?.setTool('hand');
+        }
     }
 
     private syncFromFarm() {
         if (!this.farm) return;
         this.syncStackCount('seeds', this.farm.seeds);
         this.syncStackCount('parsnip', this.farm.crops);
+        this.syncStackCount('boost', this.farm.boosts);
         for (const id of ALL_MATERIALS) {
             this.syncStackCount(id, this.farm.materialCount(id));
         }
@@ -456,9 +649,10 @@ export class FarmHUD extends Component {
         if (n > 0) {
             if (idx >= 0 && this._backpack[idx]) this._backpack[idx]!.count = n;
             else this.placeInBag({ id, count: n });
-        } else if (idx >= 0 && !isHandLockedSlot(idx)) {
+        } else if (idx >= 0) {
             this._backpack[idx] = null;
         }
+        this.pruneHotbar();
         this.ensureHandSlot();
     }
 
@@ -472,22 +666,7 @@ export class FarmHUD extends Component {
             this._backpack[exist] = stack;
             return;
         }
-        // Prefer upper storage rows; fall back to dock slots 1+ (never overwrite hand).
-        let empty = -1;
-        for (let i = 0; i < HOTBAR_BASE; i++) {
-            if (!this._backpack[i]) {
-                empty = i;
-                break;
-            }
-        }
-        if (empty < 0) {
-            for (let i = HAND_SLOT + 1; i < this._backpack.length; i++) {
-                if (!this._backpack[i]) {
-                    empty = i;
-                    break;
-                }
-            }
-        }
+        const empty = this._backpack.findIndex((s) => !s);
         if (empty >= 0) this._backpack[empty] = stack;
         this.ensureHandSlot();
     }
@@ -589,10 +768,9 @@ export class FarmHUD extends Component {
 
             this.addSlotPlate(root);
 
-            let icon: Sprite | null = null;
-            if (item && this.frameFor(item)) {
-                icon = this.addIcon(root, this.frameFor(item)!, ICON);
-            }
+            // Always create an Icon node — empty dock slots must accept drag-assigned
+            // items later (refreshHotbarIcons used to no-op when icon was null).
+            const icon = this.addIcon(root, item ? this.frameFor(item) : null, ICON);
             const count = this.addCountLabel(root, SLOT);
 
             this._slots.push({ item, root, glow, icon, count });
@@ -681,11 +859,20 @@ export class FarmHUD extends Component {
         const sf = this.frameFor(id);
         if (!sf) return;
         const from = this.worldToCanvas(wx, wy);
+        this.playCanvasLootFly(sf, from.x, from.y, count);
+    }
+
+    /** Canvas-space icons arc into the backpack button (quest claim, shop, etc.). */
+    playCanvasLootFly(sf: SpriteFrame, fromX: number, fromY: number, count = 1) {
+        if (!this._lootFxRoot?.isValid || !sf?.isValid) return;
         const to = this.bagFlyTarget();
-        const n = Math.max(1, Math.min(count, 5));
+        // Quest UI grants often show large counts (gold×20); a few icons read cleaner.
+        const n = Math.max(1, Math.min(count, 3));
         for (let i = 0; i < n; i++) {
-            this.spawnLootFlyIcon(sf, from.x, from.y, to.x, to.y, i, n);
+            this.spawnLootFlyIcon(sf, fromX, fromY, to.x, to.y, i, n);
         }
+        // Above RewardPopup / other canvas chrome while the arc plays.
+        this._lootFxRoot.setSiblingIndex(this.node.children.length - 1);
     }
 
     private worldToCanvas(wx: number, wy: number): { x: number; y: number } {
@@ -744,25 +931,38 @@ export class FarmHUD extends Component {
         node.setPosition(startX, startY, 0);
         node.setScale(0.4, 0.4, 1);
 
-        const delay = index * 0.05;
-        const peakX = startX + (toX - startX) * 0.35 + spread * 0.35;
-        const peakY = Math.max(startY, toY) + 72 + (index % 3) * 10;
+        const delay = index * 0.06;
+        const dist = Math.hypot(toX - startX, toY - startY);
+        // Quest claim (center → bag) is a long arc; scale duration so it doesn't vanish mid-flight.
+        const travel = Math.min(0.95, Math.max(0.42, dist / 1100));
+        const popDur = 0.12;
+        const riseDur = travel * 0.38;
+        const fallDur = travel * 0.62;
+        const arcH = Math.min(180, 70 + dist * 0.1) + (index % 3) * 12;
+        const peakX = startX + (toX - startX) * 0.4 + spread * 0.4;
+        const peakY = Math.max(startY, toY) + arcH;
         const peak = new Vec3(peakX, peakY, 0);
         const end = new Vec3(toX, toY, 0);
-        const landScale = new Vec3(0.3, 0.3, 1);
+        const landScale = new Vec3(0.35, 0.35, 1);
+
+        // Keep fully visible until the final approach — early fade looked like a cut-off.
+        const fadeDelay = delay + popDur + riseDur + fallDur * 0.55;
+        const fadeDur = Math.max(0.12, fallDur * 0.45);
 
         tween(node)
             .delay(delay)
-            .to(0.12, { scale: new Vec3(1.05, 1.05, 1) }, { easing: 'backOut' })
-            .to(0.2, { position: peak }, { easing: 'sineOut' })
-            .parallel(
-                tween().to(0.36, { position: end, scale: landScale }, { easing: 'quadIn' }),
-                tween(op).delay(0.1).to(0.26, { opacity: 40 }),
-            )
+            .to(popDur, { scale: new Vec3(1.12, 1.12, 1) }, { easing: 'backOut' })
+            .to(riseDur, { position: peak }, { easing: 'sineOut' })
+            .to(fallDur, { position: end, scale: landScale }, { easing: 'quadIn' })
             .call(() => {
                 if (node.isValid) node.destroy();
                 if (index === total - 1) this.pulseBagBtn();
             })
+            .start();
+
+        tween(op)
+            .delay(fadeDelay)
+            .to(fadeDur, { opacity: 0 }, { easing: 'sineIn' })
             .start();
 
         this.orderLayers();
@@ -844,7 +1044,7 @@ export class FarmHUD extends Component {
         const gridW = INV_COLS * INV_SLOT + (INV_COLS - 1) * INV_GAP;
         const gridH = INV_STORAGE_ROWS * INV_SLOT + (INV_STORAGE_ROWS - 1) * INV_GAP;
         const dockH = BAR_H;
-        // One wood panel: storage rows on top + row-4 dock on bottom (same slot size).
+        // One wood panel: storage rows on top + hotkey dock on bottom (same slot size).
         const panelW = Math.max(gridW + INV_PAD * 2, BAR_BG_W + Math.round(16 * UI_SCALE));
         const upperH = INV_PAD + INV_TITLE_H + gridH + INV_DOCK_GAP;
         const panelH = upperH + dockH;
@@ -978,13 +1178,13 @@ export class FarmHUD extends Component {
         g.fillColor = new Color(232, 198, 140, 255);
         g.roundRect(x0 + 14, y0 + 14, w - 28, h - 28, r - 8);
         g.fill();
-        // Slightly darker strip behind backpack row 4 (toolbar dock).
+        // Slightly darker strip behind the hotkey dock.
         const dockTop = y0 + 14;
         const dockInnerH = Math.max(8, dockH - 10);
         g.fillColor = new Color(210, 168, 112, 255);
         g.rect(x0 + 14, dockTop, w - 28, dockInnerH);
         g.fill();
-        // Wood rail between storage rows and row-4 dock.
+        // Wood rail between storage rows and hotkey dock.
         const railY = y0 + dockH - Math.round(3 * UI_SCALE);
         const railH = Math.round(10 * UI_SCALE);
         g.fillColor = new Color(176, 110, 48, 255);
@@ -1075,19 +1275,25 @@ export class FarmHUD extends Component {
     }
 
     private refreshHotbarIcons() {
+        this.pruneHotbar();
         for (let i = 0; i < this._slots.length; i++) {
             const s = this._slots[i]!;
-            const stack = this._backpack[HOTBAR_BASE + i] ?? null;
-            const item = stack?.id ?? null;
+            const item = this._hotbar[i] ?? null;
             s.item = item;
             const sf = item ? this.frameFor(item) : null;
+            if (!s.icon && s.root?.isValid) {
+                s.icon = this.addIcon(s.root, sf, ICON);
+            }
             if (s.icon) {
                 s.icon.spriteFrame = sf;
                 s.icon.node.active = !!sf;
             }
+            if (s.root?.isValid) {
+                s.root.name = item ? `Slot_${item}` : `Slot_empty_${i}`;
+            }
             if (s.count) {
-                const n = stack?.count ?? 0;
-                const show = !!stack && n > 1;
+                const n = item && item !== 'hand' ? this.bagCount(item) : 0;
+                const show = !!item && item !== 'hand' && n > 1;
                 s.count.string = show ? String(n) : '';
                 s.count.node.active = show;
             }
@@ -1095,7 +1301,6 @@ export class FarmHUD extends Component {
     }
 
     private refreshInvIcons() {
-        // Upper 3 storage rows only; row 4 is the dock / hotbar.
         for (let i = 0; i < this._invCells.length; i++) {
             const cell = this._invCells[i]!;
             const stack = this._backpack[i] ?? null;
@@ -1158,7 +1363,7 @@ export class FarmHUD extends Component {
         const dockH = BAR_H;
         // Panel width tracks the hotbar plate so left/right chrome is symmetric around the grid.
         const panelW = Math.max(gridW + CHEST_PAD * 2, BAR_BG_W + Math.round(16 * UI_SCALE));
-        // Header + chest + section gap (label inside) + bag rows + dock (row-4 tools).
+        // Header + chest + section gap (label inside) + bag rows + hotkey dock.
         const upperH =
             CHEST_PAD +
             CHEST_TITLE_H +
@@ -1208,7 +1413,7 @@ export class FarmHUD extends Component {
         hintN.setPosition(0, titleY - CHEST_TITLE_H * 0.55, 0);
         hintN.addComponent(UITransform).setContentSize(panelW, Math.round(22 * UI_SCALE));
         const hint = hintN.addComponent(Label);
-        hint.string = '拖拽：箱 ↔ 背包 · 底行是快捷工具';
+        hint.string = '拖拽：箱 ↔ 背包 · 背包拖到底栏设快捷键';
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         hint.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(hint, {
@@ -1355,7 +1560,7 @@ export class FarmHUD extends Component {
         g.fillColor = new Color(232, 198, 140, 255);
         g.roundRect(x0 + 14, y0 + 14, w - 28, h - 28, r - 8);
         g.fill();
-        // Darker strip behind row-4 toolbar dock (same as bag).
+        // Darker strip behind hotkey dock (same as bag).
         const dockTop = y0 + 14;
         const dockInnerH = Math.max(8, dockH - 10);
         g.fillColor = new Color(210, 168, 112, 255);
@@ -1535,6 +1740,9 @@ export class FarmHUD extends Component {
         barGfx: Graphics;
         barLab: Label;
         barW: number;
+        barXNoAd: number;
+        barXWithAd: number;
+        barWWithAd: number;
         adBtn: Node;
         adOp: UIOpacity | null;
     } {
@@ -1557,7 +1765,8 @@ export class FarmHUD extends Component {
         plate.stroke();
 
         // Idle: [out] [name] [cost…] …… [制作]
-        // Busy: [out] [name] [cost…] [========进度条========][广告]
+        // Busy (no ad): same right slot as 制作
+        // Busy (with ad): progress right-aligned before ad chip
         const left = -rowW * 0.5 + Math.round(12 * UI_SCALE);
         const right = rowW * 0.5 - Math.round(12 * UI_SCALE);
         const outX = left + CRAFT_OUT_SZ * 0.5;
@@ -1565,12 +1774,13 @@ export class FarmHUD extends Component {
         const btnX = actionLeft + CRAFT_BTN_W * 0.5;
         const nameLeft = outX + CRAFT_OUT_SZ * 0.5 + CRAFT_COL_GAP;
         const costOrigin = nameLeft + CRAFT_NAME_COL_W + CRAFT_COL_GAP;
-        const costRight = costOrigin + CRAFT_COST_SLOTS * CRAFT_COST_CELL_W;
         const adX = right - CRAFT_AD_SZ * 0.5;
-        const barLeft = costRight + CRAFT_COL_GAP;
-        const barRight = adX - CRAFT_AD_SZ * 0.5 - CRAFT_COL_GAP;
-        const barW = Math.max(CRAFT_BTN_W, Math.round(barRight - barLeft));
-        const barX = (barLeft + barRight) * 0.5;
+        const barRightWithAd = adX - CRAFT_AD_SZ * 0.5 - CRAFT_COL_GAP;
+        const barWWithAd = Math.min(CRAFT_BTN_W, Math.max(Math.round(48 * UI_SCALE), Math.round(barRightWithAd - actionLeft)));
+        const barXWithAd = barRightWithAd - barWWithAd * 0.5;
+        const barXNoAd = btnX;
+        const barW = CRAFT_BTN_W;
+        const barX = barXNoAd;
 
         const outRoot = new Node('Out');
         outRoot.layer = panel.layer;
@@ -1675,7 +1885,7 @@ export class FarmHUD extends Component {
             outline: true,
         });
 
-        // Progress stretches from after material costs to just before the ad chip.
+        // Default: same right slot as 制作 (refresh swaps in the with-ad geometry).
         const progressRoot = new Node('Progress');
         progressRoot.layer = panel.layer;
         progressRoot.setParent(root);
@@ -1733,9 +1943,37 @@ export class FarmHUD extends Component {
             barGfx,
             barLab,
             barW,
+            barXNoAd,
+            barXWithAd,
+            barWWithAd,
             adBtn,
             adOp,
         };
+    }
+
+    /** Place the craft countdown bar in the 制作 slot, or tuck it left of the ad chip. */
+    private layoutCraftProgress(
+        row: {
+            progressRoot: Node;
+            barGfx: Graphics;
+            barLab: Label;
+            barW: number;
+            barXNoAd: number;
+            barXWithAd: number;
+            barWWithAd: number;
+        },
+        showAd: boolean,
+        t01: number,
+        remainSec: number,
+    ) {
+        const w = showAd ? row.barWWithAd : CRAFT_BTN_W;
+        const x = showAd ? row.barXWithAd : row.barXNoAd;
+        row.barW = w;
+        row.progressRoot.setPosition(x, 0, 0);
+        row.progressRoot.getComponent(UITransform)?.setContentSize(w, CRAFT_BAR_H);
+        row.barLab.node.getComponent(UITransform)?.setContentSize(w, CRAFT_BAR_H);
+        this.paintCraftProgress(row.barGfx, w, t01);
+        row.barLab.string = `${Math.max(0, Math.ceil(remainSec))}秒`;
     }
 
     private paintCraftProgress(g: Graphics, w: number, t01: number) {
@@ -1798,7 +2036,12 @@ export class FarmHUD extends Component {
         if (this._barBg) this._barBg.active = !open && !this._bagOpen && !this._chestOpen;
         if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen && !this._chestOpen;
         if (this._bar) this._bar.active = true;
-        if (!open) return;
+        if (!open) {
+            this._tutorialCraftAwaitClose = false;
+            // Keep lock only while the guided job is still ticking (panel can stay closed).
+            if (!this._craftJobs.has(FIRST_SEED_RECIPE)) this._tutorialCraftLock = false;
+            return;
+        }
         this.syncFromFarm();
         this.refreshCraftRows();
         this.refreshHotbarIcons();
@@ -1807,7 +2050,7 @@ export class FarmHUD extends Component {
         this.orderLayers();
     }
 
-    private bagCount(id: CraftItemId): number {
+    private bagCount(id: CraftItemId | InvItemId): number {
         return this._backpack.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
     }
 
@@ -1819,13 +2062,13 @@ export class FarmHUD extends Component {
         let left = count;
         for (let i = 0; i < this._backpack.length && left > 0; i++) {
             const s = this._backpack[i];
-            if (!s || s.id !== id) continue;
-            if (isHandLockedSlot(i) || s.id === 'hand') continue;
+            if (!s || s.id !== id || s.id === 'hand') continue;
             const take = Math.min(left, s.count);
             s.count -= take;
             left -= take;
             if (s.count <= 0) this._backpack[i] = null;
         }
+        this.pruneHotbar();
         this.ensureHandSlot();
         return left <= 0;
     }
@@ -1845,14 +2088,18 @@ export class FarmHUD extends Component {
 
             row.craftBtn.active = !busy;
             row.progressRoot.active = busy;
-            row.adBtn.active = busy;
 
             if (busy && job) {
+                // Guided first-seed craft: hide skip-ad so the 5s lock is mandatory.
+                const guideLock =
+                    this._tutorialCraftLock && row.recipe.id === FIRST_SEED_RECIPE;
+                const showAd = !guideLock;
+                row.adBtn.active = showAd;
                 const t01 = 1 - Math.max(0, job.remain) / Math.max(0.001, job.total);
-                this.paintCraftProgress(row.barGfx, row.barW, t01);
-                row.barLab.string = `${Math.max(0, Math.ceil(job.remain))}秒`;
+                this.layoutCraftProgress(row, showAd, t01, job.remain);
                 if (row.adOp) row.adOp.opacity = this._craftAdWait ? 120 : 255;
             } else {
+                row.adBtn.active = false;
                 row.craftLab.string = '制作';
                 if (row.btnOp) row.btnOp.opacity = can ? 255 : 140;
                 if (row.btnSp) {
@@ -1868,7 +2115,13 @@ export class FarmHUD extends Component {
     }
 
     private tryCraftRecipe(recipe: CraftRecipe) {
+        if (this._tutorialCraftLock) return;
         if (this._craftJobs.has(recipe.id)) return;
+        const quest = this._quests?.activeQuest;
+        const guidingFirstSeed =
+            quest?.id === FIRST_SEED_QUEST && !this._quests!.isAwaitingClaim;
+        // Keep the first-seed quest on the grass→seed recipe only.
+        if (guidingFirstSeed && recipe.id !== FIRST_SEED_RECIPE) return;
         if (!this.canAfford(recipe)) return;
         for (const c of recipe.cost) {
             if (!this.consumeFromBag(c.id, c.count)) {
@@ -1876,7 +2129,15 @@ export class FarmHUD extends Component {
                 return;
             }
         }
-        const total = Math.max(1, recipe.craftSeconds);
+        const guidedFirstSeed = guidingFirstSeed && recipe.id === FIRST_SEED_RECIPE;
+        const total = Math.max(
+            1,
+            guidedFirstSeed ? FIRST_SEED_CRAFT_SEC : recipe.craftSeconds,
+        );
+        if (guidedFirstSeed) {
+            this._tutorialCraftLock = true;
+            this._tutorialCraftAwaitClose = false;
+        }
         this._craftJobs.set(recipe.id, {
             remain: total,
             total,
@@ -1887,6 +2148,7 @@ export class FarmHUD extends Component {
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         this.refreshSelection();
+        this.applyTutorialCraftCloseVisual();
     }
 
     private tickCraftJobs(dt: number) {
@@ -1915,22 +2177,39 @@ export class FarmHUD extends Component {
     private completeCraftJob(recipeId: string) {
         const job = this._craftJobs.get(recipeId);
         if (!job) return;
+        const wasTutorialLock =
+            this._tutorialCraftLock && recipeId === FIRST_SEED_RECIPE;
         this._craftJobs.delete(recipeId);
         if (this._craftAdWait?.recipeId === recipeId) this._craftAdWait = null;
         this.mergeOrPlaceInBag({ id: job.out.id, count: job.out.count });
         this.syncFarmFromBag();
         this._quests?.noteCraft(recipeId, 1);
+        if (wasTutorialLock) {
+            this._tutorialCraftLock = false;
+            if (this._craftOpen) this._tutorialCraftAwaitClose = true;
+        }
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         this.refreshSelection();
         this.refreshCraftRows();
+        this.applyTutorialCraftCloseVisual();
     }
 
     private requestCraftAdBoost(recipeId: string) {
+        if (this._tutorialCraftLock) return;
         if (this._craftAdWait) return;
         if (!this._craftJobs.has(recipeId)) return;
         this._craftAdWait = { recipeId, left: CRAFT_AD_WATCH_SEC };
         this.refreshCraftRows();
+    }
+
+    /** Dim the X while locked; restore when the close-window guide is active. */
+    private applyTutorialCraftCloseVisual() {
+        const btn = this._craftCloseBtn;
+        if (!btn?.isValid) return;
+        let op = btn.getComponent(UIOpacity);
+        if (!op) op = btn.addComponent(UIOpacity);
+        op.opacity = this._tutorialCraftLock ? 90 : 255;
     }
 
     private finishCraftAdBoost(recipeId: string) {
@@ -1941,6 +2220,7 @@ export class FarmHUD extends Component {
     }
 
     private hitCraftClose(uiX: number, uiY: number): boolean {
+        if (this._tutorialCraftLock) return false;
         if (!this._craftCloseBtn?.isValid || !this._craftCloseBtn.active || !this._craftPanel?.isValid) {
             return false;
         }
@@ -1970,6 +2250,7 @@ export class FarmHUD extends Component {
 
     private hitCraftRow(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
+        if (this._tutorialCraftLock) return false;
         const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (this._craftJobs.has(row.recipe.id)) continue;
@@ -1993,6 +2274,7 @@ export class FarmHUD extends Component {
 
     private hitCraftAd(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
+        if (this._tutorialCraftLock) return false;
         const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (!row.adBtn.active || !this._craftJobs.has(row.recipe.id)) continue;
@@ -2057,31 +2339,25 @@ export class FarmHUD extends Component {
         this.syncFarmFromBag();
     }
 
-    /** Merge stack into backpack storage (prefer upper rows). */
+    /** Merge stack into backpack storage. */
     private mergeOrPlaceInBag(stack: InvStack) {
+        if (stack.id === 'hand') return;
         const exist = this._backpack.findIndex((s) => s?.id === stack.id);
         if (exist >= 0 && this._backpack[exist]) {
             this._backpack[exist]!.count += stack.count;
             return;
         }
-        let empty = -1;
-        for (let i = 0; i < HOTBAR_BASE; i++) {
-            if (!this._backpack[i]) {
-                empty = i;
-                break;
-            }
-        }
-        if (empty < 0) empty = this._backpack.findIndex((s) => !s);
+        const empty = this._backpack.findIndex((s) => !s);
         if (empty >= 0) this._backpack[empty] = { id: stack.id, count: stack.count };
     }
 
     /** Push material/seed/crop counts from bag stacks back into FarmSystem. */
     private syncFarmFromBag() {
         if (!this.farm) return;
-        const countOf = (id: InvItemId) =>
-            this._backpack.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
+        const countOf = (id: InvItemId) => this.bagCount(id);
         this.farm.seeds = countOf('seeds');
         this.farm.crops = countOf('parsnip');
+        this.farm.boosts = countOf('boost');
         for (const id of ALL_MATERIALS) {
             this.farm[id] = countOf(id);
         }
@@ -2138,14 +2414,6 @@ export class FarmHUD extends Component {
             outline: false,
         });
         this._tipDesc = desc;
-    }
-
-    private showTip(item: InvItemId, slotLocalX: number) {
-        if (!this._bar) return;
-        const barPos = this._bar.position;
-        const anchorX = barPos.x + slotLocalX;
-        const tipY = barPos.y + SLOT * 0.5 + TIP_SLOT_GAP;
-        this.placeTip(item, anchorX, tipY, true);
     }
 
     /** Tip above a backpack cell (anchor = top of cell in design space). */
@@ -2387,13 +2655,38 @@ export class FarmHUD extends Component {
         if (!this._bar?.isValid) return -1;
         const { x, y } = this.toDesignLocal(uiX, uiY);
         const barPos = this._bar.position;
+        // Bag/chest open: dock chrome is taller — accept a wider Y band, then
+        // snap to the nearest column so drops between slots still bind.
+        const looseY = this._bagOpen || this._chestOpen;
+        const yPad = looseY ? BAR_H * 0.55 : SLOT * 0.55;
+        let best = -1;
+        let bestDist = Number.POSITIVE_INFINITY;
         for (let i = 0; i < this._slots.length; i++) {
             const s = this._slots[i]!;
             const sx = barPos.x + s.root.position.x;
             const sy = barPos.y + s.root.position.y;
-            if (Math.abs(x - sx) < SLOT * 0.5 && Math.abs(y - sy) < SLOT * 0.55) return i;
+            if (Math.abs(y - sy) > yPad) continue;
+            const dx = Math.abs(x - sx);
+            const hitX = looseY ? SLOT * 0.62 : SLOT * 0.5;
+            if (dx <= hitX && dx < bestDist) {
+                best = i;
+                bestDist = dx;
+            }
         }
-        return -1;
+        if (best >= 0) return best;
+        if (!looseY) return -1;
+        // Finger landed on the dock strip but between / past slots — nearest col.
+        if (Math.abs(y - barPos.y) > BAR_H * 0.55) return -1;
+        for (let i = 0; i < this._slots.length; i++) {
+            const s = this._slots[i]!;
+            const sx = barPos.x + s.root.position.x;
+            const d = Math.abs(x - sx);
+            if (d < bestDist) {
+                best = i;
+                bestDist = d;
+            }
+        }
+        return bestDist <= SLOT * 0.85 ? best : -1;
     }
 
     private hitInvSlot(uiX: number, uiY: number, showTipOnTap: boolean): number {
@@ -2423,14 +2716,11 @@ export class FarmHUD extends Component {
         const idx = this.hitHotbarIndex(uiX, uiY);
         if (idx >= 0) {
             const item = this.hotbarItem(idx);
-            if (item) {
-                if (isFarmTool(item)) {
-                    this.farm?.setTool(item);
-                    this.refreshSelection();
-                }
-                this.showTip(item, this._slots[idx]!.root.position.x);
-            } else {
-                this.hideTip();
+            // Hotbar select only — no item tip on the dock.
+            this.hideTip();
+            if (item && isFarmTool(item)) {
+                this.farm?.setTool(item);
+                this.refreshSelection();
             }
             return true;
         }
@@ -2446,48 +2736,40 @@ export class FarmHUD extends Component {
     private equipFromHotbar(idx: number) {
         const item = this.hotbarItem(idx);
         if (!item) return;
+        this.hideTip();
         if (isFarmTool(item)) {
+            playUiClick();
             this.farm?.setTool(item);
             this.refreshSelection();
         }
-        this.showTip(item, this._slots[idx]!.root.position.x);
     }
 
-    // ── drag ──────────────────────────────────────────────
+    // ── drag (Canvas node touch, capture phase) ───────────
 
-    private onTouchStart(e: EventTouch) {
+    private onNodeTouchStart(e: EventTouch) {
+        if (!this._bagOpen && !this._chestOpen) return;
         const loc = e.getUILocation();
         this.beginPtr(loc.x, loc.y);
     }
 
-    private onTouchMove(e: EventTouch) {
+    private onNodeTouchMove(e: EventTouch) {
+        if (!this._ptrDown) return;
         const loc = e.getUILocation();
         this.movePtr(loc.x, loc.y);
     }
 
-    private onTouchEnd(e: EventTouch) {
+    private onNodeTouchEnd(e: EventTouch) {
+        if (!this._ptrDown) return;
         const loc = e.getUILocation();
-        this.endPtr(loc.x, loc.y);
-    }
-
-    private onMouseDown(e: EventMouse) {
-        if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
-        const loc = e.getUILocation();
-        this.beginPtr(loc.x, loc.y);
-    }
-
-    private onMouseMove(e: EventMouse) {
-        const loc = e.getUILocation();
-        this.movePtr(loc.x, loc.y);
-    }
-
-    private onMouseUp(e: EventMouse) {
-        if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
-        const loc = e.getUILocation();
+        // Prefer live event pos; fall back to last move / ghost inside endPtr.
         this.endPtr(loc.x, loc.y);
     }
 
     private beginPtr(uiX: number, uiY: number) {
+        if (!this._chestOpen && !this._bagOpen) return;
+        this._ptrDown = true;
+        this._ptrX = uiX;
+        this._ptrY = uiY;
         if (this._chestOpen) {
             const chest = this.hitChestSlot(uiX, uiY, false);
             if (chest >= 0 && this._chest[chest]) {
@@ -2502,7 +2784,7 @@ export class FarmHUD extends Component {
                 return;
             }
             const bag = this.hitChestBagSlot(uiX, uiY, false);
-            if (bag >= 0 && this._backpack[bag] && !isHandLockedSlot(bag) && this._backpack[bag]!.id !== 'hand') {
+            if (bag >= 0 && this._backpack[bag] && this._backpack[bag]!.id !== 'hand') {
                 this._drag = {
                     index: bag,
                     from: 'bag',
@@ -2514,11 +2796,11 @@ export class FarmHUD extends Component {
                 return;
             }
             const hot = this.hitHotbarIndex(uiX, uiY);
-            if (hot > 0 && this._backpack[HOTBAR_BASE + hot]) {
+            if (hot > 0 && this._hotbar[hot]) {
                 this._drag = {
-                    index: HOTBAR_BASE + hot,
-                    from: 'bag',
-                    item: this._backpack[HOTBAR_BASE + hot]!.id,
+                    index: hot,
+                    from: 'hotbar',
+                    item: this._hotbar[hot]!,
                     active: false,
                     ox: uiX,
                     oy: uiY,
@@ -2528,7 +2810,7 @@ export class FarmHUD extends Component {
         }
         if (!this._bagOpen) return;
         const inv = this.hitInvSlot(uiX, uiY, false);
-        if (inv >= 0 && this._backpack[inv] && !isHandLockedSlot(inv) && this._backpack[inv]!.id !== 'hand') {
+        if (inv >= 0 && this._backpack[inv] && this._backpack[inv]!.id !== 'hand') {
             this._drag = {
                 index: inv,
                 from: 'bag',
@@ -2540,12 +2822,12 @@ export class FarmHUD extends Component {
             return;
         }
         const hot = this.hitHotbarIndex(uiX, uiY);
-        // Dock slot 0 (hand) cannot be dragged.
-        if (hot > 0 && this._backpack[HOTBAR_BASE + hot]) {
+        // Hotkey slot 0 (hand) cannot be dragged.
+        if (hot > 0 && this._hotbar[hot]) {
             this._drag = {
-                index: HOTBAR_BASE + hot,
-                from: 'bag',
-                item: this._backpack[HOTBAR_BASE + hot]!.id,
+                index: hot,
+                from: 'hotbar',
+                item: this._hotbar[hot]!,
                 active: false,
                 ox: uiX,
                 oy: uiY,
@@ -2554,6 +2836,8 @@ export class FarmHUD extends Component {
     }
 
     private movePtr(uiX: number, uiY: number) {
+        this._ptrX = uiX;
+        this._ptrY = uiY;
         if (!this._drag) return;
         const dx = uiX - this._drag.ox;
         const dy = uiY - this._drag.oy;
@@ -2564,34 +2848,50 @@ export class FarmHUD extends Component {
             if (this._ghost && this._ghostSp) {
                 const sf = this.frameFor(this._drag.item);
                 this._ghostSp.spriteFrame = sf;
-                this._ghost.active = !!sf;
+                // Show ghost even without a frame (tinted plate) so drag is visible.
+                this._ghost.active = true;
+                if (!sf) this._ghostSp.spriteFrame = this._frames.slot ?? null;
             }
         }
         if (this._ghost?.active) {
             const { x, y } = this.toDesignLocal(uiX, uiY);
             this._ghost.setPosition(x, y, 0);
-            // Keep ghost on top
             this._ghost.setSiblingIndex(this.node.children.length - 1);
         }
     }
 
     private endPtr(uiX: number, uiY: number) {
-        // No drag started: still handle chest chrome taps here so close works
-        // even if the joystick tap path is skipped.
+        let dropX = uiX;
+        let dropY = uiY;
+        if (this._drag?.active) {
+            // Last move is more reliable than END when releasing off the start cell
+            // (TOUCH_CANCEL / stale end loc). Ghost mirrors that move.
+            const fromGhost = this.ghostToUi();
+            if (fromGhost) {
+                dropX = fromGhost.x;
+                dropY = fromGhost.y;
+            } else if (this._ptrX || this._ptrY) {
+                dropX = this._ptrX;
+                dropY = this._ptrY;
+            }
+        }
+        this._ptrDown = false;
         if (!this._drag) {
             if (this._chestOpen) {
-                if (this.hitChestClose(uiX, uiY) || this.hitTakeAll(uiX, uiY)) {
+                if (this.hitChestClose(dropX, dropY) || this.hitTakeAll(dropX, dropY)) {
                     this._suppressTap = true;
                 }
             } else if (this._craftOpen) {
-                if (
-                    this.hitCraftClose(uiX, uiY) ||
-                    this.hitCraftAd(uiX, uiY) ||
-                    this.hitCraftRow(uiX, uiY)
+                if (this._tutorialCraftLock) {
+                    this._suppressTap = true;
+                } else if (
+                    this.hitCraftClose(dropX, dropY) ||
+                    this.hitCraftAd(dropX, dropY) ||
+                    this.hitCraftRow(dropX, dropY)
                 ) {
                     this._suppressTap = true;
                 }
-            } else if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
+            } else if (this._bagOpen && this.hitCloseBtn(dropX, dropY)) {
                 this.setBagOpen(false);
                 this._suppressTap = true;
             }
@@ -2601,35 +2901,110 @@ export class FarmHUD extends Component {
         if (drag.active) {
             this._suppressTap = true;
             if (this._chestOpen) {
-                this.endChestDrag(uiX, uiY, drag);
+                this.endChestDrag(dropX, dropY, drag);
             } else {
-                const hot = this.hitHotbarIndex(uiX, uiY);
-                const inv = this.hitInvSlot(uiX, uiY, false);
-                let dest = -1;
-                if (hot > 0) dest = HOTBAR_BASE + hot; // never drop onto locked hand slot
-                else if (inv >= 0 && !isHandLockedSlot(inv)) dest = inv;
-                if (dest >= 0 && drag.from === 'bag' && !isHandLockedSlot(drag.index)) {
-                    this.swapBag(drag.index, dest);
-                    this.refreshHotbarIcons();
-                    this.refreshInvIcons();
-                    this.refreshSelection();
-                    if (hot > 0) this.equipFromHotbar(hot);
-                }
+                this.endBagDrag(dropX, dropY, drag);
             }
         }
         this.cancelDrag();
     }
 
+    /** Ghost sits in canvas-local space — convert back to UI bottom-left coords. */
+    private ghostToUi(): { x: number; y: number } | null {
+        if (!this._ghost?.active) return null;
+        const canvasUi = this.node.getComponent(UITransform);
+        const vis = view.getVisibleSize();
+        const hw = (canvasUi?.contentSize.width || vis.width) * 0.5;
+        const hh = (canvasUi?.contentSize.height || vis.height) * 0.5;
+        return {
+            x: this._ghost.position.x + hw,
+            y: this._ghost.position.y + hh,
+        };
+    }
+
+    /** Drop target on the dock — never the locked hand slot. */
+    private hitHotbarDropIndex(uiX: number, uiY: number): number {
+        const hot = this.hitHotbarIndex(uiX, uiY);
+        if (hot > 0) return hot;
+        if (!this._bar?.isValid || !(this._bagOpen || this._chestOpen)) return -1;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        // Wide dock band: whole bottom chrome counts as a hotkey drop.
+        if (Math.abs(y - BAR_Y) > BAR_H * 0.85) return -1;
+        let best = -1;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (let i = 1; i < this._slots.length; i++) {
+            const s = this._slots[i]!;
+            const d = Math.abs(x - (this._bar.position.x + s.root.position.x));
+            if (d < bestDist) {
+                best = i;
+                bestDist = d;
+            }
+        }
+        // Accept anywhere across the dock width (not only near a slot center).
+        const halfDock = BAR_BG_W * 0.55;
+        return Math.abs(x - this._bar.position.x) <= halfDock ? best : -1;
+    }
+
+    /** Bag open: rearrange storage, or assign / clear hotkeys. */
+    private endBagDrag(
+        uiX: number,
+        uiY: number,
+        drag: { index: number; from: 'bag' | 'chest' | 'hotbar'; item: InvItemId },
+    ) {
+        let hot = this.hitHotbarDropIndex(uiX, uiY);
+        const inv = this.hitInvSlot(uiX, uiY, false);
+        if (drag.from === 'bag') {
+            // Prefer dock; if release is in the dock band but missed a cell, snap.
+            if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
+            if (hot > 0) {
+                this.assignHotbar(hot, drag.item);
+                this.equipFromHotbar(hot);
+            } else if (inv >= 0 && inv !== drag.index) {
+                this.swapBag(drag.index, inv);
+            }
+        } else if (drag.from === 'hotbar') {
+            if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
+            if (hot > 0) {
+                this.swapHotbar(drag.index, hot);
+                this.equipFromHotbar(hot);
+            } else if (inv >= 0) {
+                // Drop onto bag cell → remove hotkey binding (stack stays in bag).
+                this.clearHotbar(drag.index);
+            }
+        }
+        this.refreshHotbarIcons();
+        this.refreshInvIcons();
+        this.refreshSelection();
+    }
+
+    /** If release Y is on the bottom dock, snap to nearest assignable column. */
+    private nearestHotbarInDockBand(uiX: number, uiY: number): number {
+        if (!this._bar?.isValid) return -1;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        if (Math.abs(y - BAR_Y) > BAR_H * 1.05) return -1;
+        if (Math.abs(x - this._bar.position.x) > BAR_BG_W * 0.6) return -1;
+        let best = -1;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (let i = 1; i < this._slots.length; i++) {
+            const s = this._slots[i]!;
+            const d = Math.abs(x - (this._bar.position.x + s.root.position.x));
+            if (d < bestDist) {
+                best = i;
+                bestDist = d;
+            }
+        }
+        return best;
+    }
+
     private endChestDrag(
         uiX: number,
         uiY: number,
-        drag: { index: number; from: 'bag' | 'chest'; item: InvItemId },
+        drag: { index: number; from: 'bag' | 'chest' | 'hotbar'; item: InvItemId },
     ) {
         const chestDest = this.hitChestSlot(uiX, uiY, false);
         const bagDest = this.hitChestBagSlot(uiX, uiY, false);
-        const hot = this.hitHotbarIndex(uiX, uiY);
-        // Hand slot is immovable / non-replaceable.
-        if (drag.from === 'bag' && (isHandLockedSlot(drag.index) || drag.item === 'hand')) {
+        const hot = this.hitHotbarDropIndex(uiX, uiY);
+        if (drag.item === 'hand') {
             this.ensureHandSlot();
             return;
         }
@@ -2639,28 +3014,51 @@ export class FarmHUD extends Component {
                 const tmp = this._chest[drag.index];
                 this._chest[drag.index] = this._chest[chestDest];
                 this._chest[chestDest] = tmp;
-            } else if ((bagDest >= 0 && !isHandLockedSlot(bagDest)) || hot > 0) {
-                const dest = hot > 0 ? HOTBAR_BASE + hot : bagDest;
+            } else if (bagDest >= 0) {
                 const moved = this._chest[drag.index];
-                this._chest[drag.index] = this._backpack[dest!] ?? null;
-                this._backpack[dest!] = moved;
-                this.ensureHandSlot();
+                this._chest[drag.index] = this._backpack[bagDest] ?? null;
+                this._backpack[bagDest] = moved;
                 this.syncFarmFromBag();
-                if (hot > 0) this.equipFromHotbar(hot);
+            } else if (hot > 0) {
+                // Into bag (if needed) + bind hotkey.
+                const moved = this._chest[drag.index];
+                this._chest[drag.index] = null;
+                if (moved) {
+                    this.mergeOrPlaceInBag(moved);
+                    this.assignHotbar(hot, moved.id);
+                    this.equipFromHotbar(hot);
+                }
+                this.syncFarmFromBag();
             }
-        } else {
-            // from bag / hotbar
+        } else if (drag.from === 'bag') {
             if (chestDest >= 0) {
                 const moved = this._backpack[drag.index];
                 this._backpack[drag.index] = this._chest[chestDest];
                 this._chest[chestDest] = moved;
-                this.ensureHandSlot();
+                this.pruneHotbar();
                 this.syncFarmFromBag();
-            } else if ((bagDest >= 0 && !isHandLockedSlot(bagDest)) || hot > 0) {
-                const dest = hot > 0 ? HOTBAR_BASE + hot : bagDest;
-                if (dest !== null && dest >= 0) {
-                    this.swapBag(drag.index, dest);
-                    if (hot > 0) this.equipFromHotbar(hot);
+            } else if (bagDest >= 0) {
+                this.swapBag(drag.index, bagDest);
+            } else if (hot > 0) {
+                this.assignHotbar(hot, drag.item);
+                this.equipFromHotbar(hot);
+            }
+        } else if (drag.from === 'hotbar') {
+            if (hot > 0) {
+                this.swapHotbar(drag.index, hot);
+                this.equipFromHotbar(hot);
+            } else if (bagDest >= 0 || chestDest >= 0) {
+                // Unbind hotkey; moving into chest still uses the bag stack.
+                this.clearHotbar(drag.index);
+                if (chestDest >= 0) {
+                    const bagIdx = this._backpack.findIndex((s) => s?.id === drag.item);
+                    if (bagIdx >= 0) {
+                        const moved = this._backpack[bagIdx];
+                        this._backpack[bagIdx] = this._chest[chestDest];
+                        this._chest[chestDest] = moved;
+                        this.pruneHotbar();
+                        this.syncFarmFromBag();
+                    }
                 }
             }
         }
@@ -2673,6 +3071,7 @@ export class FarmHUD extends Component {
 
     private cancelDrag() {
         this._drag = null;
+        this._ptrDown = false;
         if (this._ghost) this._ghost.active = false;
     }
 
@@ -2692,8 +3091,10 @@ export class FarmHUD extends Component {
         if (e.keyCode === KeyCode.ESCAPE) {
             if (this.node.getComponent(GmPanel)?.isOpen) return;
             if (this._chestOpen) this.setChestOpen(false);
-            else if (this._craftOpen) this.setCraftOpen(false);
-            else if (this._bagOpen) this.setBagOpen(false);
+            else if (this._craftOpen) {
+                if (this._tutorialCraftLock) return;
+                this.setCraftOpen(false);
+            } else if (this._bagOpen) this.setBagOpen(false);
         }
         if (e.keyCode === KeyCode.SPACE || e.keyCode === KeyCode.KEY_E) {
             if (this._chestOpen || this._craftOpen || this._bagOpen) return;

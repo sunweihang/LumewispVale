@@ -56,7 +56,8 @@ SPECS = [
     ("bld-home-yellow", ["ai-bld-home-yellow-v3", "ai-bld-home-yellow-ref"], 256, 224),
     ("bld-home-purple", ["ai-bld-home-purple-v3", "ai-bld-home-purple-ref"], 224, 224),
     ("bld-cottage-blue", ["ai-bld-cottage-blue-v3", "ai-bld-cottage-blue-ortho-ref"], 256, 224),
-    ("bld-cottage-red", ["ai-bld-cottage-red-v3", "ai-bld-cottage-red-ortho-ref"], 288, 224),
+    # Hero farmhouse — larger cozy home (farm + town cottage_red)
+    ("bld-cottage-red", ["ai-bld-cottage-red-hero-ref", "ai-bld-cottage-red-hero-v2", "ai-bld-cottage-red-v3"], 288, 272),
 ]
 
 

@@ -94,11 +94,6 @@
     "prefab": "6d290c3b-e2cf-47fd-b29b-27cc0e6189b9",
     "spriteFrame": "6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941"
   },
-  "spc-meteor": {
-    "texture": "e80f5369-d150-4b80-aa7c-636daa221af1",
-    "prefab": "e51a5553-5169-4993-a867-03e35beb87e2",
-    "spriteFrame": "e80f5369-d150-4b80-aa7c-636daa221af1@f9941"
-  },
   "tile-tilled": {
     "texture": "514c49fb-7eea-4823-9b5d-60b6ed26135b",
     "prefab": "",
@@ -860,5 +855,720 @@
   "quest-marker": {
     "texture": "bf6dc369-932d-4921-bb95-ab64ac4a5362",
     "spriteFrame": "bf6dc369-932d-4921-bb95-ab64ac4a5362@f9941"
+  },
+  "portrait-farmer": {
+    "texture": "71f057db-48d3-42d9-97e4-b1c618559483",
+    "prefab": "",
+    "spriteFrame": "71f057db-48d3-42d9-97e4-b1c618559483@6c48a"
+  },
+  "portrait-girl": {
+    "texture": "ae4405db-f119-45d0-96e4-785dd4e99371",
+    "prefab": "",
+    "spriteFrame": "ae4405db-f119-45d0-96e4-785dd4e99371@6c48a"
+  },
+  "portrait-passerby": {
+    "texture": "db84a543-5081-4b50-87b1-16411ea16d30",
+    "prefab": "",
+    "spriteFrame": "db84a543-5081-4b50-87b1-16411ea16d30@6c48a"
+  },
+  "ui-splash": {
+    "texture": "5a4ebb12-2f98-4075-a870-b9286e9ac348",
+    "prefab": "",
+    "spriteFrame": "5a4ebb12-2f98-4075-a870-b9286e9ac348@6c48a"
+  },
+  "ic-boost": {
+    "texture": "9d7b2992-0774-4044-8be2-4eca6808b082",
+    "prefab": "",
+    "spriteFrame": "9d7b2992-0774-4044-8be2-4eca6808b082@6c48a"
+  },
+  "portrait-mayor": {
+    "texture": "a7306f84-6da9-4510-a781-d44857ef5a93",
+    "prefab": "",
+    "spriteFrame": "a7306f84-6da9-4510-a781-d44857ef5a93@6c48a"
+  },
+  "portrait-carpenter": {
+    "texture": "0d1ddd02-8f44-4444-9698-9e3fc1193570",
+    "prefab": "",
+    "spriteFrame": "0d1ddd02-8f44-4444-9698-9e3fc1193570@6c48a"
+  },
+  "char-farmer": {
+    "texture": "769eebee-d2d6-49c2-88d7-3fbacc1f2702",
+    "prefab": "",
+    "spriteFrame": "769eebee-d2d6-49c2-88d7-3fbacc1f2702@6c48a"
+  },
+  "nat-weed-blue": {
+    "texture": "4fb2a7a0-604c-4147-b7b4-b6c52e6e1c8d",
+    "prefab": "",
+    "spriteFrame": "4fb2a7a0-604c-4147-b7b4-b6c52e6e1c8d@6c48a"
+  },
+  "nat-weed-yellow": {
+    "texture": "95350866-26d9-4ad9-9fb8-9ac1848154e9",
+    "prefab": "",
+    "spriteFrame": "95350866-26d9-4ad9-9fb8-9ac1848154e9@6c48a"
+  },
+  "story-05": {
+    "texture": "96ca13eb-b4a8-4fdf-890f-a535bc498c02",
+    "prefab": "",
+    "spriteFrame": "96ca13eb-b4a8-4fdf-890f-a535bc498c02@6c48a"
+  },
+  "story-04": {
+    "texture": "aa06ee5e-d769-4b1d-be24-06bc3c1e4fd2",
+    "prefab": "",
+    "spriteFrame": "aa06ee5e-d769-4b1d-be24-06bc3c1e4fd2@6c48a"
+  },
+  "story-02": {
+    "texture": "303ab5b9-1f87-450e-aac8-df7f44bf3f16",
+    "prefab": "",
+    "spriteFrame": "303ab5b9-1f87-450e-aac8-df7f44bf3f16@6c48a"
+  },
+  "story-03": {
+    "texture": "81cd2812-017a-4b9a-a526-de04d8f84bf6",
+    "prefab": "",
+    "spriteFrame": "81cd2812-017a-4b9a-a526-de04d8f84bf6@6c48a"
+  },
+  "story-01": {
+    "texture": "087148b5-0ec4-4f89-8248-72b7adedb44a",
+    "prefab": "",
+    "spriteFrame": "087148b5-0ec4-4f89-8248-72b7adedb44a@6c48a"
+  },
+  "carpenter-left-1": {
+    "texture": "213f28b5-a723-452d-933a-cf606915273a",
+    "prefab": "",
+    "spriteFrame": "213f28b5-a723-452d-933a-cf606915273a@6c48a"
+  },
+  "carpenter-left-0": {
+    "texture": "228026cf-d85e-4946-b64f-4f63bec9bd14",
+    "prefab": "",
+    "spriteFrame": "228026cf-d85e-4946-b64f-4f63bec9bd14@6c48a"
+  },
+  "carpenter-down-3": {
+    "texture": "ac366555-d51e-494c-bef7-a21efa5183e4",
+    "prefab": "",
+    "spriteFrame": "ac366555-d51e-494c-bef7-a21efa5183e4@6c48a"
+  },
+  "carpenter-down-2": {
+    "texture": "18cf9fc9-0c83-4f41-901b-db41c7d29734",
+    "prefab": "",
+    "spriteFrame": "18cf9fc9-0c83-4f41-901b-db41c7d29734@6c48a"
+  },
+  "carpenter-right-3": {
+    "texture": "bf648626-d6e5-44f1-9990-bc3948db4cc9",
+    "prefab": "",
+    "spriteFrame": "bf648626-d6e5-44f1-9990-bc3948db4cc9@6c48a"
+  },
+  "carpenter-right-2": {
+    "texture": "e7cd5ad7-deb7-427b-a5b4-c1082bd29c69",
+    "prefab": "",
+    "spriteFrame": "e7cd5ad7-deb7-427b-a5b4-c1082bd29c69@6c48a"
+  },
+  "carpenter-up-0": {
+    "texture": "4fd9c6e2-41f5-4f6f-9c22-2deeeae96015",
+    "prefab": "",
+    "spriteFrame": "4fd9c6e2-41f5-4f6f-9c22-2deeeae96015@6c48a"
+  },
+  "carpenter-up-1": {
+    "texture": "09de20f1-9100-4d75-8966-c12b0ceeb74a",
+    "prefab": "",
+    "spriteFrame": "09de20f1-9100-4d75-8966-c12b0ceeb74a@6c48a"
+  },
+  "carpenter-down-0": {
+    "texture": "4e371ae1-8341-4782-957c-4e2dc3f96241",
+    "prefab": "",
+    "spriteFrame": "4e371ae1-8341-4782-957c-4e2dc3f96241@6c48a"
+  },
+  "carpenter-down-1": {
+    "texture": "c656218a-0bc3-4942-acec-f308c60cf5fe",
+    "prefab": "",
+    "spriteFrame": "c656218a-0bc3-4942-acec-f308c60cf5fe@6c48a"
+  },
+  "carpenter-left-2": {
+    "texture": "de478c16-4b0c-404e-9bfc-eb968ded47e7",
+    "prefab": "",
+    "spriteFrame": "de478c16-4b0c-404e-9bfc-eb968ded47e7@6c48a"
+  },
+  "carpenter-left-3": {
+    "texture": "03eb9685-cb05-49a1-a7c9-0a74a222fea7",
+    "prefab": "",
+    "spriteFrame": "03eb9685-cb05-49a1-a7c9-0a74a222fea7@6c48a"
+  },
+  "carpenter-up-3": {
+    "texture": "8b7de9f1-e886-48cb-9f9f-db47a80f2e24",
+    "prefab": "",
+    "spriteFrame": "8b7de9f1-e886-48cb-9f9f-db47a80f2e24@6c48a"
+  },
+  "carpenter-up-2": {
+    "texture": "9f68bb72-b719-4e89-9593-dfc672714259",
+    "prefab": "",
+    "spriteFrame": "9f68bb72-b719-4e89-9593-dfc672714259@6c48a"
+  },
+  "carpenter-right-0": {
+    "texture": "1ef69ec1-1c8e-4d22-b12b-fc905d560122",
+    "prefab": "",
+    "spriteFrame": "1ef69ec1-1c8e-4d22-b12b-fc905d560122@6c48a"
+  },
+  "carpenter-right-1": {
+    "texture": "1c210e9f-df7c-4332-ac76-e5295b165ede",
+    "prefab": "",
+    "spriteFrame": "1c210e9f-df7c-4332-ac76-e5295b165ede@6c48a"
+  },
+  "farmer-pick-right-0": {
+    "texture": "7cee1927-0983-4cc0-b18d-803065c3f93d",
+    "prefab": "",
+    "spriteFrame": "7cee1927-0983-4cc0-b18d-803065c3f93d@6c48a"
+  },
+  "farmer-pick-right-1": {
+    "texture": "5182159f-c876-491e-93fd-33a11bcffad2",
+    "prefab": "",
+    "spriteFrame": "5182159f-c876-491e-93fd-33a11bcffad2@6c48a"
+  },
+  "farmer-chop-right-1": {
+    "texture": "b8d5599a-083d-4fb2-85b8-f5aed06c7e00",
+    "prefab": "",
+    "spriteFrame": "b8d5599a-083d-4fb2-85b8-f5aed06c7e00@6c48a"
+  },
+  "farmer-chop-right-0": {
+    "texture": "a9bfb6a5-5ad3-404c-8f39-c2fe334f7f39",
+    "prefab": "",
+    "spriteFrame": "a9bfb6a5-5ad3-404c-8f39-c2fe334f7f39@6c48a"
+  },
+  "farmer-left-0": {
+    "texture": "0578e713-6b66-4658-979f-1fa5d8c8ddb7",
+    "prefab": "",
+    "spriteFrame": "0578e713-6b66-4658-979f-1fa5d8c8ddb7@6c48a"
+  },
+  "farmer-left-1": {
+    "texture": "345636df-9398-4c44-9187-559e0f76def7",
+    "prefab": "",
+    "spriteFrame": "345636df-9398-4c44-9187-559e0f76def7@6c48a"
+  },
+  "farmer-hoe-down-0": {
+    "texture": "c00dd55b-c13b-40b2-9c18-782fb300002f",
+    "prefab": "",
+    "spriteFrame": "c00dd55b-c13b-40b2-9c18-782fb300002f@6c48a"
+  },
+  "farmer-hoe-down-1": {
+    "texture": "cf377f9b-9d37-408a-af51-a5013ce004e1",
+    "prefab": "",
+    "spriteFrame": "cf377f9b-9d37-408a-af51-a5013ce004e1@6c48a"
+  },
+  "farmer-hoe-left-2": {
+    "texture": "2c252a7b-a50f-4e88-9f01-126c99a54eaa",
+    "prefab": "",
+    "spriteFrame": "2c252a7b-a50f-4e88-9f01-126c99a54eaa@6c48a"
+  },
+  "farmer-hoe-left-3": {
+    "texture": "9ac32eb7-400a-434c-9fdd-b97941c95387",
+    "prefab": "",
+    "spriteFrame": "9ac32eb7-400a-434c-9fdd-b97941c95387@6c48a"
+  },
+  "farmer-down-2": {
+    "texture": "acec9e64-bdad-4eca-92c0-a4ceaff654ae",
+    "prefab": "",
+    "spriteFrame": "acec9e64-bdad-4eca-92c0-a4ceaff654ae@6c48a"
+  },
+  "farmer-down-3": {
+    "texture": "8e20c30d-09a4-4173-a968-4818de9e6acf",
+    "prefab": "",
+    "spriteFrame": "8e20c30d-09a4-4173-a968-4818de9e6acf@6c48a"
+  },
+  "farmer-chop-up-0": {
+    "texture": "c99ce3d8-e5c2-4128-8245-5e3f73215b5c",
+    "prefab": "",
+    "spriteFrame": "c99ce3d8-e5c2-4128-8245-5e3f73215b5c@6c48a"
+  },
+  "farmer-chop-up-1": {
+    "texture": "636912f6-6c4b-4926-a4c0-0a1ac3c253b2",
+    "prefab": "",
+    "spriteFrame": "636912f6-6c4b-4926-a4c0-0a1ac3c253b2@6c48a"
+  },
+  "farmer-hoe-right-1": {
+    "texture": "f6dd522f-9cbd-43fd-942b-c03289455a30",
+    "prefab": "",
+    "spriteFrame": "f6dd522f-9cbd-43fd-942b-c03289455a30@6c48a"
+  },
+  "farmer-hoe-right-0": {
+    "texture": "7a404110-d402-41bd-8155-d16ced762d43",
+    "prefab": "",
+    "spriteFrame": "7a404110-d402-41bd-8155-d16ced762d43@6c48a"
+  },
+  "farmer-pick-up-2": {
+    "texture": "45e1304f-d263-426f-b3a5-b88bc8032f55",
+    "prefab": "",
+    "spriteFrame": "45e1304f-d263-426f-b3a5-b88bc8032f55@6c48a"
+  },
+  "farmer-pick-up-3": {
+    "texture": "f342d487-5fc5-4a02-a19b-2e469f37ad26",
+    "prefab": "",
+    "spriteFrame": "f342d487-5fc5-4a02-a19b-2e469f37ad26@6c48a"
+  },
+  "farmer-up-2": {
+    "texture": "29282ce8-c455-4187-8ac9-d0ff0b671882",
+    "prefab": "",
+    "spriteFrame": "29282ce8-c455-4187-8ac9-d0ff0b671882@6c48a"
+  },
+  "farmer-up-3": {
+    "texture": "cf498b4a-c0c3-4bbc-9b3f-b1455d5c71b2",
+    "prefab": "",
+    "spriteFrame": "cf498b4a-c0c3-4bbc-9b3f-b1455d5c71b2@6c48a"
+  },
+  "farmer-pick-down-3": {
+    "texture": "53a1ea90-32de-4098-8505-71ae5df93990",
+    "prefab": "",
+    "spriteFrame": "53a1ea90-32de-4098-8505-71ae5df93990@6c48a"
+  },
+  "farmer-pick-down-2": {
+    "texture": "95568ce0-068f-471a-a059-38d56637abf5",
+    "prefab": "",
+    "spriteFrame": "95568ce0-068f-471a-a059-38d56637abf5@6c48a"
+  },
+  "farmer-chop-down-2": {
+    "texture": "acfd5bfb-cdc4-411c-9d91-584a776908fc",
+    "prefab": "",
+    "spriteFrame": "acfd5bfb-cdc4-411c-9d91-584a776908fc@6c48a"
+  },
+  "farmer-chop-down-3": {
+    "texture": "cfd3fac1-bd3f-4aa5-be4f-4c493649b3cd",
+    "prefab": "",
+    "spriteFrame": "cfd3fac1-bd3f-4aa5-be4f-4c493649b3cd@6c48a"
+  },
+  "farmer-chop-left-0": {
+    "texture": "6816742d-ed36-4525-9451-f9546950de6f",
+    "prefab": "",
+    "spriteFrame": "6816742d-ed36-4525-9451-f9546950de6f@6c48a"
+  },
+  "farmer-chop-left-1": {
+    "texture": "82ec13af-c5bb-48d3-b855-c30d5ee2e88b",
+    "prefab": "",
+    "spriteFrame": "82ec13af-c5bb-48d3-b855-c30d5ee2e88b@6c48a"
+  },
+  "farmer-right-0": {
+    "texture": "e7c1b676-5c36-4b49-80a2-e06595fa7290",
+    "prefab": "",
+    "spriteFrame": "e7c1b676-5c36-4b49-80a2-e06595fa7290@6c48a"
+  },
+  "farmer-right-1": {
+    "texture": "1dbce8b6-32d6-414a-87c5-5139e49a5024",
+    "prefab": "",
+    "spriteFrame": "1dbce8b6-32d6-414a-87c5-5139e49a5024@6c48a"
+  },
+  "farmer-hoe-up-2": {
+    "texture": "2a206bbd-dac9-4d63-883e-844a8c092b04",
+    "prefab": "",
+    "spriteFrame": "2a206bbd-dac9-4d63-883e-844a8c092b04@6c48a"
+  },
+  "farmer-hoe-up-3": {
+    "texture": "6aa29607-fc7c-401e-a5e9-12382ec024a6",
+    "prefab": "",
+    "spriteFrame": "6aa29607-fc7c-401e-a5e9-12382ec024a6@6c48a"
+  },
+  "farmer-pick-left-1": {
+    "texture": "eca0d2fb-b681-4480-a20e-d24e3e56beff",
+    "prefab": "",
+    "spriteFrame": "eca0d2fb-b681-4480-a20e-d24e3e56beff@6c48a"
+  },
+  "farmer-pick-left-0": {
+    "texture": "e32df9f6-8c1b-416c-a047-d9672486f1b2",
+    "prefab": "",
+    "spriteFrame": "e32df9f6-8c1b-416c-a047-d9672486f1b2@6c48a"
+  },
+  "farmer-hoe-left-1": {
+    "texture": "6564d743-57de-41cb-93b8-b2e0fde16ae7",
+    "prefab": "",
+    "spriteFrame": "6564d743-57de-41cb-93b8-b2e0fde16ae7@6c48a"
+  },
+  "farmer-hoe-left-0": {
+    "texture": "f7dfd06f-85ad-49d4-a0d7-d4425abc0e32",
+    "prefab": "",
+    "spriteFrame": "f7dfd06f-85ad-49d4-a0d7-d4425abc0e32@6c48a"
+  },
+  "farmer-down-1": {
+    "texture": "8bddc98e-71ac-486e-8b83-9a9017105b6e",
+    "prefab": "",
+    "spriteFrame": "8bddc98e-71ac-486e-8b83-9a9017105b6e@6c48a"
+  },
+  "farmer-down-0": {
+    "texture": "c697f84a-2a95-4855-9420-11e90ca53433",
+    "prefab": "",
+    "spriteFrame": "c697f84a-2a95-4855-9420-11e90ca53433@6c48a"
+  },
+  "farmer-chop-right-2": {
+    "texture": "edca0cf0-a196-446e-9673-0a486cc28c0f",
+    "prefab": "",
+    "spriteFrame": "edca0cf0-a196-446e-9673-0a486cc28c0f@6c48a"
+  },
+  "farmer-chop-right-3": {
+    "texture": "e8da06c1-5087-4d81-bbb9-06b8237d57fe",
+    "prefab": "",
+    "spriteFrame": "e8da06c1-5087-4d81-bbb9-06b8237d57fe@6c48a"
+  },
+  "farmer-left-3": {
+    "texture": "93217c8c-141d-4cb3-8618-8088f07d861a",
+    "prefab": "",
+    "spriteFrame": "93217c8c-141d-4cb3-8618-8088f07d861a@6c48a"
+  },
+  "farmer-left-2": {
+    "texture": "d0808242-f40e-466e-a1b6-01ad27909dd5",
+    "prefab": "",
+    "spriteFrame": "d0808242-f40e-466e-a1b6-01ad27909dd5@6c48a"
+  },
+  "farmer-hoe-down-3": {
+    "texture": "470ca49d-9da4-492b-ae62-5baeb9d47445",
+    "prefab": "",
+    "spriteFrame": "470ca49d-9da4-492b-ae62-5baeb9d47445@6c48a"
+  },
+  "farmer-hoe-down-2": {
+    "texture": "eb84cf6e-719f-472b-9d19-15972ff5c51c",
+    "prefab": "",
+    "spriteFrame": "eb84cf6e-719f-472b-9d19-15972ff5c51c@6c48a"
+  },
+  "farmer-pick-right-3": {
+    "texture": "49b138cb-23d7-49a5-89e8-ff500321c8ed",
+    "prefab": "",
+    "spriteFrame": "49b138cb-23d7-49a5-89e8-ff500321c8ed@6c48a"
+  },
+  "farmer-pick-right-2": {
+    "texture": "90acd698-dfd5-4bb8-aa93-20886a962371",
+    "prefab": "",
+    "spriteFrame": "90acd698-dfd5-4bb8-aa93-20886a962371@6c48a"
+  },
+  "farmer-chop-left-3": {
+    "texture": "cf7a89cd-f9f1-4097-a345-085cee05ec29",
+    "prefab": "",
+    "spriteFrame": "cf7a89cd-f9f1-4097-a345-085cee05ec29@6c48a"
+  },
+  "farmer-chop-left-2": {
+    "texture": "18d1fbac-b0e2-4939-82c9-400bf23d808d",
+    "prefab": "",
+    "spriteFrame": "18d1fbac-b0e2-4939-82c9-400bf23d808d@6c48a"
+  },
+  "farmer-right-3": {
+    "texture": "8776d355-c4c8-44a3-87b3-44127802dded",
+    "prefab": "",
+    "spriteFrame": "8776d355-c4c8-44a3-87b3-44127802dded@6c48a"
+  },
+  "farmer-right-2": {
+    "texture": "c9cb5f38-8f42-4333-a54f-7999e888612a",
+    "prefab": "",
+    "spriteFrame": "c9cb5f38-8f42-4333-a54f-7999e888612a@6c48a"
+  },
+  "farmer-pick-left-2": {
+    "texture": "7a9ce7a1-14c4-485b-b972-9bfa43e52e8c",
+    "prefab": "",
+    "spriteFrame": "7a9ce7a1-14c4-485b-b972-9bfa43e52e8c@6c48a"
+  },
+  "farmer-pick-left-3": {
+    "texture": "c8dbf1b7-2392-4567-9985-9d542a973dec",
+    "prefab": "",
+    "spriteFrame": "c8dbf1b7-2392-4567-9985-9d542a973dec@6c48a"
+  },
+  "farmer-hoe-up-1": {
+    "texture": "976b7c32-c29c-40ce-9345-c3ce1cd3f428",
+    "prefab": "",
+    "spriteFrame": "976b7c32-c29c-40ce-9345-c3ce1cd3f428@6c48a"
+  },
+  "farmer-hoe-up-0": {
+    "texture": "10882ef2-b87a-49a7-b53f-1926aa5978a0",
+    "prefab": "",
+    "spriteFrame": "10882ef2-b87a-49a7-b53f-1926aa5978a0@6c48a"
+  },
+  "farmer-pick-down-0": {
+    "texture": "8cebd807-831e-425e-9a63-3c976e4a29b1",
+    "prefab": "",
+    "spriteFrame": "8cebd807-831e-425e-9a63-3c976e4a29b1@6c48a"
+  },
+  "farmer-pick-down-1": {
+    "texture": "0018954a-05d2-4a92-ab1e-e03855a82e61",
+    "prefab": "",
+    "spriteFrame": "0018954a-05d2-4a92-ab1e-e03855a82e61@6c48a"
+  },
+  "farmer-chop-down-1": {
+    "texture": "207b5df3-1bac-4630-896d-e67b3d4f6b75",
+    "prefab": "",
+    "spriteFrame": "207b5df3-1bac-4630-896d-e67b3d4f6b75@6c48a"
+  },
+  "farmer-chop-down-0": {
+    "texture": "8cbe5d6b-a128-4c29-8f53-2d2c8f2f0c53",
+    "prefab": "",
+    "spriteFrame": "8cbe5d6b-a128-4c29-8f53-2d2c8f2f0c53@6c48a"
+  },
+  "farmer-pick-up-1": {
+    "texture": "ffe23a7e-d803-4d73-aeac-95e2f213071b",
+    "prefab": "",
+    "spriteFrame": "ffe23a7e-d803-4d73-aeac-95e2f213071b@6c48a"
+  },
+  "farmer-pick-up-0": {
+    "texture": "7344dfa2-1eb8-4dcd-ba49-033bb90a58b6",
+    "prefab": "",
+    "spriteFrame": "7344dfa2-1eb8-4dcd-ba49-033bb90a58b6@6c48a"
+  },
+  "farmer-chop-up-3": {
+    "texture": "93d33558-0aae-4f5d-b57d-dcd68c5ef19c",
+    "prefab": "",
+    "spriteFrame": "93d33558-0aae-4f5d-b57d-dcd68c5ef19c@6c48a"
+  },
+  "farmer-chop-up-2": {
+    "texture": "07fb4555-2e94-478f-ad21-ce094038491e",
+    "prefab": "",
+    "spriteFrame": "07fb4555-2e94-478f-ad21-ce094038491e@6c48a"
+  },
+  "farmer-hoe-right-2": {
+    "texture": "afa3a2aa-f674-46c1-8456-a9323873ba0c",
+    "prefab": "",
+    "spriteFrame": "afa3a2aa-f674-46c1-8456-a9323873ba0c@6c48a"
+  },
+  "farmer-hoe-right-3": {
+    "texture": "45cfcfe8-51d5-4ee5-8c81-c70473a53eb6",
+    "prefab": "",
+    "spriteFrame": "45cfcfe8-51d5-4ee5-8c81-c70473a53eb6@6c48a"
+  },
+  "farmer-up-1": {
+    "texture": "4ba99f28-1166-49a0-b66e-285d5b0a4dee",
+    "prefab": "",
+    "spriteFrame": "4ba99f28-1166-49a0-b66e-285d5b0a4dee@6c48a"
+  },
+  "farmer-up-0": {
+    "texture": "513db562-c4e2-4fc3-ac81-4d7a6defe3b3",
+    "prefab": "",
+    "spriteFrame": "513db562-c4e2-4fc3-ac81-4d7a6defe3b3@6c48a"
+  },
+  "passerby-up-2": {
+    "texture": "cdfbc9a0-c8ff-4a9e-aba9-dc0649de03f7",
+    "prefab": "",
+    "spriteFrame": "cdfbc9a0-c8ff-4a9e-aba9-dc0649de03f7@6c48a"
+  },
+  "passerby-up-3": {
+    "texture": "f5f91186-62f3-455d-8b41-97abc5529c2b",
+    "prefab": "",
+    "spriteFrame": "f5f91186-62f3-455d-8b41-97abc5529c2b@6c48a"
+  },
+  "passerby-right-1": {
+    "texture": "9d8f8cfe-1e2f-4206-b832-1cfd05189596",
+    "prefab": "",
+    "spriteFrame": "9d8f8cfe-1e2f-4206-b832-1cfd05189596@6c48a"
+  },
+  "passerby-right-0": {
+    "texture": "caa96ca4-e0c0-4887-8f24-0896a8c6c8a4",
+    "prefab": "",
+    "spriteFrame": "caa96ca4-e0c0-4887-8f24-0896a8c6c8a4@6c48a"
+  },
+  "passerby-down-0": {
+    "texture": "1eedccda-1fc5-489f-b2a4-361c5ce3e597",
+    "prefab": "",
+    "spriteFrame": "1eedccda-1fc5-489f-b2a4-361c5ce3e597@6c48a"
+  },
+  "passerby-down-1": {
+    "texture": "0ddc5e51-35d5-4b8e-9b9c-02f1186cd758",
+    "prefab": "",
+    "spriteFrame": "0ddc5e51-35d5-4b8e-9b9c-02f1186cd758@6c48a"
+  },
+  "passerby-left-2": {
+    "texture": "37811daf-fc44-49c1-986a-f1947b37e06e",
+    "prefab": "",
+    "spriteFrame": "37811daf-fc44-49c1-986a-f1947b37e06e@6c48a"
+  },
+  "passerby-left-3": {
+    "texture": "b034b8b7-4646-4e9d-889c-d6f2d6dcfd0e",
+    "prefab": "",
+    "spriteFrame": "b034b8b7-4646-4e9d-889c-d6f2d6dcfd0e@6c48a"
+  },
+  "passerby-up-1": {
+    "texture": "1e03a536-f01e-4a3e-b701-b8f8648162c4",
+    "prefab": "",
+    "spriteFrame": "1e03a536-f01e-4a3e-b701-b8f8648162c4@6c48a"
+  },
+  "passerby-up-0": {
+    "texture": "6001b12a-916a-466b-823e-328b4b365ac9",
+    "prefab": "",
+    "spriteFrame": "6001b12a-916a-466b-823e-328b4b365ac9@6c48a"
+  },
+  "passerby-left-1": {
+    "texture": "ed470db6-ff41-4a6a-b12f-68ab924115a6",
+    "prefab": "",
+    "spriteFrame": "ed470db6-ff41-4a6a-b12f-68ab924115a6@6c48a"
+  },
+  "passerby-left-0": {
+    "texture": "37c56887-d1d4-4e2a-a5bd-2bb88b82f893",
+    "prefab": "",
+    "spriteFrame": "37c56887-d1d4-4e2a-a5bd-2bb88b82f893@6c48a"
+  },
+  "passerby-down-3": {
+    "texture": "8c3b112e-ec8e-43ec-8d12-c1c874663550",
+    "prefab": "",
+    "spriteFrame": "8c3b112e-ec8e-43ec-8d12-c1c874663550@6c48a"
+  },
+  "passerby-down-2": {
+    "texture": "49481b6b-9a76-40e4-8cd5-5c976200cb05",
+    "prefab": "",
+    "spriteFrame": "49481b6b-9a76-40e4-8cd5-5c976200cb05@6c48a"
+  },
+  "passerby-right-2": {
+    "texture": "ceec8f40-0d07-48ef-a9b3-e9bd6733799e",
+    "prefab": "",
+    "spriteFrame": "ceec8f40-0d07-48ef-a9b3-e9bd6733799e@6c48a"
+  },
+  "passerby-right-3": {
+    "texture": "27ba5b42-96fb-4c7d-ba45-610765501d1a",
+    "prefab": "",
+    "spriteFrame": "27ba5b42-96fb-4c7d-ba45-610765501d1a@6c48a"
+  },
+  "mayor-right-0": {
+    "texture": "fef2b9f5-49bb-4ec2-ba0b-3fcde0ac99b2",
+    "prefab": "",
+    "spriteFrame": "fef2b9f5-49bb-4ec2-ba0b-3fcde0ac99b2@6c48a"
+  },
+  "mayor-right-1": {
+    "texture": "ae59c362-3687-4190-a8cc-9587e18f25a6",
+    "prefab": "",
+    "spriteFrame": "ae59c362-3687-4190-a8cc-9587e18f25a6@6c48a"
+  },
+  "mayor-down-1": {
+    "texture": "87c546bd-177f-443d-a69a-949597330ba9",
+    "prefab": "",
+    "spriteFrame": "87c546bd-177f-443d-a69a-949597330ba9@6c48a"
+  },
+  "mayor-down-0": {
+    "texture": "bdaac376-46e8-46d7-8166-c52dbd807499",
+    "prefab": "",
+    "spriteFrame": "bdaac376-46e8-46d7-8166-c52dbd807499@6c48a"
+  },
+  "mayor-up-1": {
+    "texture": "71db9fb6-b19b-4677-8b01-4d3699823f82",
+    "prefab": "",
+    "spriteFrame": "71db9fb6-b19b-4677-8b01-4d3699823f82@6c48a"
+  },
+  "mayor-up-0": {
+    "texture": "ba6b6d14-d31a-45e5-9efa-fb1b4ec8f95d",
+    "prefab": "",
+    "spriteFrame": "ba6b6d14-d31a-45e5-9efa-fb1b4ec8f95d@6c48a"
+  },
+  "mayor-left-3": {
+    "texture": "acf8faab-5a44-4579-9592-0d5a2344b000",
+    "prefab": "",
+    "spriteFrame": "acf8faab-5a44-4579-9592-0d5a2344b000@6c48a"
+  },
+  "mayor-left-2": {
+    "texture": "f28ae226-eee6-47c7-858e-3fb55640116e",
+    "prefab": "",
+    "spriteFrame": "f28ae226-eee6-47c7-858e-3fb55640116e@6c48a"
+  },
+  "mayor-up-2": {
+    "texture": "92da9623-5527-482f-b4b6-327571688007",
+    "prefab": "",
+    "spriteFrame": "92da9623-5527-482f-b4b6-327571688007@6c48a"
+  },
+  "mayor-up-3": {
+    "texture": "9762792d-ae1a-445f-b202-4c3cfae52b3c",
+    "prefab": "",
+    "spriteFrame": "9762792d-ae1a-445f-b202-4c3cfae52b3c@6c48a"
+  },
+  "mayor-left-0": {
+    "texture": "11ceb006-bb2a-4f05-a26d-c87777d2e6e1",
+    "prefab": "",
+    "spriteFrame": "11ceb006-bb2a-4f05-a26d-c87777d2e6e1@6c48a"
+  },
+  "mayor-left-1": {
+    "texture": "a2dd5908-3603-4f76-90fe-333ca979d738",
+    "prefab": "",
+    "spriteFrame": "a2dd5908-3603-4f76-90fe-333ca979d738@6c48a"
+  },
+  "mayor-right-3": {
+    "texture": "324ce0b6-bc31-426b-a26b-1680b54a5d03",
+    "prefab": "",
+    "spriteFrame": "324ce0b6-bc31-426b-a26b-1680b54a5d03@6c48a"
+  },
+  "mayor-right-2": {
+    "texture": "858c392d-daf0-485c-aa89-ebfe3eb7e5bc",
+    "prefab": "",
+    "spriteFrame": "858c392d-daf0-485c-aa89-ebfe3eb7e5bc@6c48a"
+  },
+  "mayor-down-2": {
+    "texture": "1f6149cc-7571-4fe5-a1cf-ffa4c469639a",
+    "prefab": "",
+    "spriteFrame": "1f6149cc-7571-4fe5-a1cf-ffa4c469639a@6c48a"
+  },
+  "mayor-down-3": {
+    "texture": "80c8e547-ff5d-41ad-bf41-d325e0882669",
+    "prefab": "",
+    "spriteFrame": "80c8e547-ff5d-41ad-bf41-d325e0882669@6c48a"
+  },
+  "girl-up-1": {
+    "texture": "24dcfbae-d21e-40ee-a60c-091ea93c7cb7",
+    "prefab": "",
+    "spriteFrame": "24dcfbae-d21e-40ee-a60c-091ea93c7cb7@6c48a"
+  },
+  "girl-up-0": {
+    "texture": "31194ce7-247a-4f7e-89f7-09fa09352be1",
+    "prefab": "",
+    "spriteFrame": "31194ce7-247a-4f7e-89f7-09fa09352be1@6c48a"
+  },
+  "girl-right-1": {
+    "texture": "5f148a80-6be2-486a-a8c5-4233db0f6f4a",
+    "prefab": "",
+    "spriteFrame": "5f148a80-6be2-486a-a8c5-4233db0f6f4a@6c48a"
+  },
+  "girl-right-0": {
+    "texture": "6e57592d-6130-4d60-aaea-96eef6e8e537",
+    "prefab": "",
+    "spriteFrame": "6e57592d-6130-4d60-aaea-96eef6e8e537@6c48a"
+  },
+  "girl-left-3": {
+    "texture": "7ac17fb3-2b55-43ab-a127-8b5add073ba8",
+    "prefab": "",
+    "spriteFrame": "7ac17fb3-2b55-43ab-a127-8b5add073ba8@6c48a"
+  },
+  "girl-left-2": {
+    "texture": "eb1ab41f-a8c2-460c-883c-2f5001d06ae4",
+    "prefab": "",
+    "spriteFrame": "eb1ab41f-a8c2-460c-883c-2f5001d06ae4@6c48a"
+  },
+  "girl-down-1": {
+    "texture": "9e64955b-933e-46db-a25f-92076cca8243",
+    "prefab": "",
+    "spriteFrame": "9e64955b-933e-46db-a25f-92076cca8243@6c48a"
+  },
+  "girl-down-0": {
+    "texture": "9a45e1bb-3b32-44a3-a2db-313979f8da57",
+    "prefab": "",
+    "spriteFrame": "9a45e1bb-3b32-44a3-a2db-313979f8da57@6c48a"
+  },
+  "girl-up-2": {
+    "texture": "688c7a24-342c-4cad-909a-819d5f85d430",
+    "prefab": "",
+    "spriteFrame": "688c7a24-342c-4cad-909a-819d5f85d430@6c48a"
+  },
+  "girl-up-3": {
+    "texture": "b0948bd9-fdb1-412c-98f8-0d74190c31ad",
+    "prefab": "",
+    "spriteFrame": "b0948bd9-fdb1-412c-98f8-0d74190c31ad@6c48a"
+  },
+  "girl-down-2": {
+    "texture": "d33d1bce-9ae9-4765-b140-20cf4330a0ac",
+    "prefab": "",
+    "spriteFrame": "d33d1bce-9ae9-4765-b140-20cf4330a0ac@6c48a"
+  },
+  "girl-down-3": {
+    "texture": "71271a51-60ea-40b3-b0d9-d5d806eb62a6",
+    "prefab": "",
+    "spriteFrame": "71271a51-60ea-40b3-b0d9-d5d806eb62a6@6c48a"
+  },
+  "girl-right-2": {
+    "texture": "5b23960e-0958-48c5-91c8-97f8399af77e",
+    "prefab": "",
+    "spriteFrame": "5b23960e-0958-48c5-91c8-97f8399af77e@6c48a"
+  },
+  "girl-right-3": {
+    "texture": "76ef4c29-f49b-4fdd-8b6f-6a1072b9882b",
+    "prefab": "",
+    "spriteFrame": "76ef4c29-f49b-4fdd-8b6f-6a1072b9882b@6c48a"
+  },
+  "girl-left-0": {
+    "texture": "a1065e00-c865-4803-87a1-56e357342244",
+    "prefab": "",
+    "spriteFrame": "a1065e00-c865-4803-87a1-56e357342244@6c48a"
+  },
+  "girl-left-1": {
+    "texture": "f6f79a37-0d73-42da-bf88-9e7a34106d69",
+    "prefab": "",
+    "spriteFrame": "f6f79a37-0d73-42da-bf88-9e7a34106d69@6c48a"
   }
 }

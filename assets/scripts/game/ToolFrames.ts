@@ -6,6 +6,7 @@ export const TOOL_FRAMES = {
     "can": "9868439a-ba91-4030-8483-45abb0a6b9e1@f9941",
     "axe": "ff16e656-2a76-4471-8a1a-38ad49f457b5@f9941",
     "rod": "0625f4d3-2b16-47a6-814c-4f89e986726c@f9941",
+    "boost": "9d7b2992-0774-4044-8be2-4eca6808b082@f9941",
     "slot": "0287b05b-8840-4983-ace0-3bbfbc28f9a8@f9941",
     "backpack": "f9f0c3c3-9e72-4940-8b4a-a82e8b584e09@f9941",
     "bagTab": "62d3b246-145a-4aa5-b081-47e7d4b96b4a@f9941",

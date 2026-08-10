@@ -575,7 +575,6 @@ DRAWERS = {
     "prop-fountain": draw_fountain,
     "prop-bridge": draw_bridge,
     "prop-sign": draw_sign,
-    "spc-meteor": draw_meteor,
 }
 
 # Ground tiles: center anchor; world props: bottom center

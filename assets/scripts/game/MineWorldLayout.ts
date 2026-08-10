@@ -71,7 +71,7 @@ export class MineWorldLayout {
             },
             crystal: {
                 title: '微光晶脉',
-                body: '与农场陨石同色的晶簇嵌在岩壁上，轻轻嗡鸣。',
+                body: '微光晶簇嵌在岩壁上，轻轻嗡鸣。',
                 storyFlag: 'inspect_mine_crystal',
             },
             cart: {
