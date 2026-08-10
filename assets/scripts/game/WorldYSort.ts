@@ -152,15 +152,21 @@ export class WorldYSort extends Component {
     private isGround(name: string): boolean {
         // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
         if (name === 'lake_bridge_rail_s') return false;
+        // Tall mine seal faces are props — must Y-sort with timber/ore/player.
+        if (name.startsWith('cliff_seal')) return false;
         return (
             name === '__farm_baked' ||
             name === '__town_baked' ||
             name === '__town_spawn' ||
+            name === '__mine_baked' ||
+            name === '__mine_spawn' ||
             name.startsWith('tile-') ||
             name.startsWith('fringe_') ||
             name.startsWith('water_') ||
             name.startsWith('cliff_') ||
             name.startsWith('pond_') ||
+            // Floor tracks — always under timber/mouth/player (not Y-merged as props)
+            name.startsWith('prop_rails') ||
             name === 'lake_bridge'
         );
     }

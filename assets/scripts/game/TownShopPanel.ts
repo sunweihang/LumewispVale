@@ -8,6 +8,7 @@ import {
     UITransform,
 } from 'cc';
 import { FarmSystem } from './FarmSystem';
+import { QuestSystem } from './QuestSystem';
 import {
     TownBoardQuest,
     TownGoods,
@@ -30,6 +31,7 @@ const ROW_H = 96;
 @ccclass('TownShopPanel')
 export class TownShopPanel extends Component {
     farm: FarmSystem | null = null;
+    quests: QuestSystem | null = null;
 
     private _root: Node | null = null;
     private _dimmer: Node | null = null;
@@ -151,6 +153,7 @@ export class TownShopPanel extends Component {
         }
         this.grant(g);
         farm.notifyInventoryChanged();
+        this.quests?.noteFlag('shop_buy');
         this.setHint(`已购买 ${g.title} ×${g.count}`);
         this.refreshGold();
     }
@@ -199,6 +202,7 @@ export class TownShopPanel extends Component {
         if (!q || !farm) return;
         // Instant resolve for v1 board jobs — later: walk-to objectives.
         farm.addGold(q.rewardGold);
+        this.quests?.noteFlag('accept_board');
         this.setHint(`完成「${q.title}」+${q.rewardGold}G`);
         this.refreshGold();
         this._quest = null;
@@ -363,7 +367,7 @@ export class TownShopPanel extends Component {
         const closeN = new Node('Close');
         closeN.layer = root.layer;
         closeN.setParent(root);
-        closeN.setPosition(PANEL_W * 0.5 - 40, PANEL_H * 0.5 - 40, 0);
+        closeN.setPosition(PANEL_W * 0.5 - 28, PANEL_H * 0.5 - 28, 0);
         closeN.addComponent(UITransform).setContentSize(56, 56);
         const cg = closeN.addComponent(Graphics);
         cg.fillColor = new Color(140, 60, 50, 255);

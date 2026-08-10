@@ -21,7 +21,7 @@ SF_SUFFIX = "f9941"
 
 # Logical display sizes (1x pixel art upscaled nearest).
 SIZES = {
-    "ui-quest-panel": (400, 540),
+    "ui-quest-panel": (700, 1180),
     "ui-quest-tracker": (320, 60),
     "ui-quest-row-active": (320, 56),
     "ui-quest-row": (320, 48),
@@ -229,11 +229,12 @@ def write_meta(png_path, image_uuid, w, h, name):
                     "height": h,
                     "rawWidth": w,
                     "rawHeight": h,
-                    "borderTop": 0,
-                    "borderBottom": 0,
-                    "borderLeft": 0,
-                    "borderRight": 0,
-                    "packable": True,
+                    # Panel uses 9-slice so wood rails stay crisp when stretched.
+                    "borderTop": 117 if name == "ui-quest-panel" else 0,
+                    "borderBottom": 83 if name == "ui-quest-panel" else 0,
+                    "borderLeft": 65 if name == "ui-quest-panel" else 0,
+                    "borderRight": 79 if name == "ui-quest-panel" else 0,
+                    "packable": False if name == "ui-quest-panel" else True,
                     "pixelsToUnit": 100,
                     "pivotX": 0.5,
                     "pivotY": 0.5,

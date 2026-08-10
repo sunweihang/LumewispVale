@@ -574,6 +574,8 @@ class TownBake:
             (-12 * TILE, 40, "sign_farm"),
             (0, -6 * TILE, "sign_beach"),
             (0, 7 * TILE, "sign_civic"),
+            # North of oreshop — shallow mine road
+            (8 * TILE, 1 * TILE + 36, "sign_mine"),
         ]
         for x, y, name in signs:
             self._bld("sign", x, y, name)

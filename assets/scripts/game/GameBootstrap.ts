@@ -38,12 +38,25 @@ import {
     portraitVisibleSize,
 } from './PortraitFit';
 import { ensureNightWash } from './NightWash';
+import { GameState } from './GameState';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
+import { warmupCriticalAssets } from './AssetWarmup';
+import { DialoguePanel } from './DialoguePanel';
+import { InputBridge } from './InputBridge';
+import { LoadingScreen } from './LoadingScreen';
+import { RewardPopup } from './RewardPopup';
+import { StoryDialogue } from './StoryDialogue';
+import { StoryWorldHooks } from './StoryWorldHooks';
+import { TutorialGuide } from './TutorialGuide';
+import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
 import { TownWorldLayout } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
+import { loadUiFont } from './UiFont';
 import { WorldYSort } from './WorldYSort';
+import { canTravel, travelTo } from './MapTravel';
+import type { Tables } from '../cfg/schema';
 
 const { ccclass } = _decorator;
 
@@ -57,6 +70,7 @@ export class GameBootstrap extends Component {
     private _applyingFrame = false;
 
     onLoad() {
+        loadUiFont();
         applyDesignResolution();
         this._ensureCanvas();
         this._ensureLetterboxCam();
@@ -100,10 +114,26 @@ export class GameBootstrap extends Component {
             'QuestPanel',
             'ScreenFill',
             'NightOverlay',
+            'DialogueDimmer',
+            'DialogueBox',
+            'TownShopDimmer',
+            'TownShopPanel',
+            'RewardDimmer',
+            'RewardPopup',
+            'LoadingScreen',
         ]) {
             const n = canvas.getChildByName(name);
             if (n) this._destroyNodeNow(n);
         }
+        const oldLoading = canvas.getComponent(LoadingScreen);
+        if (oldLoading) canvas.removeComponent(oldLoading);
+
+        // Full-screen gate — after cleanup, before world UI mounts.
+        const loading = LoadingScreen.mount(canvas);
+        loading.setProgress(0.02, '正在唤醒溪谷…');
+        InputBridge.uiBlocking = true;
+        InputBridge.moveLocked = true;
+        InputBridge.clear();
         const oldPlayer = world.getChildByName('Player');
         if (oldPlayer) this._destroyNodeNow(oldPlayer);
         const oldMarker = world.getChildByName('QuestMarker');
@@ -119,8 +149,9 @@ export class GameBootstrap extends Component {
 
         this.fixPropAnchors(world);
         const isTown = TownWorldLayout.isBaked(world);
+        const isMine = MineWorldLayout.isBaked(world);
         const isFarmBaked = FarmWorldLayout.isBaked(world);
-        const authored = isTown || isFarmBaked;
+        const authored = isTown || isMine || isFarmBaked;
         // Match reference: map fills 1080 width; ground covers the portrait frame.
         // Authored scenes already have full terrain — don't expand/repaint tiles.
         const frame = this.fitWorldToDesign(canvas, world, authored);
@@ -129,7 +160,7 @@ export class GameBootstrap extends Component {
             world.addComponent(WorldYSort);
         }
 
-        const player = this.spawnPlayer(world, isTown);
+        const player = this.spawnPlayer(world, isTown ? 'town' : isMine ? 'mine' : 'farm');
         const stick = this.spawnTouchControls(canvas);
 
         let follow = canvas.getComponent(CameraFollow);
@@ -161,52 +192,243 @@ export class GameBootstrap extends Component {
         if (oldGm) canvas.removeComponent(oldGm);
         let gm = canvas.addComponent(GmPanel);
 
-        if (isTown) {
-            // Town: shops / boards + light FarmSystem for gold & inventory grants.
-            let farm = canvas.getComponent(FarmSystem);
-            if (!farm) farm = canvas.addComponent(FarmSystem);
-            farm.player = player;
-            farm.world = world;
+        StoryWorldHooks.applyPendingSpawn(player, isTown ? 'town' : isMine ? 'mine' : 'farm');
+
+        let farm = canvas.getComponent(FarmSystem);
+        if (!farm) farm = canvas.addComponent(FarmSystem);
+        farm.player = player;
+        farm.world = world;
+        GameState.applyInventory(farm);
+
+        const oldQuestSys = canvas.getComponent(QuestSystem);
+        if (oldQuestSys) canvas.removeComponent(oldQuestSys);
+        const oldQuestUi = canvas.getComponent(QuestPanel);
+        if (oldQuestUi) canvas.removeComponent(oldQuestUi);
+        const oldStory = canvas.getComponent(StoryWorldHooks);
+        if (oldStory) canvas.removeComponent(oldStory);
+        const oldDialogue = canvas.getComponent(DialoguePanel);
+        if (oldDialogue) canvas.removeComponent(oldDialogue);
+        const oldStoryDlg = canvas.getComponent(StoryDialogue);
+        if (oldStoryDlg) canvas.removeComponent(oldStoryDlg);
+        const oldGuide = canvas.getComponent(TutorialGuide);
+        if (oldGuide) canvas.removeComponent(oldGuide);
+        const oldReward = canvas.getComponent(RewardPopup);
+        if (oldReward) canvas.removeComponent(oldReward);
+
+        const quests = canvas.addComponent(QuestSystem);
+        const questPanel = canvas.addComponent(QuestPanel);
+        const story = canvas.addComponent(StoryWorldHooks);
+        const dialogue = canvas.addComponent(DialoguePanel);
+        const storyDlg = canvas.addComponent(StoryDialogue);
+        const guide = canvas.addComponent(TutorialGuide);
+        const rewardPopup = canvas.addComponent(RewardPopup);
+        quests.farm = farm;
+        guide.farm = farm;
+        guide.quests = quests;
+        guide.bindFarmHint();
+        questPanel.bind(quests);
+        questPanel.ensureMounted();
+        rewardPopup.bind(quests);
+        storyDlg.bind({
+            dialogue,
+            quests,
+            map: isTown ? 'town' : isMine ? 'mine' : 'farm',
+            guide: isTown || isMine ? null : guide,
+        });
+
+        const oldInfoComp = canvas.getComponent(FarmInfoBoard);
+        if (oldInfoComp) canvas.removeComponent(oldInfoComp);
+        let infoBoard: FarmInfoBoard | null = null;
+
+        if (isMine) {
+            let hud = canvas.getComponent(FarmHUD);
+            if (!hud) hud = canvas.addComponent(FarmHUD);
+            hud.farm = farm;
+            quests.hud = hud;
+            hud.bindQuests(quests);
+            farm.onQuestStat((kind, param, n) => {
+                const count = n ?? 1;
+                if (kind === 'gather' && param) quests.noteGather(param, count);
+            });
+
+            story.bind({
+                world,
+                player,
+                quests,
+                farm,
+                infoBoard: null,
+                storyDialogue: storyDlg,
+                isTown: false,
+            });
 
             const oldShop = canvas.getComponent(TownShopPanel);
             if (oldShop) canvas.removeComponent(oldShop);
             const shopPanel = canvas.addComponent(TownShopPanel);
             shopPanel.farm = farm;
+            shopPanel.quests = quests;
 
             stick.onTap = (x, y) => {
+                guide.noteActivity();
+                if (dialogue.handleTap(x, y)) return;
+                if (rewardPopup.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
+                if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
+                if (infoBoard?.handleTap(x, y)) return;
+                const worldPt = this.screenToWorld(follow, world, x, y);
+                if (worldPt) {
+                    const hit = MineWorldLayout.findInteract(world, worldPt.x, worldPt.y);
+                    if (hit?.kind === 'travel') {
+                        if (!canTravel('town')) {
+                            infoBoard?.showToast('路牌暂时不通…');
+                            return;
+                        }
+                        infoBoard?.showToast('返回微光溪谷镇…');
+                        travelTo('town', {
+                            farm,
+                            quests,
+                            spawnX: MineWorldLayout.TOWN_RETURN.x,
+                            spawnY: MineWorldLayout.TOWN_RETURN.y,
+                        });
+                        return;
+                    }
+                    if (hit?.kind === 'info') {
+                        if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
+                        shopPanel.openInfo(hit.title, hit.body);
+                        return;
+                    }
+                }
+                hud!.handleTap(x, y);
+            };
+            stick.onDragStart = () => {
+                guide.noteActivity();
+                farm!.cancelPending();
+                player.getComponent(PlayerController)?.onManualMoveStart();
+            };
+
+            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
+                infoBoard = info;
+                gm.setInfoBoard(info);
+                quests.infoBoard = info;
+                story.infoBoard = info;
+                info.questPanel = questPanel;
+            });
+
+            void this.finishBoot({
+                canvas,
+                loading,
+                storyDlg,
+                quests,
+                questPanel,
+                player,
+                hud,
+                infoReady,
+                afterTables: () => {
+                    hud.reloadCraftRecipes();
+                    quests.noteFlag('enter_mine');
+                    GameState.unlock('mine');
+                },
+            });
+        } else if (isTown) {
+            const oldShop = canvas.getComponent(TownShopPanel);
+            if (oldShop) canvas.removeComponent(oldShop);
+            const shopPanel = canvas.addComponent(TownShopPanel);
+            shopPanel.farm = farm;
+            shopPanel.quests = quests;
+
+            story.bind({
+                world,
+                player,
+                quests,
+                farm,
+                infoBoard: null,
+                storyDialogue: storyDlg,
+                isTown: true,
+            });
+
+            stick.onTap = (x, y) => {
+                guide.noteActivity();
+                if (dialogue.handleTap(x, y)) return;
+                if (rewardPopup.handleTap(x, y)) return;
+                if (gm.handleTap(x, y)) return;
+                if (questPanel.handleTap(x, y)) return;
+                if (shopPanel.handleTap(x, y)) return;
+                if (infoBoard?.handleTap(x, y)) return;
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (!worldPt) return;
                 const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
                 if (!hit) return;
-                if (hit.kind === 'shop') shopPanel.openShop(hit.shopId);
-                else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
-                else shopPanel.openInfo(hit.title, hit.body);
+                if (hit.kind === 'travel') {
+                    if (hit.dest === 'mine') {
+                        if (!canTravel('mine')) {
+                            shopPanel.openInfo(
+                                '矿洞路牌',
+                                '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
+                            );
+                            return;
+                        }
+                        shopPanel.openInfo('前往浅层矿洞', '路牌指向北山矿洞…');
+                        travelTo('mine', {
+                            farm,
+                            quests,
+                            spawnX: MineWorldLayout.PLAYER_SPAWN.x,
+                            spawnY: MineWorldLayout.PLAYER_SPAWN.y,
+                        });
+                        return;
+                    }
+                    story.tryTownFarmSignTap();
+                    return;
+                }
+                if (hit.kind === 'shop') {
+                    shopPanel.openShop(hit.shopId);
+                    // 矿脉商会放行浅层矿洞（Ch.2 钩子）
+                    if (hit.shopId === 'ore') {
+                        quests.noteFlag('visit_oreshop');
+                        GameState.unlock('mine');
+                    }
+                } else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
+                else if (storyDlg.tryBuilding(hit.key)) {
+                    // Story dialogue owns mayor / carpenter / community beats.
+                } else {
+                    if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
+                    shopPanel.openInfo(hit.title, hit.body);
+                }
             };
             stick.onDragStart = () => {
+                guide.noteActivity();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
-        } else {
-            let farm = canvas.getComponent(FarmSystem);
-            if (!farm) farm = canvas.addComponent(FarmSystem);
-            farm.player = player;
-            farm.world = world;
 
+            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
+                infoBoard = info;
+                gm.setInfoBoard(info);
+                quests.infoBoard = info;
+                story.infoBoard = info;
+                info.questPanel = questPanel;
+            });
+
+            void this.finishBoot({
+                canvas,
+                loading,
+                storyDlg,
+                quests,
+                questPanel,
+                player,
+                infoReady,
+                afterTables: () => {
+                    // Arriving in town completes 1009 (idempotent via Flag ≥1).
+                    quests.noteFlag('enter_town');
+                    if (infoBoard) {
+                        quests.infoBoard = infoBoard;
+                        story.infoBoard = infoBoard;
+                    }
+                },
+            });
+        } else {
             let hud = canvas.getComponent(FarmHUD);
             if (!hud) hud = canvas.addComponent(FarmHUD);
             hud.farm = farm;
-
-            const oldQuestSys = canvas.getComponent(QuestSystem);
-            if (oldQuestSys) canvas.removeComponent(oldQuestSys);
-            const oldQuestUi = canvas.getComponent(QuestPanel);
-            if (oldQuestUi) canvas.removeComponent(oldQuestUi);
-            const quests = canvas.addComponent(QuestSystem);
-            const questPanel = canvas.addComponent(QuestPanel);
-            quests.farm = farm;
             quests.hud = hud;
-            questPanel.bind(quests);
-            questPanel.ensureMounted();
             hud.bindQuests(quests);
             farm.onQuestStat((kind, param, n) => {
                 const count = n ?? 1;
@@ -235,40 +457,116 @@ export class GameBootstrap extends Component {
                 }
             });
 
-            // Info board: real prefab (layout in editor), not runtime node-build.
-            const oldInfoComp = canvas.getComponent(FarmInfoBoard);
-            if (oldInfoComp) canvas.removeComponent(oldInfoComp);
-            let infoBoard: FarmInfoBoard | null = null;
+            story.bind({
+                world,
+                player,
+                quests,
+                farm,
+                infoBoard: null,
+                storyDialogue: storyDlg,
+                isTown: false,
+            });
+
             stick.onTap = (x, y) => {
+                guide.noteActivity();
+                if (dialogue.handleTap(x, y)) return;
+                if (rewardPopup.handleTap(x, y)) return;
+                if (guide.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
+                const worldPt = this.screenToWorld(follow, world, x, y);
+                if (worldPt && story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;
                 hud!.handleTap(x, y);
             };
-            this.mountInfoBoard(canvas, farm, follow, (info) => {
+            const infoReady = this.mountInfoBoard(canvas, farm, follow, (info) => {
                 infoBoard = info;
                 gm.setInfoBoard(info);
                 quests.infoBoard = info;
+                story.infoBoard = info;
                 info.questPanel = questPanel;
             });
             stick.onDragStart = () => {
+                guide.noteActivity();
                 farm!.cancelPending();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
-            loadConfigTables()
-                .then((tables) => {
-                    if (!canvas.isValid) return;
-                    applyCraftTables(tables);
-                    hud!.reloadCraftRecipes();
-                    quests.bindTables(tables);
-                })
-                .catch((err) => {
-                    console.warn('[GameBootstrap] Luban config load failed', err);
-                });
+            void this.finishBoot({
+                canvas,
+                loading,
+                storyDlg,
+                quests,
+                questPanel,
+                player,
+                hud,
+                infoReady,
+                afterTables: () => {
+                    hud.reloadCraftRecipes();
+                },
+            });
         }
 
         follow.snap();
+        // Keep loading overlay above everything mounted this frame.
+        loading.setProgress(loading.progress, undefined);
+    }
+
+    /**
+     * Warm assets under the loading gate, then bind quests and boot story.
+     * Input stays locked until the overlay closes.
+     */
+    private async finishBoot(opts: {
+        canvas: Node;
+        loading: LoadingScreen;
+        storyDlg: StoryDialogue;
+        quests: QuestSystem;
+        questPanel: QuestPanel;
+        player: Node;
+        hud?: FarmHUD | null;
+        infoReady: Promise<FarmInfoBoard | null>;
+        afterTables?: (tables: Tables) => void;
+    }) {
+        const { canvas, loading, storyDlg, quests, questPanel, player } = opts;
+        try {
+            await warmupCriticalAssets((p, tip) => {
+                if (canvas.isValid) loading.setProgress(0.05 + p * 0.7, tip);
+            });
+
+            if (!canvas.isValid) return;
+            loading.setProgress(0.78, '布置界面…');
+            await new Promise<void>((resolve) => {
+                questPanel.ensureMounted(() => resolve());
+            });
+            await opts.infoReady;
+
+            loading.setProgress(0.9, '同步旅途…');
+            const tables = await loadConfigTables();
+            if (!canvas.isValid) return;
+            applyCraftTables(tables);
+            opts.afterTables?.(tables);
+            quests.bindTables(tables);
+            await loadUiFont();
+
+            const anim = player.getComponent(PlayerAnimator);
+            if (anim) {
+                await Promise.race([
+                    anim.whenReady(),
+                    new Promise<void>((r) => setTimeout(r, 4000)),
+                ]);
+            }
+
+            loading.setProgress(1, '进入微光溪谷');
+            await new Promise<void>((r) => setTimeout(r, 180));
+        } catch (err) {
+            console.warn('[GameBootstrap] loading pipeline failed', err);
+        } finally {
+            await new Promise<void>((resolve) => loading.close(() => resolve()));
+            InputBridge.uiBlocking = false;
+            InputBridge.moveLocked = false;
+            InputBridge.clear();
+        }
+        if (canvas.isValid) storyDlg.boot();
     }
 
     private mountInfoBoard(
@@ -276,28 +574,35 @@ export class GameBootstrap extends Component {
         farm: FarmSystem,
         follow: CameraFollow,
         ready: (info: FarmInfoBoard) => void,
-    ) {
-        assetManager.loadAny({ uuid: INFO_BOARD_PREFAB_UUID }, (err, asset) => {
-            if (err || !asset) {
-                console.warn('[GameBootstrap] FarmInfoBoard prefab missing', err);
-                return;
-            }
-            if (!canvas.isValid) return;
-            // Drop null component slots before setParent — engine getComponent
-            // crashes on `comp.constructor` when a slot is null (e.g. script
-            // UUID failed to resolve during prefab deserialize).
-            this._compactComponents(canvas);
-            const node = instantiate(asset as Prefab);
-            node.name = 'FarmInfoBoard';
-            node.layer = canvas.layer;
-            this._compactComponentTree(node);
-            node.setParent(canvas);
-            node.setSiblingIndex(canvas.children.length - 1);
-            let info = node.getComponent(FarmInfoBoard);
-            if (!info) info = node.addComponent(FarmInfoBoard);
-            info.farm = farm;
-            info.cameraFollow = follow;
-            ready(info);
+    ): Promise<FarmInfoBoard | null> {
+        return new Promise((resolve) => {
+            assetManager.loadAny({ uuid: INFO_BOARD_PREFAB_UUID }, (err, asset) => {
+                if (err || !asset) {
+                    console.warn('[GameBootstrap] FarmInfoBoard prefab missing', err);
+                    resolve(null);
+                    return;
+                }
+                if (!canvas.isValid) {
+                    resolve(null);
+                    return;
+                }
+                // Drop null component slots before setParent — engine getComponent
+                // crashes on `comp.constructor` when a slot is null (e.g. script
+                // UUID failed to resolve during prefab deserialize).
+                this._compactComponents(canvas);
+                const node = instantiate(asset as Prefab);
+                node.name = 'FarmInfoBoard';
+                node.layer = canvas.layer;
+                this._compactComponentTree(node);
+                node.setParent(canvas);
+                node.setSiblingIndex(canvas.children.length - 1);
+                let info = node.getComponent(FarmInfoBoard);
+                if (!info) info = node.addComponent(FarmInfoBoard);
+                info.farm = farm;
+                info.cameraFollow = follow;
+                ready(info);
+                resolve(info);
+            });
         });
     }
 
@@ -651,6 +956,8 @@ export class GameBootstrap extends Component {
                 n === '__farm_baked' ||
                 n === '__town_baked' ||
                 n === '__town_spawn' ||
+                n === '__mine_baked' ||
+                n === '__mine_spawn' ||
                 n.startsWith('tile-') ||
                 n.startsWith('water_') ||
                 n.startsWith('cliff_') ||
@@ -711,11 +1018,16 @@ export class GameBootstrap extends Component {
         return touch;
     }
 
-    private spawnPlayer(world: Node, isTown = false): Node {
+    private spawnPlayer(world: Node, map: 'farm' | 'town' | 'mine' = 'farm'): Node {
         const player = new Node('Player');
         player.layer = world.layer;
         player.setParent(world);
-        const spawn = isTown ? TownWorldLayout.PLAYER_SPAWN : FarmWorldLayout.PLAYER_SPAWN;
+        const spawn =
+            map === 'town'
+                ? TownWorldLayout.PLAYER_SPAWN
+                : map === 'mine'
+                  ? MineWorldLayout.PLAYER_SPAWN
+                  : FarmWorldLayout.PLAYER_SPAWN;
         player.setPosition(new Vec3(spawn.x, spawn.y, 0));
 
         const ui = player.addComponent(UITransform);

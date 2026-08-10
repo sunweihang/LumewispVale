@@ -43,7 +43,7 @@ const ARRIVE_NATURE_SOFT = 18;
 const ACT_MAX_PLOT = 36;
 const ACT_MAX_NATURE = 56;
 /** Soft pull: never act from farther than this (actFocus must stay ≤ this). */
-const ACT_MAX_SOFT_PULL = 28;
+const ACT_MAX_SOFT_PULL = 40;
 /**
  * Pullable by hand: soft weeds + flowering bushes (soft understory and solid wild bushes).
  * Pebbles / rocks need the hoe; pine / oak still need the axe.
@@ -152,6 +152,11 @@ export class FarmSystem extends Component {
     /** Named seed packs bought in town (planting still spends generic `seeds`). */
     seedPacks: Record<string, number> = {};
     tool: FarmTool = 'hand';
+    /**
+     * Optional quest / tutorial override for the bottom action cue.
+     * When it returns a non-empty string, local aim preview is suppressed.
+     */
+    guideHintProvider: (() => string | null) | null = null;
 
     private _plots = new Map<string, Plot>();
     private _tilledSf: SpriteFrame | null = null;
@@ -366,8 +371,16 @@ export class FarmSystem extends Component {
         // Tree / rock / weed first — canopy often overlaps a farm tile.
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
-            if (!this.toolMatchesNature(nature.act)) {
-                this.floatTip(this.wrongToolTipFor(nature.act));
+            const ok = this.toolMatchesNature(nature.act);
+            console.log(
+                `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
+                    `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
+                    `toolOk=${ok}`,
+            );
+            if (!ok) {
+                const tip = this.wrongToolTipFor(nature.act);
+                console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
+                this.floatTip(tip);
                 return;
             }
             this.queueNatureJob(nature);
@@ -375,12 +388,21 @@ export class FarmSystem extends Component {
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
         if (fish) {
+            console.log('[FarmTap] → fish stand', fish);
             this.tryFishAt(fish);
             return;
         }
         const key = `${Math.round(worldPt.x / TILE)},${Math.round(worldPt.y / TILE)}`;
         const plot = this._plots.get(key);
-        if (plot) this.tryPlotWithTool(key, plot);
+        if (plot) {
+            console.log(`[FarmTap] → plot ${key} phase=${plot.phase}`);
+            this.tryPlotWithTool(key, plot);
+            return;
+        }
+        console.log(
+            `[FarmTap] MISS ui=(${uiX.toFixed(0)},${uiY.toFixed(0)}) ` +
+                `world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)}) tool=${this.tool}`,
+        );
     }
 
     private tryFishAt(spot: {
@@ -552,16 +574,24 @@ export class FarmSystem extends Component {
             job.nature?.isValid &&
             job.natureAct === 'pull' &&
             !job.nature.name.includes('_solid_');
-        const readyDist =
-            job.kind === 'chest' ||
-            job.kind === 'craft' ||
-            (job.kind === 'nature' &&
-                (job.natureAct === 'chop' ||
-                    job.natureAct === 'dig' ||
-                    job.nature?.name.includes('_solid_')))
-                ? ACT_MAX_NATURE
-                : actDist;
-        if (Math.sqrt(adx * adx + ady * ady) <= readyDist) {
+        // Soft weeds: act as soon as we're in pull range — don't walk around a trunk
+        // when already beside the bush (opposite side of a thin oak still counts).
+        const readyDist = softNature
+            ? ACT_MAX_SOFT_PULL
+            : job.kind === 'chest' ||
+                job.kind === 'craft' ||
+                (job.kind === 'nature' &&
+                    (job.natureAct === 'chop' ||
+                        job.natureAct === 'dig' ||
+                        job.nature?.name.includes('_solid_')))
+              ? ACT_MAX_NATURE
+              : actDist;
+        const readyNow = Math.sqrt(adx * adx + ady * ady);
+        if (readyNow <= readyDist) {
+            console.log(
+                `[FarmJob] already in range dist=${readyNow.toFixed(1)} readyDist=${readyDist} ` +
+                    `kind=${job.kind} → act now`,
+            );
             this.runActionPhase(gen);
             return;
         }
@@ -588,30 +618,53 @@ export class FarmSystem extends Component {
             if (stand) {
                 walkX = stand.x;
                 walkY = stand.y;
-                walkArrive = 18;
+                walkArrive = 16;
                 ignoreSolid = null;
             } else {
-                ignoreSolid = solidTarget;
+                // Do NOT ignore the trunk and path into it — stand beside the foot instead.
+                const side = ctrl.freeStandNear(job.targetX, job.targetY, p.x, p.y, 56);
+                walkX = side.x;
+                walkY = side.y;
+                walkArrive = 14;
+                ignoreSolid = null;
             }
             // Generous interact radius: pressed against the prop counts as arrived.
             actFocus = { x: job.targetX, y: job.targetY, dist: ACT_MAX_NATURE };
         } else if (softNature) {
-            // Weed/bush feet often sit inside a pine trunk AABB (weeds don't collide,
-            // the tree does). Walk to the nearest free cell beside the foot.
-            // No large actFocus — that used to finish the walk ~1 tile away.
+            // Stand must stay inside act range of the weed foot (log showed SW tree
+            // ring at dist 46 while ACT_MAX is 40 → ARRIVE then ACT REJECT).
             ctrl.rebuildSolids();
-            const stand = ctrl.freeStandNear(job.targetX, job.targetY, p.x, p.y, 28);
+            const standBudget = Math.max(16, ACT_MAX_SOFT_PULL - 12);
+            const stand = ctrl.freeStandNear(job.targetX, job.targetY, p.x, p.y, standBudget);
             walkX = stand.x;
             walkY = stand.y;
-            walkArrive = 10;
+            walkArrive = 14;
+            // Stop as soon as we're beside the weed — don't finish the long south leg.
+            actFocus = { x: job.targetX, y: job.targetY, dist: Math.max(ARRIVE_NATURE_SOFT, 22) };
+            const standToWeed = Math.hypot(stand.x - job.targetX, stand.y - job.targetY);
+            console.log(
+                `[FarmJob] soft stand→weed=${standToWeed.toFixed(1)} budget=${standBudget} ` +
+                    `(must be ≤ ${ACT_MAX_SOFT_PULL} after arrive)`,
+            );
         }
 
         const softActMax = softNature ? ACT_MAX_SOFT_PULL : ACT_MAX_NATURE;
+        console.log(
+            `[FarmJob] walk start from=(${p.x.toFixed(1)},${p.y.toFixed(1)}) ` +
+                `target=(${job.targetX.toFixed(1)},${job.targetY.toFixed(1)}) ` +
+                `stand=(${walkX.toFixed(1)},${walkY.toFixed(1)}) arrive=${walkArrive} ` +
+                `kind=${job.kind} soft=${softNature} distNow=${readyNow.toFixed(1)}`,
+        );
         ctrl.walkTo(
             walkX,
             walkY,
             () => {
                 if (this._jobGen !== gen || this._pending !== job) return;
+                const pp = this.player!.position;
+                console.log(
+                    `[FarmJob] walk ARRIVE at=(${pp.x.toFixed(1)},${pp.y.toFixed(1)}) ` +
+                        `targetDist=${Math.hypot(job.targetX - pp.x, job.targetY - pp.y).toFixed(1)}`,
+                );
                 this.runActionPhase(gen);
             },
             () => {
@@ -621,10 +674,17 @@ export class FarmSystem extends Component {
                     const pp = this.player.position;
                     const ddx = job.targetX - pp.x;
                     const ddy = job.targetY - pp.y;
-                    if (Math.sqrt(ddx * ddx + ddy * ddy) <= softActMax) {
+                    const d = Math.sqrt(ddx * ddx + ddy * ddy);
+                    console.log(
+                        `[FarmJob] walk ABORT at=(${pp.x.toFixed(1)},${pp.y.toFixed(1)}) ` +
+                            `targetDist=${d.toFixed(1)} softActMax=${softActMax}`,
+                    );
+                    if (d <= softActMax) {
                         this.runActionPhase(gen);
                         return;
                     }
+                } else {
+                    console.log('[FarmJob] walk ABORT (no nature retry)');
                 }
                 this._pending = null;
                 this._acting = false;
@@ -695,12 +755,22 @@ export class FarmSystem extends Component {
                   ? ACT_MAX_SOFT_PULL
                   : Math.max(ACT_MAX_NATURE, arrive * 1.75);
         if (dist > limit) {
+            console.log(
+                `[FarmJob] ACT REJECT dist=${dist.toFixed(1)} > limit=${limit} ` +
+                    `kind=${job.kind} softPull=${softPull} ` +
+                    `at=(${p.x.toFixed(1)},${p.y.toFixed(1)}) ` +
+                    `target=(${job.targetX.toFixed(1)},${job.targetY.toFixed(1)})`,
+            );
             this._pending = null;
             this._acting = false;
             this.player.getComponent(PlayerController)?.setLocked(false);
             return;
         }
 
+        console.log(
+            `[FarmJob] ACT START dist=${dist.toFixed(1)} limit=${limit} anim=${job.anim} ` +
+                `kind=${job.kind}`,
+        );
         const anim = this.player.getComponent(PlayerAnimator);
         const ctrl = this.player.getComponent(PlayerController);
         const faceX = job.kind === 'fish' ? (job.fishAimX ?? job.targetX) : job.targetX;
@@ -850,6 +920,21 @@ export class FarmSystem extends Component {
             return;
         }
         if (act === 'dig') {
+            if (target.name.includes('ore_copper')) {
+                this.grant('copper', target.name.includes('rockBig') ? 2 : 1, at);
+                this.grant('stone', 1, at);
+                return;
+            }
+            if (target.name.includes('ore_iron')) {
+                this.grant('iron', target.name.includes('rockBig') ? 2 : 1, at);
+                this.grant('stone', 1, at);
+                return;
+            }
+            if (target.name.includes('ore_crystal')) {
+                this.grant('goldOre', 1, at);
+                this.grant('stone', 1, at);
+                return;
+            }
             this.grant('stone', target.name.includes('rockBig') ? 3 : 1, at);
             return;
         }
@@ -888,26 +973,57 @@ export class FarmSystem extends Component {
         const grass = this.findDecorHit(wx, wy, GRASS_NAME_RE);
         const rock = this.findDecorHit(wx, wy, ROCK_NAME_RE);
         const tree = this.findDecorHit(wx, wy, TREE_NAME_RE);
-        if (!grass && !rock && !tree) return null;
+
+        const hitLine = (tag: string, h: { node: Node; area: number } | null) =>
+            h
+                ? `${tag}=${h.node.name}@(${h.node.position.x.toFixed(0)},${h.node.position.y.toFixed(0)}) area=${h.area | 0}`
+                : `${tag}=null`;
+        console.log(
+            `[FarmHit] tap=(${wx.toFixed(1)},${wy.toFixed(1)}) tool=${this.tool} | ` +
+                `${hitLine('grass', grass)} | ${hitLine('rock', rock)} | ${hitLine('tree', tree)}`,
+        );
+
+        if (!grass && !rock && !tree) {
+            console.log('[FarmHit] raw: none');
+            return null;
+        }
 
         // Tree vs understory: neighbor bushes often sit inside a pine/oak AABB.
         // Mid/upper canopy taps must chop; foot-zone keeps pull/dig (or axe bias).
         if (tree && (grass || rock)) {
             const rel = this.decorRelY(tree.node, wy);
+            let pick: { node: Node; act: NatureAct };
+            let reason: string;
             if (rel >= 0.3) {
-                return { node: tree.node, act: 'chop' };
+                pick = { node: tree.node, act: 'chop' };
+                reason = `tree+understory relY=${rel.toFixed(2)}>=0.3 → canopy=chop`;
+            } else if (this.tool === 'axe') {
+                pick = { node: tree.node, act: 'chop' };
+                reason = `tree+understory relY=${rel.toFixed(2)} tool=axe → chop`;
+            } else if (rock && this.tool === 'hoe') {
+                pick = { node: rock.node, act: 'dig' };
+                reason = `tree+understory relY=${rel.toFixed(2)} tool=hoe → dig`;
+            } else if (grass && this.tool === 'hand') {
+                pick = { node: grass.node, act: 'pull' };
+                reason = `tree+understory relY=${rel.toFixed(2)} tool=hand → pull grass`;
+            } else if (grass && rock) {
+                pick =
+                    grass.area <= rock.area
+                        ? { node: grass.node, act: 'pull' }
+                        : { node: rock.node, act: 'dig' };
+                reason = `tree+understory relY=${rel.toFixed(2)} smaller area → ${pick.act}`;
+            } else if (grass) {
+                pick = { node: grass.node, act: 'pull' };
+                reason = `tree+understory relY=${rel.toFixed(2)} → grass`;
+            } else if (rock) {
+                pick = { node: rock.node, act: 'dig' };
+                reason = `tree+understory relY=${rel.toFixed(2)} → rock`;
+            } else {
+                pick = { node: tree.node, act: 'chop' };
+                reason = `tree+understory relY=${rel.toFixed(2)} fallback chop`;
             }
-            if (this.tool === 'axe') return { node: tree.node, act: 'chop' };
-            if (rock && this.tool === 'hoe') return { node: rock.node, act: 'dig' };
-            if (grass && this.tool === 'hand') return { node: grass.node, act: 'pull' };
-            if (grass && rock) {
-                return grass.area <= rock.area
-                    ? { node: grass.node, act: 'pull' }
-                    : { node: rock.node, act: 'dig' };
-            }
-            if (grass) return { node: grass.node, act: 'pull' };
-            if (rock) return { node: rock.node, act: 'dig' };
-            return { node: tree.node, act: 'chop' };
+            console.log(`[FarmHit] decide: ${reason} → ${pick.act} ${pick.node.name}`);
+            return pick;
         }
 
         type Cand = { node: Node; area: number; act: NatureAct };
@@ -917,6 +1033,9 @@ export class FarmSystem extends Component {
         if (tree) cands.push({ node: tree.node, area: tree.area, act: 'chop' });
         cands.sort((a, b) => a.area - b.area);
         const best = cands[0]!;
+        console.log(
+            `[FarmHit] decide: single-layer smallest area → ${best.act} ${best.node.name} area=${best.area | 0}`,
+        );
         return { node: best.node, act: best.act };
     }
 
@@ -945,6 +1064,81 @@ export class FarmSystem extends Component {
         cands.sort((a, b) => a.dSq - b.dSq);
         const best = cands[0]!;
         return { node: best.node, act: best.act };
+    }
+
+    /** Nearest pullable weed/bush — used by the wake-yard tutorial spotlight. */
+    nearestGrass(): Node | null {
+        const list = this.listGrass();
+        if (!list.length || !this.player) return null;
+        const px = this.player.position.x;
+        const py = this.player.position.y;
+        let best: Node | null = null;
+        let bestSq = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < list.length; i++) {
+            const n = list[i]!;
+            const dx = n.position.x - px;
+            const dy = n.position.y - py;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = n;
+            }
+        }
+        return best;
+    }
+
+    /** Live pullable weeds/bushes (for quest arrows). */
+    listGrass(): Node[] {
+        if (!this.world) return [];
+        this.ensureDecorBuckets();
+        const list = this._decorBuckets?.grass ?? [];
+        return list.filter((n) => n.isValid);
+    }
+
+    /** First matching world child (exact name or prefix). */
+    findWorldNode(...names: string[]): Node | null {
+        if (!this.world) return null;
+        for (const child of this.world.children) {
+            if (!child.isValid) continue;
+            for (const n of names) {
+                if (child.name === n || child.name.startsWith(n)) return child;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * World-space center of a plot matching the idle-hint need.
+     * `soil` / `tilled` / `water` (unwatered crop) / `harvest` (mature).
+     */
+    hintPlotPos(need: 'soil' | 'tilled' | 'water' | 'harvest'): { x: number; y: number } | null {
+        if (!this.player) return null;
+        const px = this.player.position.x;
+        const py = this.player.position.y;
+        let best: { x: number; y: number } | null = null;
+        let bestSq = Number.POSITIVE_INFINITY;
+        for (const [key, plot] of this._plots) {
+            let ok = false;
+            if (need === 'soil') ok = plot.phase === 'soil';
+            else if (need === 'tilled') ok = plot.phase === 'tilled';
+            else if (need === 'water') ok = plot.phase === 'crop' && !plot.watered && plot.stage < 2;
+            else if (need === 'harvest') ok = plot.phase === 'crop' && plot.stage >= 2;
+            if (!ok) continue;
+            const parts = key.split(',');
+            const ix = Number(parts[0]);
+            const iy = Number(parts[1]);
+            if (!Number.isFinite(ix) || !Number.isFinite(iy)) continue;
+            const x = ix * TILE;
+            const y = iy * TILE;
+            const dx = x - px;
+            const dy = y - py;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = { x, y };
+            }
+        }
+        return best;
     }
 
     private ensureDecorBuckets() {
@@ -1182,6 +1376,8 @@ export class FarmSystem extends Component {
     /** Recompute bottom cue only when aim / tool / facing plot state changes. */
     private refreshActionHint() {
         if (!this._actionHint || !this.player) return;
+        // null = no guide (use preview); '' = guide active but silent (tool-swap arrow).
+        const guided = this.guideHintProvider?.() ?? null;
         const p = this.player.position;
         const plotKey = this.facingPlotKey();
         let plotSig = '';
@@ -1191,10 +1387,10 @@ export class FarmSystem extends Component {
                 plotSig = `${plot.phase},${plot.stage},${plot.watered ? 1 : 0},${plot.grow | 0}`;
             }
         }
-        const sig = `${p.x | 0},${p.y | 0},${InputBridge.facingX},${InputBridge.facingY},${this.tool},${this.seeds},${this._decorChildCount}|${plotSig}`;
+        const sig = `${p.x | 0},${p.y | 0},${InputBridge.facingX},${InputBridge.facingY},${this.tool},${this.seeds},${this._decorChildCount}|${plotSig}|${guided ?? '\u0000'}`;
         if (sig === this._hintSig) return;
         this._hintSig = sig;
-        const text = this.previewAction();
+        const text = guided !== null ? guided : this.previewAction();
         if (text === this._hintText) return;
         this._hintText = text;
         this._actionHint.string = text;
@@ -1525,8 +1721,8 @@ export class FarmSystem extends Component {
             });
             return lab;
         };
-        // Bottom action cue — thicker outline so it stays readable on grass/water.
-        this._actionHint = mk('FarmActionHint', -700, 34, new Color(255, 252, 235, 255), 5);
+        // Above quest HUD dock (~y −622 top) so "拔除灌木" isn't covered by the tracker.
+        this._actionHint = mk('FarmActionHint', -560, 34, new Color(255, 252, 235, 255), 5);
     }
 
     private refreshHud() {

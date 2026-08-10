@@ -1626,6 +1626,70 @@
         "quest",
         "ui"
       ]
+    },
+    {
+      "id": "ic-copper",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-copper.png",
+      "spriteFrame": "1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "copper",
+        "ai"
+      ]
+    },
+    {
+      "id": "ic-iron",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-iron.png",
+      "spriteFrame": "ae905224-b7ee-4d96-9609-1637f6e69307@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "iron",
+        "ai"
+      ]
+    },
+    {
+      "id": "ic-goldOre",
+      "kind": "icon",
+      "group": "material",
+      "path": "assets/textures/ui/ic-goldOre.png",
+      "spriteFrame": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "material",
+        "goldOre",
+        "ai"
+      ]
+    },
+    {
+      "id": "ic-gold",
+      "kind": "icon",
+      "group": "reward",
+      "path": "assets/textures/ui/ic-gold.png",
+      "spriteFrame": "39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "reward",
+        "gold",
+        "ai"
+      ]
     }
   ]
 }

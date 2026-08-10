@@ -653,5 +653,212 @@
   "ui-quest-btn-primary": {
     "texture": "6f6c303c-496d-4ac5-9afb-ac4842fdb889",
     "spriteFrame": "6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941"
+  },
+  "ui-quest-btn": {
+    "texture": "e639ab24-7c1a-46ba-93a4-688ca1c1ab08",
+    "spriteFrame": "e639ab24-7c1a-46ba-93a4-688ca1c1ab08@f9941"
+  },
+  "tile-cave": {
+    "texture": "fe6131f7-1eae-43e6-9264-a315530a3bae",
+    "prefab": "",
+    "spriteFrame": "fe6131f7-1eae-43e6-9264-a315530a3bae@f9941"
+  },
+  "nat-ore-copper": {
+    "texture": "3fc17302-5123-4cf2-9f5b-2e524611e92b",
+    "prefab": "",
+    "spriteFrame": "3fc17302-5123-4cf2-9f5b-2e524611e92b@f9941"
+  },
+  "nat-ore-iron": {
+    "texture": "d5a651e3-3d4c-4985-a069-0aa9f0a4c26d",
+    "prefab": "",
+    "spriteFrame": "d5a651e3-3d4c-4985-a069-0aa9f0a4c26d@f9941"
+  },
+  "nat-ore-crystal": {
+    "texture": "e90220c3-ed3e-407e-9cb1-a172a1a8fef2",
+    "prefab": "",
+    "spriteFrame": "e90220c3-ed3e-407e-9cb1-a172a1a8fef2@f9941"
+  },
+  "prop-minecart": {
+    "texture": "c638455b-95bc-405e-99df-3e803e4dbce2",
+    "spriteFrame": "c638455b-95bc-405e-99df-3e803e4dbce2@f9941",
+    "prefab": ""
+  },
+  "prop-ladder": {
+    "texture": "d589d497-7519-401f-b325-f6848272898f",
+    "spriteFrame": "d589d497-7519-401f-b325-f6848272898f@f9941",
+    "prefab": ""
+  },
+  "bld-mine-mouth": {
+    "texture": "6ee2008a-80af-47fd-bd79-2b2177490535",
+    "prefab": "",
+    "spriteFrame": "6ee2008a-80af-47fd-bd79-2b2177490535@f9941"
+  },
+  "prop-torch": {
+    "texture": "7f6ab6ec-d0d1-47a0-ad7f-7cf1bed6a66a",
+    "spriteFrame": "7f6ab6ec-d0d1-47a0-ad7f-7cf1bed6a66a@f9941",
+    "prefab": ""
+  },
+  "prop-timber": {
+    "texture": "8716c5ae-0858-4fd2-8582-3c85c774d54a",
+    "spriteFrame": "8716c5ae-0858-4fd2-8582-3c85c774d54a@f9941",
+    "prefab": ""
+  },
+  "tile-cave-b": {
+    "texture": "25c243dc-a31e-49aa-b3f6-9b8346131f74",
+    "prefab": "",
+    "spriteFrame": "25c243dc-a31e-49aa-b3f6-9b8346131f74@f9941"
+  },
+  "tile-cave-c": {
+    "texture": "44a1957c-9f97-409b-a39b-b5db3ecb129e",
+    "prefab": "",
+    "spriteFrame": "44a1957c-9f97-409b-a39b-b5db3ecb129e@f9941"
+  },
+  "tile-cave-dirt": {
+    "texture": "33adcae9-5444-419f-8218-6ac000ebfe6b",
+    "prefab": "",
+    "spriteFrame": "33adcae9-5444-419f-8218-6ac000ebfe6b@f9941"
+  },
+  "tile-cave-dirt-b": {
+    "texture": "c7387713-afb9-41fe-b256-c9e892d02cb3",
+    "prefab": "",
+    "spriteFrame": "c7387713-afb9-41fe-b256-c9e892d02cb3@f9941"
+  },
+  "tile-cave-fringe-n": {
+    "texture": "3ef496ec-86ed-4e76-88ed-2879910c1c63",
+    "prefab": "",
+    "spriteFrame": "3ef496ec-86ed-4e76-88ed-2879910c1c63@f9941"
+  },
+  "tile-cave-fringe-e": {
+    "texture": "b4b4ae0e-7362-406d-b7c7-d7d9b97df6e0",
+    "prefab": "",
+    "spriteFrame": "b4b4ae0e-7362-406d-b7c7-d7d9b97df6e0@f9941"
+  },
+  "tile-cave-fringe-s": {
+    "texture": "f82ea513-c7a2-4a29-8ef8-0a965334f58c",
+    "prefab": "",
+    "spriteFrame": "f82ea513-c7a2-4a29-8ef8-0a965334f58c@f9941"
+  },
+  "tile-cave-fringe-w": {
+    "texture": "e283d2f5-3031-42a8-a9c8-3c5579538680",
+    "prefab": "",
+    "spriteFrame": "e283d2f5-3031-42a8-a9c8-3c5579538680@f9941"
+  },
+  "tile-cave-fringe-in-ne": {
+    "texture": "5e225ebe-6485-4faa-9c19-4e9b1c72b8b4",
+    "prefab": "",
+    "spriteFrame": "5e225ebe-6485-4faa-9c19-4e9b1c72b8b4@f9941"
+  },
+  "tile-cave-fringe-in-nw": {
+    "texture": "1a099777-a469-40a0-a94c-d5b100759ac6",
+    "prefab": "",
+    "spriteFrame": "1a099777-a469-40a0-a94c-d5b100759ac6@f9941"
+  },
+  "tile-cave-fringe-in-se": {
+    "texture": "01374d7f-bd36-4d40-ab82-e98a49252074",
+    "prefab": "",
+    "spriteFrame": "01374d7f-bd36-4d40-ab82-e98a49252074@f9941"
+  },
+  "tile-cave-fringe-in-sw": {
+    "texture": "d0158789-86d9-473e-a461-6eb9decbcd40",
+    "prefab": "",
+    "spriteFrame": "d0158789-86d9-473e-a461-6eb9decbcd40@f9941"
+  },
+  "tile-cave-fringe-out-ne": {
+    "texture": "34ddfa3c-c09a-4866-8c4a-9cb3b497f51e",
+    "prefab": "",
+    "spriteFrame": "34ddfa3c-c09a-4866-8c4a-9cb3b497f51e@f9941"
+  },
+  "tile-cave-fringe-out-nw": {
+    "texture": "4947af25-36f2-4ece-907b-c89d4ce3868d",
+    "prefab": "",
+    "spriteFrame": "4947af25-36f2-4ece-907b-c89d4ce3868d@f9941"
+  },
+  "tile-cave-fringe-out-se": {
+    "texture": "0f6ecbca-2270-4d80-88d6-a171ea9ac314",
+    "prefab": "",
+    "spriteFrame": "0f6ecbca-2270-4d80-88d6-a171ea9ac314@f9941"
+  },
+  "tile-cave-fringe-out-sw": {
+    "texture": "c997f5a1-72ab-492e-8852-b9bc52c8bf1e",
+    "prefab": "",
+    "spriteFrame": "c997f5a1-72ab-492e-8852-b9bc52c8bf1e@f9941"
+  },
+  "prop-crate": {
+    "texture": "eb5ff4cb-e95f-4eb5-a2c0-c196cf0adf07",
+    "spriteFrame": "eb5ff4cb-e95f-4eb5-a2c0-c196cf0adf07@f9941",
+    "prefab": ""
+  },
+  "prop-barrel": {
+    "texture": "a0c72a0c-454a-4c84-9b6a-0482a179f979",
+    "spriteFrame": "a0c72a0c-454a-4c84-9b6a-0482a179f979@f9941",
+    "prefab": ""
+  },
+  "prop-rails": {
+    "texture": "93a7bc52-b69b-4608-9101-e1d747bd27b6",
+    "spriteFrame": "93a7bc52-b69b-4608-9101-e1d747bd27b6@f9941",
+    "prefab": ""
+  },
+  "nat-mushroom": {
+    "texture": "f52cd92f-fc50-4922-9cc4-c911bb893611",
+    "spriteFrame": "f52cd92f-fc50-4922-9cc4-c911bb893611@f9941",
+    "prefab": ""
+  },
+  "nat-rubble": {
+    "texture": "92d45e9b-c20c-4b7c-bb65-8b26de91f4e6",
+    "spriteFrame": "92d45e9b-c20c-4b7c-bb65-8b26de91f4e6@f9941",
+    "prefab": ""
+  },
+  "nat-stalagmite": {
+    "texture": "0dc6b0ed-688b-4c51-96a9-2d42992f5474",
+    "spriteFrame": "0dc6b0ed-688b-4c51-96a9-2d42992f5474@f9941",
+    "prefab": ""
+  },
+  "nat-wall-crystal": {
+    "texture": "286ba5ad-fd48-4097-bb06-202aab53df2c",
+    "spriteFrame": "286ba5ad-fd48-4097-bb06-202aab53df2c@f9941",
+    "prefab": ""
+  },
+  "nat-wall-ore": {
+    "texture": "e9a77fb0-72e7-46f6-8088-749ec948b799",
+    "spriteFrame": "e9a77fb0-72e7-46f6-8088-749ec948b799@f9941",
+    "prefab": ""
+  },
+  "tile-cave-wall": {
+    "texture": "85e2db31-8e99-4c07-92dc-0d6745f1ec25",
+    "prefab": "",
+    "spriteFrame": "85e2db31-8e99-4c07-92dc-0d6745f1ec25@f9941"
+  },
+  "tile-cave-wall-b": {
+    "texture": "4a28be69-9aa3-457e-9c20-7dcdd472ddc3",
+    "prefab": "",
+    "spriteFrame": "4a28be69-9aa3-457e-9c20-7dcdd472ddc3@f9941"
+  },
+  "tile-cave-wall-c": {
+    "texture": "609a29eb-0fc6-42b4-b610-8e8ca017b9ae",
+    "prefab": "",
+    "spriteFrame": "609a29eb-0fc6-42b4-b610-8e8ca017b9ae@f9941"
+  },
+  "nat-cave-wall": {
+    "texture": "17bc0357-e0d6-4fea-b805-d05c32ff6bca",
+    "spriteFrame": "17bc0357-e0d6-4fea-b805-d05c32ff6bca@f9941",
+    "prefab": ""
+  },
+  "nat-cave-wall-b": {
+    "texture": "7ef4f2e2-5329-4cfb-8f25-fc01c3845608",
+    "spriteFrame": "7ef4f2e2-5329-4cfb-8f25-fc01c3845608@f9941",
+    "prefab": ""
+  },
+  "ic-gold": {
+    "texture": "39971d4b-95b7-4cf7-ab7a-068c77975fbb",
+    "prefab": "",
+    "spriteFrame": "39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941"
+  },
+  "ui-quest-arrow": {
+    "texture": "74358256-5fdf-4193-a127-53998d13c454",
+    "spriteFrame": "74358256-5fdf-4193-a127-53998d13c454@f9941"
+  },
+  "quest-marker": {
+    "texture": "bf6dc369-932d-4921-bb95-ab64ac4a5362",
+    "spriteFrame": "bf6dc369-932d-4921-bb95-ab64ac4a5362@f9941"
   }
 }

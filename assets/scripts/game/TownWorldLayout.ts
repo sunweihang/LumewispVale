@@ -23,24 +23,31 @@ export class TownWorldLayout {
         wy: number,
         maxDist = 180,
     ):
-        | { kind: 'shop'; shopId: string; title: string }
-        | { kind: 'board'; board: 'police' | 'post'; title: string }
-        | { kind: 'info'; title: string; body: string }
+        | { kind: 'shop'; shopId: string; title: string; key: string }
+        | { kind: 'board'; board: 'police' | 'post'; title: string; key: string }
+        | { kind: 'info'; title: string; body: string; storyFlag?: string; key: string }
+        | { kind: 'travel'; dest: 'farm' | 'mine'; title: string; key: string }
         | null {
-        let best: { dist: number; node: Node } | null = null;
+        let best: { dist: number; node: Node; key: string } | null = null;
         for (const child of world.children) {
-            const key = this.buildingKey(child.name);
+            const key = this.buildingKey(child.name) ?? this.signKey(child.name);
             if (!key) continue;
             const foot = this.footPoint(child);
             const dx = wx - foot.x;
             const dy = wy - foot.y;
             const d = Math.sqrt(dx * dx + dy * dy);
             if (d > maxDist) continue;
-            if (!best || d < best.dist) best = { dist: d, node: child };
+            if (!best || d < best.dist) best = { dist: d, node: child, key };
         }
         if (!best) return null;
-        const key = this.buildingKey(best.node.name)!;
-        return this.actionFor(key);
+        const action = this.actionFor(best.key);
+        return action ? { ...action, key: best.key } : null;
+    }
+
+    private static signKey(name: string): string | null {
+        if (name === 'sign_farm') return 'sign_farm';
+        if (name === 'sign_mine') return 'sign_mine';
+        return null;
     }
 
     private static buildingKey(name: string): string | null {
@@ -77,8 +84,15 @@ export class TownWorldLayout {
     ):
         | { kind: 'shop'; shopId: string; title: string }
         | { kind: 'board'; board: 'police' | 'post'; title: string }
-        | { kind: 'info'; title: string; body: string }
+        | { kind: 'info'; title: string; body: string; storyFlag?: string }
+        | { kind: 'travel'; dest: 'farm' | 'mine'; title: string }
         | null {
+        if (key === 'sign_farm') {
+            return { kind: 'travel', dest: 'farm', title: '通往农场' };
+        }
+        if (key === 'sign_mine') {
+            return { kind: 'travel', dest: 'mine', title: '通往浅层矿洞' };
+        }
         if (key === 'police') {
             return { kind: 'board', board: 'police', title: '警察局' };
         }
@@ -89,10 +103,14 @@ export class TownWorldLayout {
         if (shop) {
             return { kind: 'shop', shopId: shop.id, title: shop.title };
         }
-        const info: Record<string, { title: string; body: string }> = {
+        const info: Record<
+            string,
+            { title: string; body: string; storyFlag?: string }
+        > = {
             community: {
                 title: '社区中心',
-                body: '镇民集会、节庆与公告栏。修复工程尚在筹备中。',
+                body: '钟楼积灰，厅堂空置。镇长说：等材料齐了再开工修复。',
+                storyFlag: 'visit_community',
             },
             clinic: {
                 title: '微光诊所',
@@ -104,7 +122,8 @@ export class TownWorldLayout {
             },
             mayor: {
                 title: '镇长府',
-                body: '镇长的住所与会客厅。有要事可从邮局打听日程。',
+                body: '镇长·艾岚为你斟上热茶：「农庄归你了。先熟悉镇子，社区中心还等着有心人。」',
+                storyFlag: 'visit_mayor',
             },
             library: {
                 title: '图书室',
@@ -116,7 +135,8 @@ export class TownWorldLayout {
             },
             carpenter: {
                 title: '木工坊',
-                body: '家具与农舍扩建订单。工匠今天在打磨桌腿。',
+                body: '工匠·石楠抬起头：「扩建农舍、修路的事，随时来找我。」',
+                storyFlag: 'visit_carpenter',
             },
             home: {
                 title: '居民家',
@@ -124,7 +144,14 @@ export class TownWorldLayout {
             },
         };
         const hit = info[key];
-        if (hit) return { kind: 'info', title: hit.title, body: hit.body };
+        if (hit) {
+            return {
+                kind: 'info',
+                title: hit.title,
+                body: hit.body,
+                storyFlag: hit.storyFlag,
+            };
+        }
         return null;
     }
 
@@ -138,6 +165,7 @@ export class TownWorldLayout {
         if (!hit) return '';
         if (hit.kind === 'shop') return `点击进入 ${hit.title}`;
         if (hit.kind === 'board') return `点击查看 ${hit.title}任务`;
+        if (hit.kind === 'travel') return `点击${hit.title}`;
         return `点击了解 ${hit.title}`;
     }
 }

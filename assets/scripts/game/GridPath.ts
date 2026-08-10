@@ -21,6 +21,10 @@ export function footSolidFor(
     footX: number,
     footY: number,
 ): PathSolid | null {
+    // Timber mouth is a visual arch — walk through into the cavern.
+    if (name === 'bld_mine_mouth') {
+        return null;
+    }
     if (
         name.startsWith('water_') ||
         name.startsWith('cliff_') ||
@@ -30,6 +34,13 @@ export function footSolidFor(
         // Southern river bridge gap (visual prop only).
         if (name.startsWith('water_') && Math.abs(footX) < 48 && footY < -300) {
             return null;
+        }
+        // Mine seal faces are foot-anchored tall rocks — box must cover the tile,
+        // not sit as a tiny toe collider (players were slipping between pillars).
+        if (name.startsWith('cliff_seal_')) {
+            const hw = Math.max(28, contentW * 0.42);
+            const hh = Math.max(22, Math.min(40, contentH * 0.28));
+            return { x: footX, y: footY + hh * 0.85, hw, hh };
         }
         return {
             x: footX,
@@ -103,8 +114,11 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
 
 /**
  * Nearest free cell to (gx, gy), searching rings outward.
- * When fromX/fromY are set, prefer the caller's side — foot-anchored solids
- * (tree trunks) otherwise snap to the north cell because the AABB sits above the foot.
+ * When fromX/fromY are set AND the continuous goal is blocked (tree trunk /
+ * rock center), lightly prefer the caller's side so we don't snap behind the
+ * solid. Never apply that bias when (gx,gy) itself is free — the grid cell
+ * center can sit inside a trunk while the stand beside it is walkable, and
+ * from-bias then falsely targets the player's side of the tree.
  */
 function snapFreeNear(
     gx: number,
@@ -123,7 +137,9 @@ function snapFreeNear(
     let bestCx = goalCx;
     let bestCy = goalCy;
     let bestScore = Infinity;
-    const hasFrom = fromX !== undefined && fromY !== undefined;
+    // Only bias toward the caller when the true goal is inside a solid.
+    const hasFrom =
+        fromX !== undefined && fromY !== undefined && blocked(gx, gy);
     for (let r = 1; r <= maxRing; r++) {
         for (let oy = -r; oy <= r; oy++) {
             for (let ox = -r; ox <= r; ox++) {
@@ -133,7 +149,7 @@ function snapFreeNear(
                 const wx = cx * cell;
                 const wy = cy * cell;
                 if (blocked(wx, wy)) continue;
-                // Prefer cells closest to the true goal; break tree north-bias with from-side.
+                // Prefer cells closest to the true goal; optional from-side for solid goals.
                 let score = dist2(wx, wy, gx, gy);
                 if (hasFrom) score += dist2(wx, wy, fromX!, fromY!) * 0.35;
                 if (score < bestScore) {
@@ -162,6 +178,11 @@ export function listApproachStands(
         maxX?: number;
         minY?: number;
         maxY?: number;
+        /**
+         * Trees: never stand north of the trunk (under / behind the canopy).
+         * South + east/west only — caller-side bias must not pull us behind.
+         */
+        preferFront?: boolean;
     },
 ): { x: number; y: number }[] {
     const margin = opts?.margin ?? 6;
@@ -169,22 +190,32 @@ export function listApproachStands(
     const maxX = opts?.maxX ?? 520;
     const minY = opts?.minY ?? -900;
     const maxY = opts?.maxY ?? 900;
+    const preferFront = !!opts?.preferFront;
     const gapX = bodyHw + solid.hw + margin;
     const gapY = bodyHh + solid.hh + margin;
     // Feet Y such that body center clears the solid vertically.
     const southY = solid.y - bodyHh - gapY;
     const northY = solid.y - bodyHh + gapY;
     const midY = solid.y - bodyHh;
-    const dirs: { x: number; y: number }[] = [
-        { x: solid.x, y: southY },
-        { x: solid.x - gapX, y: midY },
-        { x: solid.x + gapX, y: midY },
-        { x: solid.x, y: northY },
-        { x: solid.x - gapX, y: southY },
-        { x: solid.x + gapX, y: southY },
-        { x: solid.x - gapX, y: northY },
-        { x: solid.x + gapX, y: northY },
-    ];
+    const dirs: { x: number; y: number }[] = preferFront
+        ? [
+              // Front first — never offer north/behind-canopy stands for trees.
+              { x: solid.x, y: southY },
+              { x: solid.x - gapX, y: southY },
+              { x: solid.x + gapX, y: southY },
+              { x: solid.x - gapX, y: midY },
+              { x: solid.x + gapX, y: midY },
+          ]
+        : [
+              { x: solid.x, y: southY },
+              { x: solid.x - gapX, y: midY },
+              { x: solid.x + gapX, y: midY },
+              { x: solid.x, y: northY },
+              { x: solid.x - gapX, y: southY },
+              { x: solid.x + gapX, y: southY },
+              { x: solid.x - gapX, y: northY },
+              { x: solid.x + gapX, y: northY },
+          ];
 
     // Solid center in foot-space (same Y basis as stand points).
     const cx = solid.x;
@@ -192,28 +223,44 @@ export function listApproachStands(
     const fromDx = fromX - cx;
     const fromDy = fromY - cy;
 
-    type Ranked = { x: number; y: number; score: number; sameSide: boolean };
+    type Ranked = { x: number; y: number; score: number };
     const ranked: Ranked[] = [];
     for (let i = 0; i < dirs.length; i++) {
         const p = dirs[i]!;
         if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
         if (pointBlocked(p.x, p.y, bodyHw, bodyHh, solids)) continue;
+        // Hard reject anything north of mid for front-facing props (trees).
+        if (preferFront && p.y > midY + 2) continue;
         const sx = p.x - cx;
         const sy = p.y - cy;
-        // Same half-plane as the caller — never pick the far side first (tree back / rock pocket).
-        const sameSide = fromDx * sx + fromDy * sy >= -4;
         const d = dist2(p.x, p.y, fromX, fromY);
-        // Prefer caller-facing cardinals; bury opposite-side stands.
-        ranked.push({
-            x: p.x,
-            y: p.y,
-            sameSide,
-            score: d + (sameSide ? 0 : 1e7) + i * 2,
-        });
+        if (preferFront) {
+            // Stay in front; among front stands, prefer nearer to the caller.
+            const frontBonus = p.y <= southY + 6 ? 0 : 80;
+            ranked.push({ x: p.x, y: p.y, score: d + frontBonus + i * 2 });
+        } else {
+            // Same half-plane as the caller — avoid the far rock pocket.
+            const sameSide = fromDx * sx + fromDy * sy >= -4;
+            ranked.push({
+                x: p.x,
+                y: p.y,
+                score: d + (sameSide ? 0 : 1e7) + i * 2,
+            });
+        }
     }
     ranked.sort((a, b) => a.score - b.score);
     if (ranked.length) return ranked.map((r) => ({ x: r.x, y: r.y }));
     return [{ x: solid.x, y: southY }];
+}
+
+/** Pine / oak / legacy tree_* — stand in front of the trunk, never behind canopy. */
+export function isTreeSolidName(name: string): boolean {
+    return (
+        name.startsWith('tree_') ||
+        name.includes('_pine_') ||
+        name.includes('_oak_') ||
+        /decor_(pine|oak)_solid/.test(name)
+    );
 }
 
 /**
@@ -233,6 +280,7 @@ export function pickApproachStand(
         maxX?: number;
         minY?: number;
         maxY?: number;
+        preferFront?: boolean;
     },
 ): { x: number; y: number } {
     return listApproachStands(solid, fromX, fromY, bodyHw, bodyHh, solids, opts)[0]!;
@@ -277,11 +325,16 @@ export function findPath(
 
     const toWorld = (cx: number, cy: number) => ({ x: cx * cell, y: cy * cell });
 
-    // Heuristic target: free cell nearest the goal, biased toward the start
-    // so tree feet don't snap behind the trunk AABB.
+    // Heuristic target: free cell nearest the goal. From-side bias only applies
+    // inside snapFreeNear when the continuous goal itself is blocked.
     const snapped = snapFreeNear(gx, gy, cell, blocked, 8, sx, sy);
     const goalCx = snapped?.cx ?? Math.round(gx / cell);
     const goalCy = snapped?.cy ?? Math.round(gy / cell);
+    // hitExact may only finish when that cell is actually near the true goal —
+    // otherwise a wrong-side snap (north of a trunk) would "succeed" in place.
+    // One cell (~32) is enough for a free stand whose grid center landed in a trunk.
+    const snapNearGoal =
+        dist2(goalCx * cell, goalCy * cell, gx, gy) <= Math.max(goalR2, cell * cell);
 
     let startCx = Math.round(sx / cell);
     let startCy = Math.round(sy / cell);
@@ -317,7 +370,8 @@ export function findPath(
     if (goalRadius > 0 && (withinGoal(sx, sy) || withinGoal(startW.x, startW.y))) {
         return [{ x: sx, y: sy }];
     }
-    if (startCx === goalCx && startCy === goalCy) {
+    // Same snapped cell only counts when that cell is actually near the true goal.
+    if (startCx === goalCx && startCy === goalCy && snapNearGoal) {
         return [toWorld(goalCx, goalCy)];
     }
 
@@ -352,10 +406,12 @@ export function findPath(
         // End at the true goal when the last cell is already in range and the
         // segment is clear — keeps arrive checks aligned with the job target.
         const last = path[path.length - 1];
+        // Only append the true goal when it is free — never walk the last step into a trunk.
         if (
             last &&
             goalRadius > 0 &&
             withinGoal(last.x, last.y) &&
+            !blocked(gx, gy) &&
             lineClear(last.x, last.y, gx, gy, solids, bodyHw, bodyHh, minX, maxX, minY, maxY)
         ) {
             path.push({ x: gx, y: gy });
@@ -387,7 +443,8 @@ export function findPath(
             bestCy = cur.cy;
         }
 
-        const hitExact = cur.cx === goalCx && cur.cy === goalCy;
+        const hitExact =
+            snapNearGoal && cur.cx === goalCx && cur.cy === goalCy;
         const hitRadius = goalRadius > 0 && curGoalD <= goalR2;
         if (hitExact || hitRadius) {
             return reconstruct(cur.cx, cur.cy);

@@ -413,6 +413,11 @@ export class FarmWorldLayout {
      * Resolve a cast target (water / shore / pier) into a walk stand + aim point.
      * Returns null when the tap is not a fishing spot.
      */
+    /** Mid-pier stand for idle quest arrows. */
+    static fishingHintWorld(): { x: number; y: number } {
+        return { x: -5 * TILE, y: -2 * TILE };
+    }
+
     static findFishingStand(
         wx: number,
         wy: number,

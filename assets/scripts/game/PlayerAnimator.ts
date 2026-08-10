@@ -35,12 +35,23 @@ export class PlayerAnimator extends Component {
     private _time = 0;
     private _frame = 0;
     private _ready = false;
+    private _readyWaiters: Array<() => void> = [];
     /** Pending facing change — only commit after hold, avoids diagonal flicker. */
     private _pendingDir: AnimDir | null = null;
     private _pendingDirTime = 0;
 
     private _action: ActionAnim | null = null;
     private _actionDone: (() => void) | null = null;
+
+    get isReady() {
+        return this._ready;
+    }
+
+    /** Resolves when walk/action frames are loaded (or immediately if already ready). */
+    whenReady(): Promise<void> {
+        if (this._ready) return Promise.resolve();
+        return new Promise((resolve) => this._readyWaiters.push(resolve));
+    }
 
     onLoad() {
         this._sprite = this.getComponent(Sprite);
@@ -60,6 +71,8 @@ export class PlayerAnimator extends Component {
             if (done >= pending) {
                 this._ready = true;
                 this.applyWalkFrame(true);
+                const waiters = this._readyWaiters.splice(0);
+                for (const w of waiters) w();
             }
         };
 

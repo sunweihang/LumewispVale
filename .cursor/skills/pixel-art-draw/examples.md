@@ -26,8 +26,8 @@
 
 1. 规格：约 256×288，脚底锚点，夜窗光可用 `windowGlow`
 2. GenerateImage 单件俯视 3/4 → `tools/ui/ai-source/mill-ref.png`
-3. 抠底 + NEAREST 缩放到目标 → `assets/textures/buildings/mill.png`
-4. 补 .meta（nearest，pivotY=0）；catalog 登记；场景/prefab 引用
+3. **门户 RMBG 抠图**（见 `portal_rmbg_buildings.py` / scene-bake skill）+ NEAREST 缩放到目标 → `assets/textures/buildings/mill.png`
+4. 补 .meta（nearest，pivotY=0）；catalog 登记；场景摆放走 [scene-bake](../scene-bake/SKILL.md)
 
 ## 例：新 tile（花田）
 

@@ -7,5 +7,6 @@ export const MATERIAL_FRAMES = {
     "fish": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941",
     "copper": "1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941",
     "iron": "ae905224-b7ee-4d96-9609-1637f6e69307@f9941",
-    "goldOre": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941"
+    "goldOre": "38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941",
+    "gold": "39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941"
 }

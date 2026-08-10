@@ -21,20 +21,34 @@ UI_LAYER = 33554432  # UI_2D
 # Script stays on Canvas (QuestPanel.ts); prefab is layout-only chrome.
 
 # --- Layout table (display px) — mirrored in QuestPanel.ts ---
-PANEL_W, PANEL_H = 620, 900
-CONTENT_W = 540
-TITLE_Y = PANEL_H * 0.5 - 50
-HERO_W, HERO_H = CONTENT_W, 128
-HERO_Y = PANEL_H * 0.5 - 158
-SECTION_Y = HERO_Y - HERO_H * 0.5 - 30
-ROW_W, ROW_H, ROW_GAP = CONTENT_W, 60, 6
-LIST_COUNT = 7
-LIST_H = LIST_COUNT * ROW_H + (LIST_COUNT - 1) * ROW_GAP
-LIST_TOP = SECTION_Y - 26
+# Match FarmHUD bag/craft chrome (Graphics wood + parchment), not the AI journal frame.
+PANEL_W, PANEL_H = 700, 1120
+CHROME_INSET = 14  # parchment starts here (same as FarmHUD.drawCraftChrome)
+INNER_PAD = 20
+CONTENT_W = PANEL_W - CHROME_INSET * 2 - INNER_PAD * 2
+CLOSE_BTN = 84  # FarmHUD CLOSE_BTN (56 * UI_SCALE 1.5)
+CLOSE_PAD = 33  # FarmHUD placePanelCloseButton pad (22 * UI_SCALE)
+# Header must clear the full close plate (pad + btn) — was 72 and X sat on the hero card.
+HEADER_H = CLOSE_PAD + CLOSE_BTN + 28  # 145 — clears close icon + hit plate above hero
+TITLE_Y = PANEL_H * 0.5 - INNER_PAD - HEADER_H * 0.42
+CLOSE_X = PANEL_W * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5
+CLOSE_Y = PANEL_H * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5
+# No hero / section label — journal is just the quest list.
+ROW_W, ROW_H, ROW_GAP = CONTENT_W, 152, 14
+# No footer primary — 前往/领奖 lives on the active quest row.
+FOOTER_CLEAR = -PANEL_H * 0.5 + CHROME_INSET + INNER_PAD
+LIST_TOP = PANEL_H * 0.5 - HEADER_H - 12
+BAND_H = max(ROW_H, LIST_TOP - FOOTER_CLEAR)
+VISIBLE_ROWS = max(5, int((BAND_H + ROW_GAP) // (ROW_H + ROW_GAP)))
+LIST_H = VISIBLE_ROWS * ROW_H + (VISIBLE_ROWS - 1) * ROW_GAP
 LIST_Y = LIST_TOP - LIST_H * 0.5
-BTN_W_SEC, BTN_W_PRI, BTN_H = 150, 176, 56
-BTN_Y = -PANEL_H * 0.5 + 58
-ICON = 40
+LIST_BOTTOM = LIST_Y - LIST_H * 0.5
+if LIST_BOTTOM < FOOTER_CLEAR:
+    LIST_Y = FOOTER_CLEAR + LIST_H * 0.5
+LIST_COUNT = VISIBLE_ROWS
+ICON = 44
+# ic-close from tool-frames.json
+CLOSE_SF = "8a6550b2-1626-45d4-89ec-3cd35c8215fd@f9941"
 
 
 def file_id():
@@ -103,7 +117,8 @@ def sprite_obj(node_id, prefab_info_id, sf_uuid):
         "_dstBlendFactor": 4,
         "_color": {"__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255},
         "_spriteFrame": {"__uuid__": sf_uuid, "__expectedType__": "cc.SpriteFrame"} if sf_uuid else None,
-        "_type": 1,  # SLICED — respect sprite-frame border*
+        # SIMPLE when panel art matches display size (integer NEAREST scale).
+        "_type": 0,
         "_fillType": 0,
         "_sizeMode": 0,
         "_fillCenter": {"__type__": "cc.Vec2", "x": 0, "y": 0},
@@ -232,68 +247,24 @@ def build(frames, prefab_uuid):
     # Title
     title_pi = b.add(prefab_info(1, 0, file_id()))
     title_id = b.add(None)
-    title_uit = b.add(uit_obj(title_id, title_pi, 320, 40))
-    title_lab = b.add(label_obj(title_id, title_pi, "旅途日志", 30, (255, 236, 190, 255), 1, True))
-
-    # Hero
-    hero_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_id = b.add(None)
-    hero_uit = b.add(uit_obj(hero_id, hero_pi, HERO_W, HERO_H))
-    hero_g = b.add(graphics_obj(hero_id, hero_pi))
-
-    hero_icon_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_icon_id = b.add(None)
-    hero_icon_uit = b.add(uit_obj(hero_icon_id, hero_icon_pi, ICON, ICON))
-    hero_icon_spr = b.add(sprite_obj(hero_icon_id, hero_icon_pi, None))
-
-    hero_title_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_title_id = b.add(None)
-    hero_title_uit = b.add(uit_obj(hero_title_id, hero_title_pi, HERO_W - 100, 30, 0, 0.5))
-    hero_title_lab = b.add(label_obj(hero_title_id, hero_title_pi, "", 24, (68, 40, 18, 255), 0, False))
-
-    hero_desc_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_desc_id = b.add(None)
-    hero_desc_uit = b.add(uit_obj(hero_desc_id, hero_desc_pi, HERO_W - 100, 40, 0, 0.5))
-    hero_desc_lab = b.add(label_obj(hero_desc_id, hero_desc_pi, "", 16, (102, 72, 40, 255), 0, False))
-
-    hero_prog_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_prog_id = b.add(None)
-    hero_prog_uit = b.add(uit_obj(hero_prog_id, hero_prog_pi, 80, 22, 1, 0.5))
-    hero_prog_lab = b.add(label_obj(hero_prog_id, hero_prog_pi, "", 16, (80, 52, 24, 255), 2, False))
-
-    hero_bar_pi = b.add(prefab_info(1, 0, file_id()))
-    hero_bar_id = b.add(None)
-    hero_bar_uit = b.add(uit_obj(hero_bar_id, hero_bar_pi, HERO_W - 48, 14))
-    hero_bar_g = b.add(graphics_obj(hero_bar_id, hero_bar_pi))
-
-    # Section
-    sec_pi = b.add(prefab_info(1, 0, file_id()))
-    sec_id = b.add(None)
-    sec_uit = b.add(uit_obj(sec_id, sec_pi, CONTENT_W, 24, 0, 0.5))
-    sec_lab = b.add(label_obj(sec_id, sec_pi, "旅途步骤", 18, (120, 78, 40, 255), 0, False))
+    title_uit = b.add(uit_obj(title_id, title_pi, 360, 48))
+    title_lab = b.add(label_obj(title_id, title_pi, "旅途日志", 36, (255, 236, 190, 255), 1, True))
 
     # List host
     list_pi = b.add(prefab_info(1, 0, file_id()))
     list_id = b.add(None)
     list_uit = b.add(uit_obj(list_id, list_pi, ROW_W, LIST_H))
 
-    # Buttons
-    def mk_btn(name, w, sf, label, color):
-        pi = b.add(prefab_info(1, 0, file_id()))
-        nid = b.add(None)
-        uit = b.add(uit_obj(nid, pi, w, BTN_H))
-        spr = b.add(sprite_obj(nid, pi, sf))
-        lpi = b.add(prefab_info(1, 0, file_id()))
-        lid = b.add(None)
-        luit = b.add(uit_obj(lid, lpi, w, BTN_H))
-        llab = b.add(label_obj(lid, lpi, label, 24, color, 1, True))
-        return nid, uit, spr, lid, luit, llab, pi, lpi
-
-    close = mk_btn("BtnClose", BTN_W_SEC, frames.get("btnSecondary"), "关闭", (255, 236, 200, 255))
-    goto = mk_btn("BtnGoto", BTN_W_PRI, frames.get("btnPrimary"), "去完成", (255, 252, 230, 255))
+    # Close = top-right X (same ic-close as bag/craft). Row actions are runtime-built.
+    close_pi = b.add(prefab_info(1, 0, file_id()))
+    close_id = b.add(None)
+    close_uit = b.add(uit_obj(close_id, close_pi, int(CLOSE_BTN * 1.35), int(CLOSE_BTN * 1.35)))
+    close_icon_pi = b.add(prefab_info(1, 0, file_id()))
+    close_icon_id = b.add(None)
+    close_icon_uit = b.add(uit_obj(close_icon_id, close_icon_pi, CLOSE_BTN, CLOSE_BTN))
+    close_icon_spr = b.add(sprite_obj(close_icon_id, close_icon_pi, CLOSE_SF))
 
     # Fill nodes
-    text_left = -HERO_W * 0.5 + 72
     b.items[root_id] = node_obj(
         "QuestPanel",
         None,
@@ -313,7 +284,7 @@ def build(frames, prefab_uuid):
     b.items[panel_id] = node_obj(
         "Panel",
         1,
-        [title_id, hero_id, sec_id, list_id, close[0], goto[0]],
+        [title_id, list_id, close_id],
         [panel_uit, panel_spr],
         panel_pi,
         0,
@@ -326,79 +297,18 @@ def build(frames, prefab_uuid):
     b.items[title_uit]["node"] = {"__id__": title_id}
     b.items[title_lab]["node"] = {"__id__": title_id}
 
-    b.items[hero_id] = node_obj(
-        "Hero",
-        panel_id,
-        [hero_icon_id, hero_title_id, hero_desc_id, hero_prog_id, hero_bar_id],
-        [hero_uit, hero_g],
-        hero_pi,
-        0,
-        HERO_Y,
-    )
-    b.items[hero_uit]["node"] = {"__id__": hero_id}
-    b.items[hero_g]["node"] = {"__id__": hero_id}
-
-    b.items[hero_icon_id] = node_obj(
-        "HeroIcon", hero_id, [], [hero_icon_uit, hero_icon_spr], hero_icon_pi, -HERO_W * 0.5 + 36, 10
-    )
-    b.items[hero_icon_uit]["node"] = {"__id__": hero_icon_id}
-    b.items[hero_icon_spr]["node"] = {"__id__": hero_icon_id}
-
-    b.items[hero_title_id] = node_obj(
-        "HeroTitle", hero_id, [], [hero_title_uit, hero_title_lab], hero_title_pi, text_left, 28
-    )
-    b.items[hero_title_uit]["node"] = {"__id__": hero_title_id}
-    b.items[hero_title_lab]["node"] = {"__id__": hero_title_id}
-
-    b.items[hero_desc_id] = node_obj(
-        "HeroDesc", hero_id, [], [hero_desc_uit, hero_desc_lab], hero_desc_pi, text_left, 0
-    )
-    b.items[hero_desc_uit]["node"] = {"__id__": hero_desc_id}
-    b.items[hero_desc_lab]["node"] = {"__id__": hero_desc_id}
-
-    b.items[hero_prog_id] = node_obj(
-        "HeroProg",
-        hero_id,
-        [],
-        [hero_prog_uit, hero_prog_lab],
-        hero_prog_pi,
-        HERO_W * 0.5 - 16,
-        -40,
-    )
-    b.items[hero_prog_uit]["node"] = {"__id__": hero_prog_id}
-    b.items[hero_prog_lab]["node"] = {"__id__": hero_prog_id}
-
-    b.items[hero_bar_id] = node_obj(
-        "HeroBar", hero_id, [], [hero_bar_uit, hero_bar_g], hero_bar_pi, 0, -40
-    )
-    b.items[hero_bar_uit]["node"] = {"__id__": hero_bar_id}
-    b.items[hero_bar_g]["node"] = {"__id__": hero_bar_id}
-
-    b.items[sec_id] = node_obj(
-        "Section", panel_id, [], [sec_uit, sec_lab], sec_pi, -CONTENT_W * 0.5, SECTION_Y
-    )
-    b.items[sec_uit]["node"] = {"__id__": sec_id}
-    b.items[sec_lab]["node"] = {"__id__": sec_id}
-
     b.items[list_id] = node_obj("List", panel_id, [], [list_uit], list_pi, 0, LIST_Y)
     b.items[list_uit]["node"] = {"__id__": list_id}
 
-    for pack, x in ((close, -110), (goto, 120)):
-        nid, uit, spr, lid, luit, llab, pi, lpi = pack
-        b.items[nid] = node_obj(
-            "BtnClose" if pack is close else "BtnGoto",
-            panel_id,
-            [lid],
-            [uit, spr],
-            pi,
-            x,
-            BTN_Y,
-        )
-        b.items[uit]["node"] = {"__id__": nid}
-        b.items[spr]["node"] = {"__id__": nid}
-        b.items[lid] = node_obj("Label", nid, [], [luit, llab], lpi, 0, 0)
-        b.items[luit]["node"] = {"__id__": lid}
-        b.items[llab]["node"] = {"__id__": lid}
+    b.items[close_id] = node_obj(
+        "BtnClose", panel_id, [close_icon_id], [close_uit], close_pi, CLOSE_X, CLOSE_Y
+    )
+    b.items[close_uit]["node"] = {"__id__": close_id}
+    b.items[close_icon_id] = node_obj(
+        "Icon", close_id, [], [close_icon_uit, close_icon_spr], close_icon_pi, 0, 0
+    )
+    b.items[close_icon_uit]["node"] = {"__id__": close_icon_id}
+    b.items[close_icon_spr]["node"] = {"__id__": close_icon_id}
 
     return b.items
 
@@ -442,19 +352,18 @@ def patch_frames_ts(prefab_uuid):
         ("panelW", PANEL_W),
         ("panelH", PANEL_H),
         ("contentW", CONTENT_W),
-        ("heroW", HERO_W),
-        ("heroH", HERO_H),
-        ("heroY", HERO_Y),
-        ("sectionY", SECTION_Y),
         ("rowW", ROW_W),
         ("rowH", ROW_H),
         ("rowGap", ROW_GAP),
         ("listY", LIST_Y),
         ("listH", LIST_H),
-        ("btnY", BTN_Y),
+        ("titleY", TITLE_Y),
+        ("closeX", CLOSE_X),
+        ("closeY", CLOSE_Y),
+        ("closeBtn", CLOSE_BTN),
         ("icon", ICON),
     ]:
-        lines.append("    {}: {},".format(name, val if not isinstance(val, float) else round(val, 2)))
+        lines.append("    {}: {},".format(name, val if not isinstance(val, float) else round(val, 1)))
     lines.append("} as const;")
     lines.append("")
     OUT_TS.write_text("\n".join(lines), encoding="utf-8")

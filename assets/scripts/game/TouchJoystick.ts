@@ -143,9 +143,10 @@ export class TouchJoystick extends Component {
 
         if (!this._dragging) {
             if (dist < this.dragThreshold) return;
-            // Full-screen panels (bag / chest): never start the stick, but keep the
-            // gesture eligible for onTap — otherwise close buttons never fire.
+            // Full-screen panels: never start the stick. Mark as UI slide so a
+            // scrollbar/list drag doesn't fire onTap on finger-up.
             if (InputBridge.uiBlocking) {
+                this._uiSlid = true;
                 return;
             }
             // GM chip / panel: block stick, still allow onTap.

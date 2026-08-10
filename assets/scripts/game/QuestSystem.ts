@@ -9,6 +9,7 @@ import {
 import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmMaterial, FarmSystem } from './FarmSystem';
+import { GameState } from './GameState';
 
 const { ccclass } = _decorator;
 
@@ -32,6 +33,8 @@ export class QuestSystem extends Component {
     private _tables: Tables | null = null;
     private _activeId = 0;
     private _completed = new Set<number>();
+    /** Active objective met — stay on this quest until player claims. */
+    private _awaitingClaim = false;
     private _gather = new Map<string, number>();
     private _craft = new Map<string, number>();
     private _till = 0;
@@ -39,22 +42,82 @@ export class QuestSystem extends Component {
     private _water = 0;
     private _harvest = 0;
     private _fish = 0;
-    private _onChange: (() => void) | null = null;
+    private _flags = new Map<string, number>();
+    private _onChange: Array<() => void> = [];
 
     bindTables(tables: Tables) {
         this._tables = tables;
+        this.restoreFromGameState();
         if (!this._activeId) {
             const first = tables.TQuest.getDataList()
                 .slice()
                 .sort((a, b) => a.sort - b.sort)[0];
             this._activeId = first?.id ?? 0;
         }
+        this.syncMapUnlocks();
         this.checkProgress();
-        this._onChange?.();
+        this.persistToGameState();
+        this.emitChange();
+    }
+
+    persistToGameState() {
+        const gather: Record<string, number> = {};
+        this._gather.forEach((v, k) => {
+            gather[k] = v;
+        });
+        const craft: Record<string, number> = {};
+        this._craft.forEach((v, k) => {
+            craft[k] = v;
+        });
+        const flags: Record<string, number> = {};
+        this._flags.forEach((v, k) => {
+            flags[k] = v;
+        });
+        GameState.captureQuest({
+            activeId: this._activeId,
+            completed: [...this._completed],
+            awaitingClaim: this._awaitingClaim,
+            gather,
+            craft,
+            flags,
+            till: this._till,
+            plant: this._plant,
+            water: this._water,
+            harvest: this._harvest,
+            fish: this._fish,
+        });
+        this.syncMapUnlocks();
+    }
+
+    private restoreFromGameState() {
+        const snap = GameState.quest;
+        if (!snap) return;
+        this._activeId = snap.activeId;
+        this._completed = new Set(snap.completed);
+        this._awaitingClaim = !!snap.awaitingClaim;
+        this._gather = new Map(Object.entries(snap.gather));
+        this._craft = new Map(Object.entries(snap.craft));
+        this._flags = new Map(Object.entries(snap.flags));
+        this._till = snap.till;
+        this._plant = snap.plant;
+        this._water = snap.water;
+        this._harvest = snap.harvest;
+        this._fish = snap.fish;
+    }
+
+    /** Town unlocks after inspecting the meteor (or if already flagged). */
+    private syncMapUnlocks() {
+        if ((this._flags.get('inspect_meteor') ?? 0) >= 1 || this._completed.has(1008)) {
+            GameState.unlock('town');
+        }
     }
 
     onChange(cb: () => void) {
-        this._onChange = cb;
+        this._onChange.push(cb);
+    }
+
+    private emitChange() {
+        for (const cb of this._onChange) cb();
     }
 
     get activeQuest(): CQuest | null {
@@ -66,13 +129,45 @@ export class QuestSystem extends Component {
         return !!this._tables && this._activeId === 0;
     }
 
+    /** Objective done — waiting for player to tap the quest HUD / claim. */
+    get isAwaitingClaim(): boolean {
+        return this._awaitingClaim;
+    }
+
+    /** Active quest's GotoAction (for idle hint arrows). */
+    activeGotoAction(): GotoAction {
+        const q = this.activeQuest;
+        if (!q || !this._tables) return GotoAction.None;
+        return this._tables.TGoto.get(q.gotoId)?.action ?? GotoAction.None;
+    }
+
     allQuests(): CQuest[] {
         if (!this._tables) return [];
         return this._tables.TQuest.getDataList().slice().sort((a, b) => a.sort - b.sort);
     }
 
+    /**
+     * Journal list: current quest only (completed steps are hidden).
+     * Future steps stay hidden until the previous quest unlocks them via next_id.
+     */
+    visibleQuests(): CQuest[] {
+        return this.allQuests().filter((q) => q.id === this._activeId);
+    }
+
     isCompleted(id: number): boolean {
         return this._completed.has(id);
+    }
+
+    /** True if this quest is the live objective (or awaiting claim). */
+    isActive(id: number): boolean {
+        return id === this._activeId;
+    }
+
+    /** Grant reward + advance. Returns false if nothing to claim. */
+    claimActive(): boolean {
+        if (!this._awaitingClaim || !this.activeQuest || !this._tables) return false;
+        this.completeActive();
+        return true;
     }
 
     progressOf(quest: CQuest): QuestProgress {
@@ -124,6 +219,18 @@ export class QuestSystem extends Component {
         this.checkProgress();
     }
 
+    noteFlag(id: string, n = 1) {
+        if (!id || n <= 0) return;
+        this._flags.set(id, (this._flags.get(id) ?? 0) + n);
+        this.syncMapUnlocks();
+        this.checkProgress();
+        this.persistToGameState();
+    }
+
+    flagOf(id: string): number {
+        return this._flags.get(id) ?? 0;
+    }
+
     /** SLG-style Goto — select tool / open panel / toast hint. */
     runGoto(gotoId?: number) {
         const quest = this.activeQuest;
@@ -154,6 +261,9 @@ export class QuestSystem extends Component {
             case GotoAction.OpenBag:
                 this.hud?.openBagPanel();
                 break;
+            case GotoAction.HintMeteor:
+            case GotoAction.HintTownGate:
+            case GotoAction.HintMayor:
             default:
                 break;
         }
@@ -162,15 +272,23 @@ export class QuestSystem extends Component {
     private checkProgress() {
         const quest = this.activeQuest;
         if (!quest || !this._tables) {
-            this._onChange?.();
+            this.emitChange();
+            return;
+        }
+        // Stay on claimable state until the player taps.
+        if (this._awaitingClaim) {
+            this.emitChange();
             return;
         }
         const prog = this.progressOf(quest);
         if (!prog.passed) {
-            this._onChange?.();
+            this.emitChange();
             return;
         }
-        this.completeActive();
+        this._awaitingClaim = true;
+        this.infoBoard?.showToast(`可领奖：${quest.name}`);
+        this.persistToGameState();
+        this.emitChange();
     }
 
     private completeActive() {
@@ -181,13 +299,14 @@ export class QuestSystem extends Component {
         if (quest.rewardItem && quest.rewardCount > 0) {
             this.grantReward(quest.rewardItem, quest.rewardCount);
         }
-        this.infoBoard?.showToast(`任务完成：${quest.name}`);
+        this._awaitingClaim = false;
         this._activeId = quest.nextId > 0 ? quest.nextId : 0;
         if (this._activeId === 0) {
-            this.infoBoard?.showToast('主线指引已完成，自由探索吧！');
+            this.infoBoard?.showToast('本章主线告一段落，自由探索溪谷吧！');
         }
-        this._onChange?.();
-        // Chain-complete if already satisfied (e.g. GM / surplus).
+        this.persistToGameState();
+        this.emitChange();
+        // Next quest may already be satisfied — park on claim, never auto-skip.
         if (this._activeId) this.checkProgress();
     }
 
@@ -237,6 +356,8 @@ export class QuestSystem extends Component {
                 return this._fish;
             case ConditionType.Gold:
                 return this.farm?.gold ?? 0;
+            case ConditionType.Flag:
+                return this._flags.get(quest.param) ?? 0;
             default:
                 return 0;
         }
@@ -277,6 +398,21 @@ export class QuestSystem extends Component {
         return tpl.replace(/\{0\}/g, String(quest.num)).replace(/\{1\}/g, paramLabel);
     }
 
+    /** Tracker subline — action text only, no leading count (progress shown separately). */
+    objectiveLabel(quest: CQuest): string {
+        const tpl =
+            this._tables?.TCondition.get(quest.conditionId)?.desc ?? quest.desc;
+        const paramLabel = this.paramLabel(quest.param);
+        return tpl
+            .replace(/\s*×\s*\{0\}/g, '')
+            .replace(/\s*\{0\}\s*次/g, '')
+            .replace(/\s*\{0\}\s*条/g, '')
+            .replace(/\{0\}/g, '')
+            .replace(/\{1\}/g, paramLabel)
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     private paramLabel(param: string): string {
         if (!param) return '';
         const recipe = this._tables?.TCraftRecipe.get(param);
@@ -289,6 +425,13 @@ export class QuestSystem extends Component {
             fish: '鱼',
             seeds: '种子',
             parsnip: '防风草',
+            inspect_meteor: '查看陨石',
+            enter_town: '抵达小镇',
+            visit_mayor: '拜访镇长府',
+            shop_buy: '商店购物',
+            accept_board: '接取公告板',
+            visit_carpenter: '拜访木工坊',
+            visit_community: '探访社区中心',
         };
         return names[param] ?? param;
     }

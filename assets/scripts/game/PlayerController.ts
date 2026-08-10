@@ -2,6 +2,7 @@ import { _decorator, Component, Node, UITransform, Vec3 } from 'cc';
 import {
     findPath,
     footSolidFor,
+    isTreeSolidName,
     lineClear,
     listApproachStands,
     pointBlocked,
@@ -67,6 +68,8 @@ export class PlayerController extends Component {
     private _hasActFocus = false;
     /** Interact walks: no repath loops — arrive/abort on no progress. */
     private _interactWalk = false;
+    /** Soft cap on stuck-repaths so we never orbit a trunk forever. */
+    private _repathCount = 0;
 
     /** Smoothed unit steering — avoids snapping left/right every grid corner. */
     private _steerX = 0;
@@ -116,11 +119,9 @@ export class PlayerController extends Component {
         this._manualOverride = false;
         this._stuckTime = 0;
         this._repathCooldown = 0;
+        this._repathCount = 0;
         this._noProgressTime = 0;
         this._bestGoalDist = Infinity;
-        this._goalX = x;
-        this._goalY = y;
-        this._arriveDist = Math.max(16, arriveDist);
         this._onArrive = onArrive ?? null;
         this._onAbort = onAbort ?? null;
         this._ignoreSolidNode = ignoreSolidNode;
@@ -132,8 +133,14 @@ export class PlayerController extends Component {
         this._walkingTo = true;
 
         const p = this.node.position;
-        const dx = x - p.x;
-        const dy = y - p.y;
+        // Never path into a solid foot — soft weeds often sit inside a trunk AABB.
+        const safe = this.ensureFreeGoal(x, y, p.x, p.y);
+        this._goalX = safe.x;
+        this._goalY = safe.y;
+        this._arriveDist = Math.max(12, Math.min(18, arriveDist));
+
+        const dx = this._goalX - p.x;
+        const dy = this._goalY - p.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist <= this._arriveDist || this.withinActFocus(p.x, p.y)) {
             this.finishWalk();
@@ -144,10 +151,52 @@ export class PlayerController extends Component {
             this._steerX = dx / dist;
             this._steerY = dy / dist;
         }
+        // If feet are wedged inside a trunk/rock, nudge out before A* — otherwise
+        // the path starts on a free cell but step() cannot leave the overlap.
+        this.unstickIfNeeded();
         this.buildPath();
         if (!this._waypoints.length) {
             // No reachable approach — don't charge the goal through solids.
             this.abortWalk();
+        }
+    }
+
+    /** Snap a walk goal out of solids, preferring open ground south of the target. */
+    private ensureFreeGoal(x: number, y: number, fromX: number, fromY: number): { x: number; y: number } {
+        const solids = this.activeSolids();
+        const hw = this.bodyWidth * 0.5;
+        const hh = this.bodyHeight * 0.5;
+        if (!pointBlocked(x, y, hw, hh, solids)) return { x, y };
+        return this.freeStandNear(x, y, fromX, fromY, 56);
+    }
+
+    /** Push feet to the nearest free point when overlapping a solid. */
+    private unstickIfNeeded() {
+        const hw = this.bodyWidth * 0.5;
+        const hh = this.bodyHeight * 0.5;
+        const p = this.node.position;
+        if (!pointBlocked(p.x, p.y, hw, hh, this._solids)) return;
+        const cell = 8;
+        for (let r = 1; r <= 6; r++) {
+            let best: { x: number; y: number; score: number } | null = null;
+            for (let oy = -r; oy <= r; oy++) {
+                for (let ox = -r; ox <= r; ox++) {
+                    if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+                    const x = p.x + ox * cell;
+                    const y = p.y + oy * cell;
+                    if (x < this._minX || x > this._maxX || y < this._minY || y > this._maxY) {
+                        continue;
+                    }
+                    if (pointBlocked(x, y, hw, hh, this._solids)) continue;
+                    const score = ox * ox + oy * oy;
+                    if (!best || score < best.score) best = { x, y, score };
+                }
+            }
+            if (best) {
+                this._tmp.set(best.x, best.y, 0);
+                this.node.setPosition(this._tmp);
+                return;
+            }
         }
     }
 
@@ -186,8 +235,9 @@ export class PlayerController extends Component {
     }
 
     /**
-     * Stand on the caller's side of a solid — along the player→foot ray first,
-     * then cardinal fallbacks. Only returns a point that is actually reachable.
+     * Stand beside a solid for chop/dig/chest.
+     * Trees: always the front (south of trunk) — never under/behind the canopy.
+     * Other solids: prefer the caller's side, then cardinal fallbacks.
      */
     approachStandFor(target: Node, fromX: number, fromY: number): { x: number; y: number } | null {
         if (!target?.isValid) return null;
@@ -205,9 +255,9 @@ export class PlayerController extends Component {
         if (!box) return null;
         const hw = this.bodyWidth * 0.5;
         const hh = this.bodyHeight * 0.5;
+        const isTree = isTreeSolidName(target.name);
         const standDist = Math.max(box.hw, box.hh) + Math.max(hw, hh) + 10;
 
-        // Primary: on the segment from the player toward the foot (never behind the trunk).
         const dx = fromX - footX;
         const dy = fromY - footY;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -215,31 +265,34 @@ export class PlayerController extends Component {
             x: footX + (dx / len) * standDist,
             y: footY + (dy / len) * standDist,
         };
+        // Tree front stand (south of trunk AABB) — default when radial is behind canopy.
+        const front = {
+            x: box.x,
+            y: box.y - hh - (hh + box.hh + 10),
+        };
 
         const bounds = {
-            margin: 8,
+            margin: 10,
             minX: this._minX,
             maxX: this._maxX,
             minY: this._minY,
             maxY: this._maxY,
+            preferFront: isTree,
         };
-        const stands = [
-            radial,
-            ...listApproachStands(box, fromX, fromY, hw, hh, this._solids, bounds),
-        ];
+        const ring = listApproachStands(box, fromX, fromY, hw, hh, this._solids, bounds);
+        // Trees: front first. Never lead with a north radial (that is "behind the tree").
+        const stands = isTree
+            ? [front, ...ring, ...(radial.y <= footY + 2 ? [radial] : [])]
+            : [radial, ...ring];
 
         for (let i = 0; i < stands.length; i++) {
             const s = stands[i]!;
             if (s.x < this._minX || s.x > this._maxX || s.y < this._minY || s.y > this._maxY) {
                 continue;
             }
-            // Skip stands inside any solid (including the target trunk).
-            if (
-                Math.abs(s.x - box.x) < hw + box.hw &&
-                Math.abs(s.y + hh - box.y) < hh + box.hh
-            ) {
-                continue;
-            }
+            if (pointBlocked(s.x, s.y, hw, hh, this._solids)) continue;
+            // Trees: refuse any stand north of the foot (occluded / pocket).
+            if (isTree && s.y > footY + 2) continue;
             if (
                 lineClear(
                     fromX,
@@ -266,66 +319,121 @@ export class PlayerController extends Component {
                 minY: this._minY,
                 maxY: this._maxY,
                 maxNodes: 2500,
-                goalRadius: 12,
+                goalRadius: 14,
             });
             if (!path.length) continue;
             const end = path[path.length - 1]!;
             const endD = Math.sqrt((end.x - s.x) * (end.x - s.x) + (end.y - s.y) * (end.y - s.y));
-            // findPath may return a partial approach — only accept if it truly reaches the stand.
-            if (endD <= 20) return s;
+            if (endD <= 22) return s;
         }
-        return radial;
+        if (isTree) {
+            if (!pointBlocked(front.x, front.y, hw, hh, this._solids)) return front;
+            return null;
+        }
+        if (!pointBlocked(radial.x, radial.y, hw, hh, this._solids)) return radial;
+        return null;
     }
 
     /**
      * Soft weeds / bushes don't collide, but their feet often sit inside a
-     * nearby pine/rock AABB. Pick a free stand beside the foot on the caller's
-     * side so auto-walk doesn't charge into the trunk.
+     * nearby pine/rock AABB. Pick a free stand WITH clearance that stays
+     * within maxDist of the weed foot (act range). Never return a far tree
+     * approach ring just because it faces the player.
      */
     freeStandNear(
         tx: number,
         ty: number,
         fromX: number,
         fromY: number,
-        maxDist = 28,
+        maxDist = 48,
     ): { x: number; y: number } {
         const hw = this.bodyWidth * 0.5;
         const hh = this.bodyHeight * 0.5;
         const solids = this._solids;
-        if (!pointBlocked(tx, ty, hw, hh, solids)) {
+        // Inflated body: reject knife-edge gaps that look free but trap on arrive.
+        const mHw = hw + 4;
+        const mHh = hh + 3;
+        const maxD2 = maxDist * maxDist;
+        const inBounds = (x: number, y: number) =>
+            x >= this._minX && x <= this._maxX && y >= this._minY && y <= this._maxY;
+        const d2Weed = (x: number, y: number) => (x - tx) * (x - tx) + (y - ty) * (y - ty);
+
+        if (!pointBlocked(tx, ty, mHw, mHh, solids) && inBounds(tx, ty)) {
             return { x: tx, y: ty };
         }
-        // Fine grid so the stand hugs the weed instead of stopping a tile away.
+
+        let best: { x: number; y: number; score: number } | null = null;
+        const consider = (x: number, y: number, score: number) => {
+            if (!inBounds(x, y)) return;
+            if (pointBlocked(x, y, mHw, mHh, solids)) return;
+            const d2 = d2Weed(x, y);
+            if (d2 > maxD2) return;
+            if (!best || score < best.score) best = { x, y, score };
+        };
+
+        // Among stands still inside act range of the weed, pick the one nearest the
+        // caller — avoids forcing a full south orbit when a west/east pocket works.
+        const host = this.solidAt(tx, ty, hw, hh, solids);
+        const preferFront = !!host && host.hw <= 14 && host.hh <= 12;
+        if (host) {
+            const stands = listApproachStands(host, fromX, fromY, hw, hh, solids, {
+                margin: 10,
+                minX: this._minX,
+                maxX: this._maxX,
+                minY: this._minY,
+                maxY: this._maxY,
+                preferFront,
+            });
+            for (let i = 0; i < stands.length; i++) {
+                const s = stands[i]!;
+                // Soft penalty behind canopy; hard reject only deep north of the host.
+                const midY = host.y - hh;
+                if (preferFront && s.y > midY + 2) continue;
+                const dFrom = (s.x - fromX) * (s.x - fromX) + (s.y - fromY) * (s.y - fromY);
+                consider(s.x, s.y, dFrom + d2Weed(s.x, s.y) * 0.1);
+            }
+        }
+
+        // Fine grid around the weed foot — still capped by maxDist.
         const cell = 8;
         const maxRing = Math.max(1, Math.ceil(maxDist / cell));
-        let best: { x: number; y: number; score: number } | null = null;
         for (let r = 1; r <= maxRing; r++) {
             for (let oy = -r; oy <= r; oy++) {
                 for (let ox = -r; ox <= r; ox++) {
                     if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
                     const x = tx + ox * cell;
                     const y = ty + oy * cell;
-                    if (x < this._minX || x > this._maxX || y < this._minY || y > this._maxY) {
-                        continue;
-                    }
-                    if (pointBlocked(x, y, hw, hh, solids)) continue;
-                    const dGoal = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+                    if (preferFront && host && y > host.y - hh + 2) continue;
                     const dFrom = (x - fromX) * (x - fromX) + (y - fromY) * (y - fromY);
-                    // Prefer hugging the weed; only lightly bias toward the caller.
-                    const score = dGoal + dFrom * 0.15;
-                    if (!best || score < best.score) best = { x, y, score };
+                    consider(x, y, dFrom + d2Weed(x, y) * 0.1 + r);
                 }
             }
-            if (best) return { x: best.x, y: best.y };
         }
-        // Fallback: step back toward the caller from the blocked foot.
-        const dx = fromX - tx;
-        const dy = fromY - ty;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        return {
-            x: tx + (dx / len) * Math.min(maxDist, 20),
-            y: ty + (dy / len) * Math.min(maxDist, 20),
-        };
+        if (best) return { x: best.x, y: best.y };
+
+        // Last resort: step south of the foot (still near the weed).
+        const fallback = { x: tx, y: ty - Math.min(maxDist, 24) };
+        if (!pointBlocked(fallback.x, fallback.y, hw, hh, solids) && inBounds(fallback.x, fallback.y)) {
+            return fallback;
+        }
+        return { x: tx, y: ty };
+    }
+
+    private solidAt(
+        x: number,
+        y: number,
+        bodyHw: number,
+        bodyHh: number,
+        solids: PathSolid[],
+    ): PathSolid | null {
+        const cy = y + bodyHh;
+        for (let i = 0; i < solids.length; i++) {
+            const s = solids[i]!;
+            if (Math.abs(x - s.x) < bodyHw + s.hw && Math.abs(cy - s.y) < bodyHh + s.hh) {
+                return s;
+            }
+        }
+        return null;
     }
 
     /** Solids used for path / collision, optionally skipping the walk target. */
@@ -397,7 +505,10 @@ export class PlayerController extends Component {
     }
 
     private resolveNoProgress(remain: number, x: number, y: number) {
-        if (remain <= this._arriveDist * 2.2 || this.withinActFocus(x, y)) {
+        // Only "arrive" when truly beside the walk goal / act focus.
+        // A loose remain check used to finish mid-approach → FarmSystem then
+        // refused to act (too far from the weed) and the farmer just stopped.
+        if (this.withinActFocus(x, y) || remain <= this._arriveDist * 1.2) {
             this.finishWalk();
         } else {
             this.abortWalk();
@@ -414,43 +525,30 @@ export class PlayerController extends Component {
             return;
         }
 
-        // Progress toward the walk goal (ignores micro side-slides against a trunk).
+        // Closing on the goal is progress — but detours around trunks often move
+        // AWAY from the goal first. Never abort just because goalDist rose.
         if (goalDist < this._bestGoalDist - 2) {
             this._bestGoalDist = goalDist;
-            this._noProgressTime = 0;
-        } else {
-            this._noProgressTime += dt;
-        }
-        // Chop/dig: if we stop closing for a moment, arrive or give up — never moonwalk.
-        if (this._interactWalk && this._noProgressTime > 0.35) {
-            this.resolveNoProgress(goalDist, p.x, p.y);
-            return;
         }
 
+        const wpBefore = this._wpIndex;
         this.advanceWaypoints(p.x, p.y);
+        if (this._wpIndex > wpBefore) {
+            this._stuckTime = 0;
+            this._noProgressTime = 0;
+        }
 
         if (this._wpIndex >= this._waypoints.length) {
             if (goalDist <= this._arriveDist * 1.6 || this.withinActFocus(p.x, p.y)) {
                 this.finishWalk();
-            } else if (this._interactWalk) {
-                this.resolveNoProgress(goalDist, p.x, p.y);
-            } else if (this._repathCooldown <= 0) {
-                const before = goalDist;
+            } else if (this._repathCount < 1 && this._repathCooldown <= 0) {
+                // Path exhausted short of goal — one rebuild, then settle.
                 this.buildPath();
+                this._repathCount++;
                 this._repathCooldown = 0.55;
-                if (!this._waypoints.length) {
-                    this.abortWalk();
-                    return;
-                }
-                const end = this._waypoints[this._waypoints.length - 1];
-                const endDist = Math.sqrt(
-                    (end.x - this._goalX) * (end.x - this._goalX) +
-                        (end.y - this._goalY) * (end.y - this._goalY),
-                );
-                if (endDist >= before - 6) {
-                    if (goalDist <= this._arriveDist * 2.2) this.finishWalk();
-                    else this.abortWalk();
-                }
+                if (!this._waypoints.length) this.resolveNoProgress(goalDist, p.x, p.y);
+            } else {
+                this.resolveNoProgress(goalDist, p.x, p.y);
             }
             return;
         }
@@ -459,7 +557,10 @@ export class PlayerController extends Component {
         const adx = aim.x - p.x;
         const ady = aim.y - p.y;
         const alen = Math.sqrt(adx * adx + ady * ady) || 1;
-        this.smoothSteer(adx / alen, ady / alen, dt);
+        // Snap steer onto the path heading — smooth turning fights grid corners and
+        // feeds trunk-orbit slides when the goal sits on the far side of a tree.
+        this._steerX = adx / alen;
+        this._steerY = ady / alen;
 
         const beforeX = p.x;
         const beforeY = p.y;
@@ -471,9 +572,11 @@ export class PlayerController extends Component {
         if (moved >= 0.25) {
             InputBridge.setMove(this._steerX, this._steerY);
             this._stuckTime = 0;
+            this._noProgressTime = 0;
         } else {
             InputBridge.clear();
             this._stuckTime += dt;
+            this._noProgressTime += dt;
             const remain = Math.sqrt(
                 (this._goalX - p2.x) * (this._goalX - p2.x) +
                     (this._goalY - p2.y) * (this._goalY - p2.y),
@@ -482,17 +585,18 @@ export class PlayerController extends Component {
                 this.finishWalk();
                 return;
             }
-            if (this._interactWalk && this._stuckTime > 0.2) {
-                this.resolveNoProgress(remain, p2.x, p2.y);
-                return;
-            }
-            if (!this._interactWalk && this._stuckTime > 0.45 && this._repathCooldown <= 0) {
-                this.buildPath();
-                this._repathCooldown = 0.7;
-                this._stuckTime = 0;
-                if (!this._waypoints.length) {
-                    if (remain <= this._arriveDist * 1.8) this.finishWalk();
-                    else this.abortWalk();
+            // Only give up when immobilized against a solid — not during open detours.
+            if (this._stuckTime > 0.35) {
+                if (this._repathCount < 1 && this._repathCooldown <= 0) {
+                    this.buildPath();
+                    this._repathCount++;
+                    this._repathCooldown = 0.7;
+                    this._stuckTime = 0;
+                    if (!this._waypoints.length) {
+                        this.resolveNoProgress(remain, p2.x, p2.y);
+                    }
+                } else {
+                    this.resolveNoProgress(remain, p2.x, p2.y);
                 }
             }
         }
@@ -513,8 +617,9 @@ export class PlayerController extends Component {
     }
 
     /**
-     * String-pull: aim at the furthest waypoint (or goal) still visible from here.
-     * Cuts stair-step grid paths into long straight legs.
+     * String-pull along waypoints. Do NOT skip ahead to the final goal while
+     * intermediate waypoints remain — grazing lineClear past a trunk makes the
+     * farmer slide around the canopy in circles.
      */
     private lookaheadTarget(px: number, py: number): { x: number; y: number } {
         const hw = this.bodyWidth * 0.5;
@@ -523,14 +628,18 @@ export class PlayerController extends Component {
         const clear = (x: number, y: number) =>
             lineClear(px, py, x, y, solids, hw, hh, this._minX, this._maxX, this._minY, this._maxY);
 
-        if (clear(this._goalX, this._goalY)) {
-            return { x: this._goalX, y: this._goalY };
+        const last = this._waypoints.length - 1;
+        // On the final leg (or no path), aim at the goal when the segment is open.
+        if (this._wpIndex >= last) {
+            if (clear(this._goalX, this._goalY)) {
+                return { x: this._goalX, y: this._goalY };
+            }
         }
-        for (let i = this._waypoints.length - 1; i >= this._wpIndex; i--) {
+        for (let i = last; i >= this._wpIndex; i--) {
             const wp = this._waypoints[i];
-            if (clear(wp.x, wp.y)) return wp;
+            if (wp && clear(wp.x, wp.y)) return wp;
         }
-        return this._waypoints[this._wpIndex];
+        return this._waypoints[this._wpIndex] ?? { x: this._goalX, y: this._goalY };
     }
 
     private advanceWaypoints(px: number, py: number) {
@@ -601,6 +710,7 @@ export class PlayerController extends Component {
         this._interactWalk = false;
         this._noProgressTime = 0;
         InputBridge.clear();
+        this.unstickIfNeeded();
         const cb = this._onArrive;
         this._onArrive = null;
         this._onAbort = null;
@@ -615,6 +725,7 @@ export class PlayerController extends Component {
         this._interactWalk = false;
         this._noProgressTime = 0;
         InputBridge.clear();
+        this.unstickIfNeeded();
         const cb = this._onAbort;
         this._onArrive = null;
         this._onAbort = null;
@@ -694,6 +805,8 @@ export class PlayerController extends Component {
     }
 
     private isSolidName(name: string): boolean {
+        // Archway prop — walk through; info prompt still works via MineWorldLayout.
+        if (name === 'bld_mine_mouth') return false;
         return (
             name.startsWith('cottage_') ||
             name.startsWith('home_') ||
@@ -708,6 +821,10 @@ export class PlayerController extends Component {
             name.startsWith('prop_shipping') ||
             name.startsWith('prop_mailbox') ||
             name.startsWith('prop_craftbench') ||
+            name.startsWith('prop_timber') ||
+            name.startsWith('prop_minecart') ||
+            name.startsWith('prop_crate') ||
+            name.startsWith('prop_barrel') ||
             name.startsWith('pond_water_') ||
             name.startsWith('pond_cliff_') ||
             name.startsWith('water_') ||

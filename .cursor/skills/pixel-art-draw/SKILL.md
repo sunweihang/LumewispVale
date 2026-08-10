@@ -26,7 +26,7 @@ Cocos Creator 3.8 竖屏牧场像素资产生成 skill。先读本文件，再�
 | 类型 | 推荐做法 | 输出 |
 |------|----------|------|
 | **角色四向动画** | GenerateImage 出 4×4 sheet → `slice_farmer_sheet.py` 锐化切片；或 `draw_*_pixels.py` 纯像素绘制 | `assets/textures/chars/**` 每帧独立 PNG |
-| **单体道具/建筑/自然物** | GenerateImage 单件 → 抠灰底/键控 → nearest 缩到规格 | `assets/textures/{buildings,nature,props,special,terrain}/**` |
+| **单体道具/建筑/自然物** | GenerateImage 单件 → **门户 RMBG 抠图**（勿灰底色键）→ nearest 缩到规格 | `assets/textures/{buildings,nature,props,special,terrain}/**` |
 | **地形 tile** | 优先脚本/色板绘制；需细节再用 AI 后量化 | 64×64（或 128@2x） |
 | **UI chrome** | 不走本 skill；改用 `cocos-2d-art-ui` | — |
 
@@ -77,8 +77,8 @@ Task Progress:
 **单件世界物**
 
 1. GenerateImage（俯视 3/4、有限色、深描边）
-2. 灰底/杂底 → 透明；`Image.NEAREST` 缩到目标逻辑尺寸
-3. 落盘到对应 `assets/textures/**`
+2. **抠图走 CreativeCenter 门户** `http://10.1.4.130:8080`（`rmbg-v2` / RMBG-2.0）。建筑批量：`python tools/ui/portal_rmbg_buildings.py`。禁止灰底色键（会啃屋顶、留草地脏边）。
+3. `Image.NEAREST` 缩到目标逻辑尺寸，落盘到对应 `assets/textures/**`
 
 ### 3) 入库硬规则
 

@@ -1,9 +1,15 @@
 {
   "panel": {
     "spriteFrame": "a2ff1daa-0b00-47a1-8b82-1fee6b0c2ea6@f9941",
-    "w": 400,
-    "h": 540,
-    "file": "ui-quest-panel"
+    "w": 700,
+    "h": 1180,
+    "file": "ui-quest-panel",
+    "borders": {
+      "top": 80,
+      "bottom": 68,
+      "left": 44,
+      "right": 44
+    }
   },
   "tracker": {
     "spriteFrame": "f9e5c175-643d-4b93-8934-537b20f9103e@f9941",
@@ -40,5 +46,17 @@
     "w": 152,
     "h": 48,
     "file": "ui-quest-btn-primary"
+  },
+  "questBtn": {
+    "spriteFrame": "e639ab24-7c1a-46ba-93a4-688ca1c1ab08@f9941",
+    "w": 96,
+    "h": 96,
+    "file": "ui-quest-btn"
+  },
+  "questArrow": {
+    "spriteFrame": "74358256-5fdf-4193-a127-53998d13c454@f9941",
+    "w": 96,
+    "h": 96,
+    "file": "ui-quest-arrow"
   }
 }

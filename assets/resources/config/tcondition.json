@@ -61,5 +61,12 @@
     "compare_mode": 3,
     "desc": "金币达到 {0}",
     "goto_id": 0
+  },
+  {
+    "id": 10,
+    "type": 10,
+    "compare_mode": 3,
+    "desc": "完成：{1}",
+    "goto_id": 0
   }
 ]

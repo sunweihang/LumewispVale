@@ -54,8 +54,8 @@ const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }>
     dirt: { title: '泥土', kind: '材料', desc: '锄地开垦时翻出的土壤' },
     stone: { title: '石头', kind: '材料', desc: '用锄头挖开石子与岩石获得' },
     fish: { title: '鱼', kind: '食材', desc: '从湖里钓上来的鲜鱼' },
-    copper: { title: '铜矿石', kind: '矿石', desc: '矿脉商会出售的入门矿' },
-    iron: { title: '铁矿石', kind: '矿石', desc: '更坚硬的锻造材料' },
+    copper: { title: '铜矿石', kind: '矿石', desc: '浅层矿洞可采，也可在矿脉商会购买' },
+    iron: { title: '铁矿石', kind: '矿石', desc: '矿洞深处的硬脉，锻造常用' },
     goldOre: { title: '金矿石', kind: '矿石', desc: '稀有闪光矿脉' },
 };
 
@@ -93,7 +93,7 @@ const GAP = 4;
 const BAR_BG_W = SLOT_COUNT * SLOT + (SLOT_COUNT - 1) * GAP + BAR_INNER_PAD * 2;
 const BAR_PAD_Y = Math.round(20 * UI_SCALE);
 const BAR_H = SLOT + BAR_PAD_Y;
-/** Below FarmActionHint (−700) so the bar doesn't cover the cue text. */
+/** Hotbar sits below FarmActionHint (−560) and the quest tracker dock. */
 const BAR_Y = -860;
 const TIP_HIDE_SEC = 2.4;
 const TIP_SLOT_GAP = 36;
@@ -398,6 +398,22 @@ export class FarmHUD extends Component {
 
     private hotbarItem(i: number): InvItemId | null {
         return this._backpack[HOTBAR_BASE + i]?.id ?? null;
+    }
+
+    /** Bag / chest / craft modal covering the playfield. */
+    get isModalOpen() {
+        return this._bagOpen || this._chestOpen || this._craftOpen;
+    }
+
+    /** Dock slot node for an item — used by TutorialGuide arrows. */
+    hotbarSlotNode(itemId: string): Node | null {
+        if (!this._bar?.isValid) return null;
+        for (let i = 0; i < this._slots.length; i++) {
+            const s = this._slots[i]!;
+            if (s.item === itemId && s.root?.isValid) return s.root;
+        }
+        const named = this._bar.getChildByName(`Slot_${itemId}`);
+        return named?.isValid ? named : null;
     }
 
     private ensureHandSlot() {
@@ -866,21 +882,6 @@ export class FarmHUD extends Component {
             outline: true,
         });
 
-        const hintN = new Node('Hint');
-        hintN.layer = canvas.layer;
-        hintN.setParent(panel);
-        hintN.setPosition(0, titleY - INV_TITLE_H * 0.55, 0);
-        hintN.addComponent(UITransform).setContentSize(panelW, Math.round(22 * UI_SCALE));
-        const hint = hintN.addComponent(Label);
-        hint.string = '下方一行为第4行（快捷装备）';
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        hint.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(hint, {
-            size: Math.round(16 * UI_SCALE),
-            color: new Color(210, 190, 150, 255),
-            outline: false,
-        });
-
         this.buildCloseButton(panel, panelW, panelH);
 
         const grid = new Node('Grid');
@@ -910,9 +911,14 @@ export class FarmHUD extends Component {
 
     /** Shared corner placement for bag / chest / craft close buttons. */
     private placePanelCloseButton(btn: Node, panelW: number, panelH: number) {
-        const pad = Math.round(14 * UI_SCALE);
+        // Inset into the parchment so the X isn't flush to the outer wood rim (looked “偏右”).
+        const pad = Math.round(22 * UI_SCALE);
         const hit = Math.round(CLOSE_BTN * 1.35);
-        btn.setPosition(panelW * 0.5 - pad - hit * 0.5, panelH * 0.5 - pad - hit * 0.5, 0);
+        btn.setPosition(
+            panelW * 0.5 - pad - CLOSE_BTN * 0.5,
+            panelH * 0.5 - pad - CLOSE_BTN * 0.5,
+            0,
+        );
         btn.addComponent(UITransform).setContentSize(hit, hit);
     }
 

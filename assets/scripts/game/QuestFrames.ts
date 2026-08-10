@@ -7,25 +7,25 @@ export const QUEST_FRAMES = {
     rowDone: '788cfe35-3a07-4b1a-bd2e-4d6991cf407c@f9941',
     btnSecondary: '69b6a8f8-7068-4fc7-8de3-26b3d3a715e9@f9941',
     btnPrimary: '6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941',
+    questBtn: 'e639ab24-7c1a-46ba-93a4-688ca1c1ab08@f9941',
+    questArrow: '74358256-5fdf-4193-a127-53998d13c454@f9941',
 } as const;
 
 /** Prefab asset uuid — layout source of truth. */
 export const QUEST_PANEL_PREFAB_UUID = '80815e00-313f-4257-93fa-95aa89a25f45';
 
-/** Prefab layout (panel-local px). Keep in sync with generate_quest_panel_prefab.py */
 export const QUEST_LAYOUT = {
-    panelW: 620,
-    panelH: 900,
-    contentW: 540,
-    heroW: 540,
-    heroH: 128,
-    heroY: 292.0,
-    sectionY: 198.0,
-    rowW: 540,
-    rowH: 60,
-    rowGap: 6,
-    listY: -56.0,
-    listH: 456,
-    btnY: -392.0,
-    icon: 40,
+    panelW: 700,
+    panelH: 1120,
+    contentW: 632,
+    rowW: 632,
+    rowH: 152,
+    rowGap: 14,
+    listY: -47.0,
+    listH: 900,
+    titleY: 479.1,
+    closeX: 275.0,
+    closeY: 485.0,
+    closeBtn: 84,
+    icon: 44,
 } as const;

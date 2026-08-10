@@ -142,44 +142,82 @@ def draw_grass() -> Image.Image:
 
 
 def draw_dirt() -> Image.Image:
-    """Clump of tilled soil — golden ochre mound, not a flat tile square."""
+    """Farm dirt pile — stacked ochre clods matching tile-dirt (#D29E2A)."""
     s = 32
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     p = img.load()
 
-    soil = (186, 132, 48, 255)
-    soil_hi = (220, 168, 72, 255)
-    soil_dk = (138, 92, 34, 255)
-    soil_deep = (104, 68, 28, 255)
-    speck = (160, 110, 40, 255)
-    pebble = (120, 112, 96, 255)
-    pebble_hi = (168, 160, 140, 255)
+    # Match terrain tile-dirt samples (~210,158,42), not muddy red / fruit yellow
+    soil = (210, 158, 42, 255)
+    soil_mid = (188, 137, 38, 255)
+    soil_hi = (224, 178, 70, 255)
+    soil_dk = (150, 104, 32, 255)
+    soil_deep = (118, 78, 26, 255)
+    speck = (198, 146, 39, 255)
+    crease = (128, 86, 28, 255)
+    pebble = (132, 126, 114, 255)
+    pebble_hi = (172, 166, 152, 255)
+    pebble_dk = (92, 88, 80, 255)
+    sprout = (74, 148, 58, 255)
+    sprout_hi = (122, 196, 86, 255)
+    sprout_dk = (42, 96, 36, 255)
 
-    # Irregular mound (stacked ellipses)
-    fill_ellipse(p, s, 16, 20, 11, 7, soil_dk)
-    fill_ellipse(p, s, 16, 17, 10, 7, soil)
-    fill_ellipse(p, s, 15, 14, 8, 5, soil_hi)
-    # Clods
-    fill_ellipse(p, s, 10, 18, 3, 2, soil_deep)
-    fill_ellipse(p, s, 22, 19, 3, 2, soil_dk)
-    fill_ellipse(p, s, 18, 12, 3, 2, soil_hi)
-    # Speckle texture
+    def clod(cx, cy, rx, ry, base, hi=None, dk=None):
+        hi = hi or soil_hi
+        dk = dk or soil_dk
+        for y in range(cy - ry, cy + ry + 1):
+            for x in range(cx - rx, cx + rx + 1):
+                nx = (x - cx) / max(1, rx)
+                ny = (y - cy) / max(1, ry)
+                if nx * nx + ny * ny > 1.02:
+                    continue
+                if ny < -0.35 and nx < 0.15:
+                    c = hi
+                elif ny > 0.45 or nx > 0.55:
+                    c = dk
+                else:
+                    c = base
+                put(p, s, x, y, c)
+
+    # Stacked clods: back / mid / front (reads as loose soil pile)
+    clod(16, 14, 7, 4, soil_mid, soil, soil_dk)
+    clod(11, 17, 5, 3, soil, soil_hi, soil_deep)
+    clod(21, 17, 5, 3, soil_mid, soil, soil_dk)
+    clod(16, 19, 8, 4, soil, soil_hi, soil_deep)
+    clod(13, 21, 4, 2, soil_dk, soil_mid, soil_deep)
+    clod(20, 21, 4, 2, soil_mid, soil, soil_dk)
+
+    # Tile-like grain (sparse, deliberate)
     for x, y in (
-        (12, 15),
-        (14, 18),
-        (17, 16),
-        (19, 20),
-        (21, 15),
-        (9, 20),
-        (15, 21),
-        (13, 12),
-        (20, 17),
+        (10, 16),
+        (12, 18),
+        (14, 15),
+        (15, 20),
+        (17, 17),
+        (18, 14),
+        (19, 19),
+        (22, 16),
+        (23, 20),
+        (9, 19),
+        (16, 22),
+        (14, 12),
     ):
         put(p, s, x, y, speck)
-    # Tiny pebbles in the clump
-    put(p, s, 11, 16, pebble)
-    put(p, s, 12, 16, pebble_hi)
-    put(p, s, 20, 14, pebble)
+    for x, y in ((13, 16), (17, 18), (20, 15), (11, 20), (22, 19)):
+        put(p, s, x, y, crease)
+
+    # Pebble nestled in front clod
+    put(p, s, 12, 20, pebble_dk)
+    put(p, s, 13, 20, pebble)
+    put(p, s, 12, 21, pebble)
+    put(p, s, 13, 21, pebble_hi)
+
+    # Tiny sprout between back clods
+    put(p, s, 16, 11, sprout_dk)
+    put(p, s, 16, 10, sprout)
+    put(p, s, 16, 9, sprout_hi)
+    put(p, s, 15, 10, sprout)
+    put(p, s, 17, 10, sprout_hi)
 
     outline_opaque(p, s)
     return img.resize((96, 96), Image.NEAREST)
@@ -405,14 +443,29 @@ def sync_catalog(frames):
     CATALOG.write_text(json.dumps(cat, indent=2) + "\n", encoding="utf-8")
 
 
-def main() -> None:
+def main(argv=None) -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Draw procedural material icons")
+    ap.add_argument(
+        "--only",
+        nargs="+",
+        choices=list(MATERIALS),
+        help="Regenerate only these keys (merge into existing frames)",
+    )
+    args = ap.parse_args(argv)
+
     UI.mkdir(parents=True, exist_ok=True)
     umap: dict = {}
     if UUID_MAP.exists():
         umap = json.loads(UUID_MAP.read_text(encoding="utf-8"))
 
     frames = {}
-    for key in MATERIALS:
+    if MF.exists():
+        frames = json.loads(MF.read_text(encoding="utf-8"))
+
+    keys = tuple(args.only) if args.only else MATERIALS
+    for key in keys:
         out = UI / "ic-{}.png".format(key)
         DRAWERS[key]().save(out)
         image_uuid = write_meta(

@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Process AI town building refs → orthogonal pixel sprites in assets/textures/buildings.
 
-Prefer *-ortho-ref.png when present. Chroma gray/checker → transparent, NEAREST scale,
-preserve .meta UUID, foot-align (content at bottom).
+DEPRECATED for production cutout: gray chroma eats roofs / leaves grass halos.
+Prefer portal RMBG instead:
+
+    python tools/ui/portal_rmbg_buildings.py
+
+This script remains as a local fallback (Prefer *-ortho-ref.png when present.
+Chroma gray/checker → transparent, NEAREST scale, preserve .meta UUID, foot-align).
 """
 
 from __future__ import print_function

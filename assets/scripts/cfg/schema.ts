@@ -81,6 +81,10 @@ export enum ConditionType {
      * 金币数量
      */
     Gold = 9,
+    /**
+     * 剧情旗标次数 param=flagId
+     */
+    Flag = 10,
 }
 
  
@@ -137,6 +141,18 @@ export enum GotoAction {
      * 提示工作台
      */
     HintCraft = 11,
+    /**
+     * 提示紫晶陨石
+     */
+    HintMeteor = 12,
+    /**
+     * 提示通往小镇的路牌
+     */
+    HintTownGate = 13,
+    /**
+     * 提示镇长府
+     */
+    HintMayor = 14,
 }
 
  
