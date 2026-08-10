@@ -103,7 +103,7 @@ def sprite_obj(node_id, prefab_info_id, sf_uuid):
         "_dstBlendFactor": 4,
         "_color": {"__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255},
         "_spriteFrame": {"__uuid__": sf_uuid, "__expectedType__": "cc.SpriteFrame"} if sf_uuid else None,
-        "_type": 0,
+        "_type": 1,  # SLICED — respect sprite-frame border*
         "_fillType": 0,
         "_sizeMode": 0,
         "_fillCenter": {"__type__": "cc.Vec2", "x": 0, "y": 0},

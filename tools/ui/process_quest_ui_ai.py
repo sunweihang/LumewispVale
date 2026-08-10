@@ -84,9 +84,22 @@ def crop_opaque(im, pad=2):
     return im.crop((x0, y0, x1, y1))
 
 
-def fit(im, tw, th):
+def fit(im, tw, th, mode="fill"):
+    """Fit opaque art into canvas.
+
+    mode=fill  — stretch to nearly full canvas (rows/buttons/tracker).
+    mode=fit   — letterbox (panels that must keep aspect).
+    """
     cut = crop_opaque(im)
     cw, ch = cut.size
+    edge = 2
+    if mode == "fill":
+        nw = max(1, tw - edge * 2)
+        nh = max(1, th - edge * 2)
+        cut = quantize(cut.resize((nw, nh), RESAMPLE))
+        out = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+        out.paste(cut, (edge, edge), cut)
+        return out
     scale = min(tw / float(max(1, cw)), th / float(max(1, ch))) * 0.98
     nw = max(1, int(round(cw * scale)))
     nh = max(1, int(round(ch * scale)))
@@ -257,7 +270,9 @@ def write_meta(png_path, image_uuid, w, h, name):
 
 def save_asset(name, im):
     tw, th = SIZES[name]
-    out = fit(im, tw, th)
+    # Panel keeps aspect; horizontal chrome must full-bleed or list text falls outside.
+    mode = "fit" if name == "ui-quest-panel" else "fill"
+    out = fit(im, tw, th, mode=mode)
     path = OUT_DIR / (name + ".png")
     out.save(path)
     umap = json.loads(UUID_MAP.read_text(encoding="utf-8")) if UUID_MAP.exists() else {}

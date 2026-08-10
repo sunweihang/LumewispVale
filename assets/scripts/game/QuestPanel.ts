@@ -185,10 +185,13 @@ export class QuestPanel extends Component {
                 InputBridge.uiBlocking = true;
                 InputBridge.clear();
                 if (this._prefabRoot) this._prefabRoot.active = true;
+                if (this._tracker) this._tracker.active = false;
                 this.refreshPanel();
             } else {
                 InputBridge.uiBlocking = this._prevBlocking;
                 if (this._prefabRoot) this._prefabRoot.active = false;
+                if (this._tracker) this._tracker.active = true;
+                this.refreshTracker();
             }
         };
         if (open && !this._mounted) {
@@ -307,6 +310,18 @@ export class QuestPanel extends Component {
         if (this.heroBarNode && !this._heroBar) {
             this._heroBar = this.heroBarNode.addComponent(Graphics);
         }
+        this.layoutHeroBar(0);
+    }
+
+    /** Progress bar left-aligned under hero copy; gap before the 0/N label. */
+    private layoutHeroBar(ratio: number) {
+        if (!this.heroBarNode) return;
+        const barW = L.heroW - 128;
+        const textLeft = -L.heroW * 0.5 + 72;
+        this.heroBarNode.setPosition(textLeft + barW * 0.5, -40, 0);
+        const ut = this.heroBarNode.getComponent(UITransform);
+        if (ut) ut.setContentSize(barW, 14);
+        this.paintBar(this._heroBar, ratio, barW, 12);
     }
 
     private refreshTracker() {
@@ -315,13 +330,13 @@ export class QuestPanel extends Component {
         if (!q || this.quests?.isFinished) {
             this._trackerTitle.string = '旅途日志';
             this._trackerProg.string = this.quests?.isFinished ? '主线已完成' : '加载中…';
-            this.paintBar(this._trackerBar, 0, 220, 8);
+            this.paintBar(this._trackerBar, 0, 200, 8);
             return;
         }
         const prog = this.quests!.progressOf(q);
         this._trackerTitle.string = q.name;
         this._trackerProg.string = `${prog.desc}  ${prog.current}/${prog.target}`;
-        this.paintBar(this._trackerBar, prog.target ? prog.current / prog.target : 0, 220, 8);
+        this.paintBar(this._trackerBar, prog.target ? prog.current / prog.target : 0, 200, 8);
     }
 
     private refreshPanel() {
@@ -335,14 +350,14 @@ export class QuestPanel extends Component {
                     ? '主线指引已完成，去院子里自由探索吧。'
                     : '正在读取任务配置…';
                 this.heroProgLab.string = '';
-                this.paintBar(this._heroBar, 1, L.heroW - 48, 12);
+                this.layoutHeroBar(1);
                 if (this.heroIcon) this.heroIcon.spriteFrame = null;
             } else {
                 const prog = this.quests.progressOf(q);
                 this.heroTitleLab.string = q.name;
                 this.heroDescLab.string = q.desc;
                 this.heroProgLab.string = `${prog.current}/${prog.target}`;
-                this.paintBar(this._heroBar, prog.target ? prog.current / prog.target : 0, L.heroW - 48, 12);
+                this.layoutHeroBar(prog.target ? prog.current / prog.target : 0);
                 const uuid = this.iconUuidFor(q);
                 if (uuid && this.heroIcon) this.loadIcon(uuid, this.heroIcon);
             }
@@ -380,19 +395,37 @@ export class QuestPanel extends Component {
         const bg = new Node('Bg');
         bg.layer = host.layer;
         bg.setParent(row);
-        bg.addComponent(UITransform).setContentSize(L.rowW, L.rowH);
+        const bgUt = bg.addComponent(UITransform);
+        bgUt.setContentSize(L.rowW, L.rowH);
         const sp = bg.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.type = Sprite.Type.SLICED;
         const sf = this._frames.get(frame);
         if (sf) sp.spriteFrame = sf;
+        // Defensive: spriteFrame assign can reset size on some engine builds.
+        bgUt.setContentSize(L.rowW, L.rowH);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
 
         if (!active && !done) {
             const op = row.addComponent(UIOpacity);
-            op.opacity = 220;
+            op.opacity = 235;
         }
 
-        // Icon — vertically centered, fixed left column
-        const iconX = -L.rowW * 0.5 + 36;
+        // Content insets — sit inside the wooden plate, not in transparent pad.
+        const iconX = -L.rowW * 0.5 + 34;
+        const textLeft = -L.rowW * 0.5 + 66;
+        const textW = L.rowW - 150;
+        const ink = done
+            ? new Color(48, 86, 40, 255)
+            : active
+              ? new Color(68, 40, 18, 255)
+              : new Color(72, 48, 28, 255);
+        const mute = done
+            ? new Color(70, 100, 58, 255)
+            : active
+              ? new Color(110, 78, 42, 255)
+              : new Color(120, 88, 52, 220);
+
         const iconUuid = this.iconUuidFor(q);
         if (iconUuid) {
             const iconN = new Node('Icon');
@@ -405,13 +438,10 @@ export class QuestPanel extends Component {
             this.loadIcon(iconUuid, isp);
         }
 
-        // Title — left-anchored text column
-        const textLeft = -L.rowW * 0.5 + 68;
-        const textW = L.rowW - 160;
         const nameN = new Node('Name');
         nameN.layer = host.layer;
         nameN.setParent(row);
-        nameN.setPosition(textLeft, 8, 0);
+        nameN.setPosition(textLeft, active ? 8 : 0, 0);
         const nameUt = nameN.addComponent(UITransform);
         nameUt.setContentSize(textW, 26);
         nameUt.setAnchorPoint(0, 0.5);
@@ -421,24 +451,17 @@ export class QuestPanel extends Component {
         name.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(name, {
             size: 20,
-            color: done
-                ? new Color(60, 90, 48, 255)
-                : active
-                  ? new Color(68, 40, 18, 255)
-                  : new Color(255, 232, 190, 255),
-            outline: !done && !active,
-            outlineWidth: 2,
-            outlineColor: new Color(40, 24, 12, 220),
+            color: ink,
+            outline: false,
         });
         applyUiFont(name);
 
-        // Status / progress — right column, vertically centered
         const statusN = new Node('Status');
         statusN.layer = host.layer;
         statusN.setParent(row);
-        statusN.setPosition(L.rowW * 0.5 - 16, 0, 0);
+        statusN.setPosition(L.rowW * 0.5 - 18, 0, 0);
         const stUt = statusN.addComponent(UITransform);
-        stUt.setContentSize(100, 28);
+        stUt.setContentSize(88, 28);
         stUt.setAnchorPoint(1, 0.5);
         const status = statusN.addComponent(Label);
         if (done) status.string = '完成';
@@ -450,16 +473,12 @@ export class QuestPanel extends Component {
         status.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(status, {
             size: 18,
-            color: done
-                ? new Color(60, 90, 48, 255)
-                : active
-                  ? new Color(120, 72, 28, 255)
-                  : new Color(200, 170, 120, 200),
+            color: mute,
             outline: false,
         });
         applyUiFont(status);
 
-        // Subline only for active (below title, still inside row)
+        // Active row: short objective under title (hero already has full desc).
         if (active && this.quests) {
             const p = this.quests.progressOf(q);
             const subN = new Node('Sub');
@@ -467,14 +486,14 @@ export class QuestPanel extends Component {
             subN.setParent(row);
             subN.setPosition(textLeft, -12, 0);
             const subUt = subN.addComponent(UITransform);
-            subUt.setContentSize(textW, 20);
+            subUt.setContentSize(textW - 20, 20);
             subUt.setAnchorPoint(0, 0.5);
             const sub = subN.addComponent(Label);
             sub.string = p.desc;
             sub.horizontalAlign = Label.HorizontalAlign.LEFT;
             styleUiLabel(sub, {
                 size: 14,
-                color: new Color(110, 78, 42, 255),
+                color: mute,
                 outline: false,
             });
             applyUiFont(sub);
@@ -499,8 +518,9 @@ export class QuestPanel extends Component {
         const sf = this._frames.get('tracker');
         if (sf) sp.spriteFrame = sf;
 
-        const textLeft = -tw * 0.5 + 70;
-        const textW = tw - 90;
+        // Tracker art: scroll icon ~left 72px, parchment fills the rest.
+        const textLeft = -tw * 0.5 + 78;
+        const textW = tw - 100;
 
         const titleN = new Node('Title');
         titleN.layer = canvas.layer;
@@ -526,11 +546,12 @@ export class QuestPanel extends Component {
         styleUiLabel(prog, { size: 15, color: new Color(110, 78, 42, 255), outline: false });
         this._trackerProg = prog;
 
+        const barW = 200;
         const barN = new Node('Bar');
         barN.layer = canvas.layer;
         barN.setParent(bar);
-        barN.setPosition(textLeft + 110, -24, 0);
-        barN.addComponent(UITransform).setContentSize(220, 10);
+        barN.setPosition(textLeft + barW * 0.5, -24, 0);
+        barN.addComponent(UITransform).setContentSize(barW, 10);
         this._trackerBar = barN.addComponent(Graphics);
 
         this._tracker = bar;

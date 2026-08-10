@@ -71,7 +71,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "88la9k67vzvypnzwirr0fq",
+    "fileId": "1hlcxac7joizpcbt7rl8kk",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -108,7 +108,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "9rr4jg2eekak93fa3q1g35",
+    "fileId": "7e85qvrtirowahhwzm2zps",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -228,7 +228,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "xc7smvsjb0l5c2qu0j8xvc",
+    "fileId": "humxtbdwlvt4667t9d8vdf",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -352,7 +352,7 @@
       "__uuid__": "a2ff1daa-0b00-47a1-8b82-1fee6b0c2ea6@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
+    "_type": 1,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -375,7 +375,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "cmfv69wmkcurxzeb9x0avk",
+    "fileId": "4e8eoye8b40i4eyvb46h19",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -526,7 +526,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "demrnhronxdtltva5wz7yz",
+    "fileId": "s72zlxtx2qispcx6mi5la3",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -662,7 +662,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "4bkr8vwc7lhqmzbqfub5vw",
+    "fileId": "r5gfu0a0b8tr0wsw97k8m7",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -764,7 +764,7 @@
       "a": 255
     },
     "_spriteFrame": null,
-    "_type": 0,
+    "_type": 1,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -787,7 +787,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "mmanlma2lzwv0w6upc4d66",
+    "fileId": "y75qvdnmx9dqwql1sexth7",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -938,7 +938,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "atr9v5g8j4kcur2hb6hf7x",
+    "fileId": "0v6simeb4kg3ejivqarlm8",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1089,7 +1089,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "hnvkienuouxqt96spfxeso",
+    "fileId": "2ufy4udmg5nsge4g7rsvbs",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1240,7 +1240,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "fp19mcq4lqei6s4zy6wpwu",
+    "fileId": "y9jyoyjodlinj855ub4un2",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1360,7 +1360,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "2hur2411qrowcxwfrjdbnx",
+    "fileId": "98x5a6kf9co46pzpq6y95a",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1511,7 +1511,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "l1qxnb5mcqi87azsphy9cg",
+    "fileId": "3ppruxys0z4wdpugeyw36x",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1595,7 +1595,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "0k5dx9eiguw9b1grrj5ma7",
+    "fileId": "ojw2d811muw8oqsd45p4t8",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1704,7 +1704,7 @@
       "__uuid__": "69b6a8f8-7068-4fc7-8de3-26b3d3a715e9@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
+    "_type": 1,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -1727,7 +1727,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "zkhu68t568a8u8qzk3bdux",
+    "fileId": "fubycrq9yku7bociqlw4l7",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1878,7 +1878,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "nskyln8g526jot5nmmhh1j",
+    "fileId": "8ha672cp24ge8uxv08nl00",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -1987,7 +1987,7 @@
       "__uuid__": "6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
+    "_type": 1,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -2010,7 +2010,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "x9ncm8mclautiguz95w4q7",
+    "fileId": "kroheoonu3tjttl3byou5s",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
