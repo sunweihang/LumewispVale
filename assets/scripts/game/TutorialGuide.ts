@@ -63,6 +63,11 @@ const ARROW_EXTENT_UP = 48;
  * Tip sits ~8px above the ring (96px sprite, tip ≈ center − 48).
  */
 const PLACE_ARROW_ABOVE = 56;
+/**
+ * Ground ripple in World-local px (under feet). Must NOT use Canvas sizes —
+ * World already carries fitWorldToDesign / WORLD_ZOOM.
+ */
+const PLACE_RIPPLE_WORLD = 64;
 /** Gap between arrow top and tip banner bottom. */
 const TIP_ARROW_GAP = 18;
 /** Bag → hotbar drag demo loop (ms). */
@@ -2753,6 +2758,7 @@ export class TutorialGuide extends Component {
         if (!n) return;
         n.active = true;
         n.setPosition(aim.x, aim.y, 0);
+        this.applyGroundRippleSize(n);
         this.pulseGroundRipple();
     }
 
@@ -2779,8 +2785,8 @@ export class TutorialGuide extends Component {
         n.setParent(world);
         n.active = false;
         const ui = n.addComponent(UITransform);
-        ui.setContentSize(160, 160);
         ui.setAnchorPoint(0.5, 0.5);
+        this.applyGroundRippleSize(n);
         const sp = n.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
         sp.trim = false;
@@ -2794,6 +2800,17 @@ export class TutorialGuide extends Component {
         return n;
     }
 
+    private applyGroundRippleSize(n: Node) {
+        const ui = n.getComponent(UITransform);
+        if (!ui) return;
+        if (
+            Math.abs(ui.contentSize.width - PLACE_RIPPLE_WORLD) > 0.5 ||
+            Math.abs(ui.contentSize.height - PLACE_RIPPLE_WORLD) > 0.5
+        ) {
+            ui.setContentSize(PLACE_RIPPLE_WORLD, PLACE_RIPPLE_WORLD);
+        }
+    }
+
     private loadGroundRippleFrame() {
         const sp = this._rippleSp;
         if (!sp?.isValid || this._rippleLoaded) return;
@@ -2802,6 +2819,9 @@ export class TutorialGuide extends Component {
         assetManager.loadAny({ uuid }, (err, asset) => {
             if (err || !asset || !sp.isValid) return;
             sp.spriteFrame = asset as SpriteFrame;
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            const host = this._rippleN;
+            if (host?.isValid) this.applyGroundRippleSize(host);
             this._rippleLoaded = true;
         });
     }
@@ -2814,13 +2834,13 @@ export class TutorialGuide extends Component {
         // Already looping — don't restart every lateUpdate frame.
         if (this._ripplePulsing) return;
         this._ripplePulsing = true;
-        n.setScale(0.65, 0.65, 1);
+        n.setScale(0.85, 0.85, 1);
         op.opacity = 235;
         tween(n)
             .repeatForever(
                 tween(n)
-                    .to(1.1, { scale: new Vec3(1.45, 1.45, 1) }, { easing: 'sineOut' })
-                    .set({ scale: new Vec3(0.65, 0.65, 1) }),
+                    .to(1.1, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
+                    .set({ scale: new Vec3(0.85, 0.85, 1) }),
             )
             .start();
         tween(op)
