@@ -284,6 +284,22 @@ export class GameBootstrap extends Component {
             shopPanel.farm = farm;
             shopPanel.quests = quests;
 
+            MayorHouseWorldLayout.mountExitFx(world);
+            let mayorExitArmed = true;
+            this.schedule(() => {
+                if (!mayorExitArmed || !player?.isValid) return;
+                const p = player.position;
+                if (!MayorHouseWorldLayout.inExitZone(p.x, p.y)) return;
+                if (!canTravel('town')) return;
+                mayorExitArmed = false;
+                travelTo('town', {
+                    farm,
+                    quests,
+                    spawnX: MayorHouseWorldLayout.TOWN_RETURN.x,
+                    spawnY: MayorHouseWorldLayout.TOWN_RETURN.y,
+                });
+            }, 0.08);
+
             stick.onTap = (x, y) => {
                 guide.noteActivity();
                 if (storyIntro.handleTap(x, y)) return;
@@ -297,29 +313,23 @@ export class GameBootstrap extends Component {
                 if (worldPt) {
                     const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
                     if (npcHit?.id === 'mayor') {
-                        npcHit.node.getComponent(NpcAnimator)?.faceToward(
-                            player.position.x,
-                            player.position.y,
-                        );
-                        if (storyDlg.tryBuilding('mayor')) return;
-                        const chat = TownWorldLayout.npcInfo('mayor');
-                        if (chat) {
-                            if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
-                            shopPanel.openInfo(chat.title, chat.body);
-                        }
-                        return;
-                    }
-                    const hit = MayorHouseWorldLayout.findInteract(world, worldPt.x, worldPt.y);
-                    if (hit?.kind === 'travel') {
-                        if (!canTravel('town')) return;
-                        travelTo('town', {
-                            farm,
-                            quests,
-                            spawnX: MayorHouseWorldLayout.TOWN_RETURN.x,
-                            spawnY: MayorHouseWorldLayout.TOWN_RETURN.y,
+                        // Walk into talk range first — far taps must not open dialogue.
+                        story.approachNpcThen(npcHit.node, () => {
+                            if (!npcHit.node.isValid || !player.isValid) return;
+                            npcHit.node.getComponent(NpcAnimator)?.faceToward(
+                                player.position.x,
+                                player.position.y,
+                            );
+                            if (storyDlg.tryBuilding('mayor')) return;
+                            const chat = TownWorldLayout.npcInfo('mayor');
+                            if (chat) {
+                                if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
+                                shopPanel.openInfo(chat.title, chat.body);
+                            }
                         });
                         return;
                     }
+                    const hit = MayorHouseWorldLayout.findInteract(world, worldPt.x, worldPt.y);
                     if (hit?.kind === 'info') {
                         shopPanel.openInfo(hit.title, hit.body);
                         return;
@@ -475,18 +485,21 @@ export class GameBootstrap extends Component {
                     // Prefer npc_* actors when the tap lands near them.
                     const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
                     if (npcHit) {
-                        npcHit.node.getComponent(NpcAnimator)?.faceToward(
-                            player.position.x,
-                            player.position.y,
-                        );
-                        if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
-                            if (storyDlg.tryBuilding(npcHit.key)) return;
-                        }
-                        const chat = TownWorldLayout.npcInfo(npcHit.id);
-                        if (chat) {
-                            if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
-                            shopPanel.openInfo(chat.title, chat.body);
-                        }
+                        story.approachNpcThen(npcHit.node, () => {
+                            if (!npcHit.node.isValid || !player.isValid) return;
+                            npcHit.node.getComponent(NpcAnimator)?.faceToward(
+                                player.position.x,
+                                player.position.y,
+                            );
+                            if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
+                                if (storyDlg.tryBuilding(npcHit.key)) return;
+                            }
+                            const chat = TownWorldLayout.npcInfo(npcHit.id);
+                            if (chat) {
+                                if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
+                                shopPanel.openInfo(chat.title, chat.body);
+                            }
+                        });
                         return;
                     }
                     const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
@@ -627,15 +640,18 @@ export class GameBootstrap extends Component {
                 if (worldPt) {
                     const npcHit = FarmWorldLayout.findNpc(world, worldPt.x, worldPt.y);
                     if (npcHit) {
-                        const anim = npcHit.node.getComponent(NpcAnimator);
-                        // StoryDialogue holds/releases for the full chat; face now.
-                        anim?.holdPatrol();
-                        anim?.faceToward(player.position.x, player.position.y);
-                        if (storyDlg.tryFarmNpc(npcHit.key)) return;
-                        const chat = FarmWorldLayout.npcInfo(npcHit.id);
-                        if (chat) {
-                            dialogue.play([{ speaker: chat.title, text: chat.body }]);
-                        }
+                        story.approachNpcThen(npcHit.node, () => {
+                            if (!npcHit.node.isValid || !player.isValid) return;
+                            const anim = npcHit.node.getComponent(NpcAnimator);
+                            // StoryDialogue holds/releases for the full chat; face now.
+                            anim?.holdPatrol();
+                            anim?.faceToward(player.position.x, player.position.y);
+                            if (storyDlg.tryFarmNpc(npcHit.key)) return;
+                            const chat = FarmWorldLayout.npcInfo(npcHit.id);
+                            if (chat) {
+                                dialogue.play([{ speaker: chat.title, text: chat.body }]);
+                            }
+                        });
                         return;
                     }
                     if (story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;

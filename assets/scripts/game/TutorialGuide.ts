@@ -46,8 +46,11 @@ const FADE_IN = 0.16;
 const INPUT_GUARD = 0.35;
 /** Keep quest arrows clear of bottom hotbar / quest dock and top info board. */
 const ARROW_UI_FLOOR = -560;
-/** Distance below canvas top reserved for clock / gold board. */
-const ARROW_TOP_RESERVE = 380;
+/**
+ * Soft top inset for the playfield band. Info-board corner is excluded
+ * separately — left/civic aims (mayor) must stay on-target when visible.
+ */
+const ARROW_TOP_RESERVE = 200;
 /** Chevron half-height above its node center (sprite / fallback). */
 const ARROW_EXTENT_UP = 48;
 /** Gap between arrow top and tip banner bottom. */
@@ -68,9 +71,16 @@ const FISH_NEAR_RANGE = 300;
 /** Quest 1003 first-seed recipe — matches FarmHUD guided craft. */
 const FIRST_SEED_RECIPE = 'seed_from_grass';
 /** Keep the same world target this long so nearest-picking can't thrash the arrow. */
-const STICKY_MS = 1200;
+const STICKY_MS = 1800;
 /** Prefer the stuck target until a rival is this much closer (world units²). */
 const STICKY_SWITCH_SQ = 160 * 160;
+/**
+ * Extra inset (canvas px) before leaving edge-chevron mode.
+ * Stops on-screen ↔ edge thrash when the aim sits on the playfield lip.
+ */
+const EDGE_HYSTERESIS = 96;
+/** Hold the last good idle aim briefly when HUD/world holes flicker on farm boot. */
+const LAST_GUIDE_HOLD_MS = 450;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
@@ -95,9 +105,12 @@ type IdleGuide = {
      * 180 = walk north / top edge (target above the playfield).
      */
     arrowDeg?: number;
-    /** Fishing cast step — pulse AI ripple on the pier / water aim. */
+    /**
+     * Place-only cue (door / gate / pier…). Never for NPCs or props —
+     * those keep the chevron alone.
+     */
     groundRipple?: boolean;
-    /** World position for `groundRipple` (mid-pier tip). */
+    /** Optional world lock for the ripple (e.g. pier tip / door feet). */
     rippleWorld?: WorldPos;
 };
 
@@ -141,7 +154,7 @@ export class TutorialGuide extends Component {
     private _trailN: Node | null = null;
     private _trailG: Graphics | null = null;
     private _rootOp: UIOpacity | null = null;
-    /** World-space ground ripple under the fishing cast aim. */
+    /** Canvas-space ground ripple under place aims (doors / gates / pier). */
     private _rippleN: Node | null = null;
     private _rippleOp: UIOpacity | null = null;
     private _rippleSp: Sprite | null = null;
@@ -170,6 +183,15 @@ export class TutorialGuide extends Component {
     private _stickyNode: Node | null = null;
     private _stickyPos: WorldPos | null = null;
     private _stickyUntil = 0;
+    /** Latched off-screen chevron — needs a clear re-entry before snapping on-target. */
+    private _edgeLatch = false;
+    private _edgeGuide: IdleGuide | null = null;
+    private _edgeUntil = 0;
+    /** Last non-null idle guide — bridges one-frame questHole / world holes on boot. */
+    private _lastIdleGuide: IdleGuide | null = null;
+    private _lastIdleUntil = 0;
+    /** Fishing near/far tip latch (hysteresis around FISH_NEAR_RANGE). */
+    private _fishNearLatch = false;
     private readonly _worldPt = new Vec3();
     private readonly _localPt = new Vec3();
 
@@ -221,7 +243,7 @@ export class TutorialGuide extends Component {
         ) {
             return null;
         }
-        const guide = this.resolveIdleGuide();
+        const guide = this.resolveIdleGuideStable();
         if (!guide) return null;
         if (guide.silent) return '';
         return guide.tip;
@@ -310,9 +332,13 @@ export class TutorialGuide extends Component {
         if (this._open) return;
         if (!this.canShowIdleArrow()) {
             if (this._idleOn) this.hideIdleArrow();
+            // Drop held aim so a long dialogue / loading gate can't revive a stale hole.
+            this._lastIdleGuide = null;
+            this._lastIdleUntil = 0;
             return;
         }
-        this.showIdleArrow();
+        // Only arm the arrow here — aim math waits for lateUpdate (after CameraFollow).
+        if (!this._idleOn) this.showIdleArrow();
     }
 
     lateUpdate() {
@@ -332,18 +358,31 @@ export class TutorialGuide extends Component {
             if (this._step === 'grass') this.checkGrassDone();
             return;
         }
-        if (this._idleOn) {
-            if (this._root?.isValid) {
-                this._root.setSiblingIndex(this.node.children.length - 1);
-            }
-            const guide = this.resolveIdleGuide();
-            if (!guide) {
-                this.hideIdleArrow();
-                return;
-            }
-            this.applyIdleGuide(guide);
-            this.layoutChrome(false);
+        if (!this.canShowIdleArrow()) {
+            if (this._idleOn) this.hideIdleArrow();
+            return;
         }
+        if (this._root?.isValid) {
+            this._root.setSiblingIndex(this.node.children.length - 1);
+        }
+        const guide = this.resolveIdleGuideStable();
+        if (!guide) {
+            this.hideIdleArrow();
+            return;
+        }
+        this._idleOn = true;
+        this.applyIdleGuide(guide);
+        // Arrow only (no dim / tip banner) — caption used to cover the chevron.
+        if (this._dimN) this._dimN.active = false;
+        if (this._ringN) this._ringN.active = false;
+        if (this._tipRoot) this._tipRoot.active = false;
+        if (this._finger) this._finger.active = true;
+        if (this._rootOp) {
+            Tween.stopAllByTarget(this._rootOp);
+            this._rootOp.opacity = 255;
+        }
+        if (this._root) this._root.active = true;
+        this.layoutChrome(false);
     }
 
     private show() {
@@ -400,6 +439,9 @@ export class TutorialGuide extends Component {
         this._idleGroundRipple = false;
         this._idleRippleWorld = null;
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
+        this._lastIdleGuide = null;
+        this._lastIdleUntil = 0;
+        this._fishNearLatch = false;
         this.clearStickyTarget();
         this.clearDragDemoChrome();
         this.hideGroundRipple();
@@ -428,7 +470,7 @@ export class TutorialGuide extends Component {
     }
 
     private showIdleArrow() {
-        const guide = this.resolveIdleGuide();
+        const guide = this.resolveIdleGuideStable();
         if (!guide) return;
         this._idleOn = true;
         this.applyIdleGuide(guide);
@@ -445,7 +487,7 @@ export class TutorialGuide extends Component {
             this._root.active = true;
             this._root.setSiblingIndex(this.node.children.length - 1);
         }
-        this.layoutChrome(false);
+        // Defer layout to lateUpdate so the first paint matches CameraFollow snap.
     }
 
     private hideIdleArrow() {
@@ -472,6 +514,28 @@ export class TutorialGuide extends Component {
         this._stickyNode = null;
         this._stickyPos = null;
         this._stickyUntil = 0;
+        this._edgeLatch = false;
+        this._edgeGuide = null;
+        this._edgeUntil = 0;
+    }
+
+    /**
+     * resolveIdleGuide + short hold so boot / HUD rebuild null frames don't
+     * yank the chevron to the quest dock (or hide it) for a single tick.
+     */
+    private resolveIdleGuideStable(): IdleGuide | null {
+        const guide = this.resolveIdleGuide();
+        const now = Date.now();
+        if (guide) {
+            this._lastIdleGuide = guide;
+            this._lastIdleUntil = now + LAST_GUIDE_HOLD_MS;
+            return guide;
+        }
+        if (this._lastIdleGuide && now < this._lastIdleUntil) {
+            return this._lastIdleGuide;
+        }
+        this._lastIdleGuide = null;
+        return null;
     }
 
     private setSpotlightChrome(on: boolean) {
@@ -494,6 +558,17 @@ export class TutorialGuide extends Component {
         if (this._tipLab) this._tipLab.string = guide.tip;
         if (this._idleDragItem) this.ensureDragGhostFrame(this._idleDragItem);
         this.syncGroundRipple();
+    }
+
+    /**
+     * Mark place aims (doors / gates / pier / signs) for the ground ripple.
+     * NPCs and props must not call this — chevron only.
+     */
+    private withPlaceRipple(guide: IdleGuide | null, world?: WorldPos | null): IdleGuide | null {
+        if (!guide || guide.uiDock || (guide.arrowDeg ?? 0) !== 0) return guide;
+        guide.groundRipple = true;
+        if (world) guide.rippleWorld = world;
+        return guide;
     }
 
     private toolSwapTip(tool: string): string {
@@ -522,18 +597,31 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Point at a world hole. Off-screen → left/right edge chevron (not quest dock).
+     * Point at a world hole. Off-screen → edge chevron (not quest dock).
      * Quest dock only when there is truly no world aim.
      */
     private worldOrQuest(hole: HoleRect | null, tip: string, fallbackTip?: string): IdleGuide | null {
+        // Recover from a one-frame projection miss (camera / World UITransform).
+        if (!hole && this._stickyPos) {
+            hole = this.worldPosHole(this._stickyPos);
+        }
         if (hole) {
-            if (this.isInPlayfield(hole)) {
+            if (this.isInPlayfieldForMode(hole)) {
+                this._edgeLatch = false;
+                this._edgeGuide = null;
+                this._edgeUntil = 0;
                 return { hole, tip, uiDock: false, arrowDeg: 0 };
             }
-            return this.offscreenEdgeGuide(hole, fallbackTip ?? tip);
+            this._edgeLatch = true;
+            return this.stickEdgeGuide(
+                this.offscreenEdgeGuide(hole, fallbackTip ?? tip, this._stickyPos),
+            );
         }
         const q = this.questHole();
         if (!q) return null;
+        this._edgeLatch = false;
+        this._edgeGuide = null;
+        this._edgeUntil = 0;
         return { hole: q, tip: fallbackTip ?? tip, uiDock: true };
     }
 
@@ -684,68 +772,66 @@ export class TutorialGuide extends Component {
             default: {
                 const id = quests.activeQuest.id;
                 if (id === 1011) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_police', 'bld_post', 'police', 'post') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_police', 'bld_post'],
                         '点击警局或邮局接任务',
+                        '往警局或邮局走，再点公告板',
                     );
                 }
                 if (id === 1012) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('npc_carpenter', 'bld_carpenter', 'carpenter') ??
-                            null,
+                    return this.resolveTownOutdoorGuide(
+                        ['npc_carpenter', 'bld_carpenter'],
                         '点击工匠·石楠打招呼',
+                        '往东市木工坊走，再点石楠',
                     );
                 }
                 if (id === 1013) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_community', 'community') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_community'],
                         '点击社区中心查看工程',
+                        '往社区中心走，再点一下',
                     );
                 }
                 if (id === 1020) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode(
-                            'bld_seedshop',
-                            'bld_general',
-                            'seedshop',
-                            'general',
-                        ) ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_seedshop', 'bld_general'],
                         '走进商店，点击购买商品',
+                        '往种子店走，再点门面',
                     );
                 }
                 if (id === 1021) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode(
-                            'bld_seedshop',
-                            'bld_general',
-                            'seedshop',
-                            'general',
-                        ) ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_seedshop', 'bld_general'],
                         '打开商店，点「出售」卖掉一件收获物',
+                        '往种子店走，再点门面',
                     );
                 }
                 if (id === 1022 || id === 1027) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_community', 'community') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_community'],
                         id === 1022 ? '点击社区中心，签署春厅收集包' : '点击社区中心，点亮春厅',
+                        '往社区中心走，再点一下',
                     );
                 }
                 if (id === 1023) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_clinic', 'clinic') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_clinic'],
                         '点击微光诊所听取叮嘱',
+                        '往微光诊所走，再点一下',
                     );
                 }
                 if (id === 1024) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_oreshop', 'oreshop') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['bld_oreshop'],
                         '点击矿脉商会取得通行证',
+                        '往矿脉商会走，再点一下',
                     );
                 }
                 if (id === 1025) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('sign_mine') ?? null,
+                    return this.resolveTownOutdoorGuide(
+                        ['sign_mine'],
                         '点击北山矿洞路牌进入',
+                        '往北走到矿洞路牌',
                     );
                 }
                 if (id === 1026) {
@@ -762,6 +848,79 @@ export class TutorialGuide extends Component {
                 return { hole: q, tip: '查看当前任务目标', uiDock: true };
             }
         }
+    }
+
+    /**
+     * Town outdoor POI guide. If the target is missing (e.g. still inside
+     * MayorHouse after quest 1010), point at door_exit instead of the quest dock.
+     *
+     * Aim door / board feet — `worldNodeHole` uses the full sprite bounds, so the
+     * chevron sits above the roof (police board looked “blocked” behind the station).
+     */
+    private resolveTownOutdoorGuide(
+        names: string[],
+        tip: string,
+        walkTip: string,
+    ): IdleGuide | null {
+        const node = this.nearestWorldNode(names);
+        if (node) {
+            // Police board sits left of the door on the facade.
+            const biasX = node.name === 'bld_police' ? -40 : 0;
+            const pos = this.stickyWorldPos(`town:${names[0] ?? node.name}`, {
+                x: node.position.x + biasX,
+                y: node.position.y + 28,
+            });
+            const guide = this.worldPosGuide(pos, tip, walkTip);
+            // Buildings / signs = place; NPCs keep arrow only.
+            if (node.name.startsWith('npc_')) return guide;
+            return this.withPlaceRipple(guide, pos);
+        }
+        const exit = this.farm?.findWorldNode('door_exit') ?? null;
+        if (exit) {
+            const pos = this.stickyWorldPos('door-exit', {
+                x: exit.position.x,
+                y: exit.position.y + 24,
+            });
+            return this.withPlaceRipple(
+                this.worldPosGuide(
+                    pos,
+                    '往南走到门口即可回镇子',
+                    '往南走到门口出门',
+                ),
+                pos,
+            );
+        }
+        return this.worldOrQuest(null, tip, walkTip);
+    }
+
+    /** Closest matching world child among `names` (exact or prefix). */
+    private nearestWorldNode(names: string[]): Node | null {
+        const farm = this.farm;
+        if (!farm?.world) return null;
+        const px = farm.player?.position.x ?? 0;
+        const py = farm.player?.position.y ?? 0;
+        let best: Node | null = null;
+        let bestSq = Number.POSITIVE_INFINITY;
+        for (const child of farm.world.children) {
+            if (!child.isValid) continue;
+            let hit = false;
+            for (let i = 0; i < names.length; i++) {
+                const n = names[i]!;
+                if (child.name === n || child.name.startsWith(n)) {
+                    hit = true;
+                    break;
+                }
+            }
+            if (!hit) continue;
+            const dx = child.position.x - px;
+            const dy = child.position.y - py;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = child;
+            }
+        }
+        return best;
     }
 
     /**
@@ -849,6 +1008,7 @@ export class TutorialGuide extends Component {
                 x: npc.position.x,
                 y: npc.position.y + 36,
             });
+            // Person — chevron only, no ground ripple.
             return this.worldPosGuide(
                 pos,
                 '点镇长·艾岚打招呼',
@@ -866,10 +1026,13 @@ export class TutorialGuide extends Component {
             x: bld.position.x,
             y: bld.position.y + 20,
         });
-        return this.worldPosGuide(
+        return this.withPlaceRipple(
+            this.worldPosGuide(
+                pos,
+                '点镇长府大门进屋',
+                '往北走到镇长府，点大门进屋',
+            ),
             pos,
-            '点镇长府大门进屋',
-            '往北走到镇长府，点大门进屋',
         );
     }
 
@@ -882,10 +1045,13 @@ export class TutorialGuide extends Component {
             ? { x: node.position.x, y: node.position.y + 40 }
             : { x: StoryWorldHooks.farmPortalPos().x, y: StoryWorldHooks.farmPortalPos().y + 40 };
         const pos = this.stickyWorldPos('town-gate', raw);
-        return this.worldPosGuide(
+        return this.withPlaceRipple(
+            this.worldPosGuide(
+                pos,
+                '露穗：点路牌去微光溪谷镇吧',
+                '露穗：往右走，去东侧路牌呀',
+            ),
             pos,
-            '露穗：点路牌去微光溪谷镇吧',
-            '露穗：往右走，去东侧路牌呀',
         );
     }
 
@@ -896,6 +1062,7 @@ export class TutorialGuide extends Component {
     private resolveFishGuide(tool: string | undefined): IdleGuide | null {
         if (tool !== 'rod') {
             this.clearStickyTarget();
+            this._fishNearLatch = false;
             const slotHole = this.toolSlotHole('rod') ?? this.toolSlotHoleFallback('rod');
             if (!slotHole) return null;
             // Caption on — first fishing step is easy to miss with a silent hotbar arrow.
@@ -904,22 +1071,25 @@ export class TutorialGuide extends Component {
 
         const target = this.fishGuideTarget();
         if (this.farm?.isBusy) {
-            return this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再点湖面～');
+            return this.withPlaceRipple(
+                this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再点湖面～'),
+                target.pos,
+            );
         }
         if (target.near) {
-            const guide = this.worldPosGuide(
+            return this.withPlaceRipple(
+                this.worldPosGuide(
+                    target.pos,
+                    '露穗：点湖面抛竿呀',
+                    '露穗：往西边码头走，再点湖面～',
+                ),
                 target.pos,
-                '露穗：点湖面抛竿呀',
-                '露穗：往西边码头走，再点湖面～',
             );
-            // On-screen tap aim → ground ripple; edge chevron (walk) keeps arrow only.
-            if (guide && !guide.uiDock && (guide.arrowDeg ?? 0) === 0) {
-                guide.groundRipple = true;
-                guide.rippleWorld = target.pos;
-            }
-            return guide;
         }
-        return this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再点湖面～');
+        return this.withPlaceRipple(
+            this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再点湖面～'),
+            target.pos,
+        );
     }
 
     /** Always the fixed lake-water tip by the pier — never retarget (avoids bounce). */
@@ -927,22 +1097,27 @@ export class TutorialGuide extends Component {
         const hint = FarmWorldLayout.fishingHintWorld();
         const pos = this.stickyWorldPos('fish', hint);
         const player = this.farm?.player;
-        if (!player?.isValid) return { pos, near: false };
+        if (!player?.isValid) return { pos, near: this._fishNearLatch };
         const dist = Math.hypot(player.position.x - hint.x, player.position.y - hint.y);
-        return { pos, near: dist <= FISH_NEAR_RANGE };
+        // Hysteresis — walking the lip of FISH_NEAR_RANGE used to flip tip + ripple.
+        if (this._fishNearLatch) {
+            if (dist > FISH_NEAR_RANGE + 60) this._fishNearLatch = false;
+        } else if (dist <= FISH_NEAR_RANGE - 40) {
+            this._fishNearLatch = true;
+        }
+        return { pos, near: this._fishNearLatch };
     }
 
     /** Hold a fixed world point briefly (pier / portal) so the edge arrow stays put. */
     private stickyWorldPos(key: string, pos: WorldPos): WorldPos {
         const now = Date.now();
-        if (
-            this._stickyKey === key &&
-            this._stickyPos &&
-            now < this._stickyUntil
-        ) {
+        if (this._stickyKey === key && this._stickyPos) {
             const dx = pos.x - this._stickyPos.x;
             const dy = pos.y - this._stickyPos.y;
-            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) return this._stickyPos;
+            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) {
+                this._stickyUntil = now + STICKY_MS;
+                return this._stickyPos;
+            }
         }
         this._stickyKey = key;
         this._stickyNode = null;
@@ -953,57 +1128,169 @@ export class TutorialGuide extends Component {
 
     /**
      * Target off the playfield → edge chevron pointing that way.
-     * Vertical off-screen must NOT clamp a down-arrow onto a wrong building
-     * (e.g. mayor north of camera looked like “click the clinic”).
+     * Prefer world delta (player → aim) so a north POI never becomes a
+     * down-arrow parked on clinic / general store after the camera pans.
      */
-    private offscreenEdgeGuide(hole: HoleRect, tip: string): IdleGuide {
+    private offscreenEdgeGuide(
+        hole: HoleRect,
+        tip: string,
+        worldAim?: WorldPos | null,
+    ): IdleGuide {
         const band = this.playfieldBand();
-        const inX = hole.x >= band.x0 && hole.x <= band.x1;
-        if (inX) {
-            const above = hole.y > band.y1;
-            const walkTip = tip.includes('走')
-                ? tip
-                : above
-                  ? '跟着箭头往北走，靠近了再动手'
-                  : '跟着箭头往南走，靠近了再动手';
-            return {
-                hole: {
-                    x: Math.max(band.x0 + 56, Math.min(band.x1 - 56, hole.x)),
-                    y: above ? band.y1 - 56 : band.y0 + 56,
-                    w: 80,
-                    h: 80,
-                },
-                tip: walkTip,
-                uiDock: false,
-                arrowDeg: above ? 180 : 0,
-            };
+        const deg = this.resolveEdgeDeg(hole, band, worldAim);
+        return this.edgeGuideForDeg(deg, hole, tip, band);
+    }
+
+    /**
+     * Pick edge chevron facing. World delta wins when the aim is clearly
+     * farther on one axis — screen-space alone used to flip N/S around the lip.
+     */
+    private resolveEdgeDeg(
+        hole: HoleRect,
+        band: { x0: number; x1: number; y0: number; y1: number },
+        worldAim?: WorldPos | null,
+    ): number {
+        const prevDeg = this._edgeGuide?.arrowDeg;
+        const player = this.farm?.player;
+        if (worldAim && player?.isValid) {
+            const dx = worldAim.x - player.position.x;
+            const dy = worldAim.y - player.position.y;
+            const adx = Math.abs(dx);
+            const ady = Math.abs(dy);
+            // Mostly vertical / horizontal — ignore the weak axis.
+            if (ady >= adx * 0.75) {
+                let above = dy > 0;
+                if (prevDeg === 180 || prevDeg === 0) {
+                    // Hysteresis so tiny foot jitter can't flip N↔S.
+                    if (prevDeg === 180 && dy > -80) above = true;
+                    else if (prevDeg === 0 && dy < 80) above = false;
+                }
+                return above ? 180 : 0;
+            }
+            if (adx >= ady * 0.75) {
+                let goRight = dx > 0;
+                if (prevDeg === 90 || prevDeg === -90) {
+                    if (prevDeg === 90 && dx > -80) goRight = true;
+                    else if (prevDeg === -90 && dx < 80) goRight = false;
+                }
+                return goRight ? 90 : -90;
+            }
         }
 
-        const goRight = hole.x > (band.x0 + band.x1) * 0.5;
-        let y = Math.max(band.y0 + 80, Math.min(band.y1 - 80, hole.y));
-        const player = this.farm?.player;
-        if (player?.isValid) {
-            const ph = this.worldPosHole({ x: player.position.x, y: player.position.y });
-            if (ph) y = Math.max(band.y0 + 80, Math.min(band.y1 - 80, ph.y));
+        const midX = (band.x0 + band.x1) * 0.5;
+        const midY = (band.y0 + band.y1) * 0.5;
+        const outL = band.x0 - hole.x;
+        const outR = hole.x - band.x1;
+        const outD = band.y0 - hole.y;
+        const outU = hole.y - band.y1;
+        const best = Math.max(outL, outR, outD, outU);
+        if (best === outU || (best <= 0 && hole.y >= midY)) {
+            if (prevDeg === 0 && hole.y < band.y1 + EDGE_HYSTERESIS) return 0;
+            return 180;
         }
-        if (goRight) {
+        if (best === outD || (best <= 0 && hole.y < midY)) {
+            if (prevDeg === 180 && hole.y > band.y0 - EDGE_HYSTERESIS) return 180;
+            return 0;
+        }
+        let goRight = best === outR || (best !== outL && hole.x >= midX);
+        if (prevDeg === 90 || prevDeg === -90) {
+            if (prevDeg === 90 && hole.x > midX - EDGE_HYSTERESIS) goRight = true;
+            else if (prevDeg === -90 && hole.x < midX + EDGE_HYSTERESIS) goRight = false;
+        }
+        return goRight ? 90 : -90;
+    }
+
+    private edgeGuideForDeg(
+        deg: number,
+        hole: HoleRect,
+        tip: string,
+        band?: { x0: number; x1: number; y0: number; y1: number },
+    ): IdleGuide {
+        const b = band ?? this.playfieldBand();
+        const x = Math.max(b.x0 + 56, Math.min(b.x1 - 56, hole.x));
+        const midY = (b.y0 + b.y1) * 0.5;
+        if (deg === 180) {
             return {
-                hole: { x: band.x1 - 56, y, w: 80, h: 80 },
-                tip: tip.includes('走') ? tip : '跟着箭头往右走，靠近了再动手',
+                hole: { x, y: b.y1 - 56, w: 80, h: 80 },
+                tip: this.edgeWalkTip(tip, 180),
+                uiDock: false,
+                arrowDeg: 180,
+            };
+        }
+        if (deg === 0) {
+            return {
+                hole: { x, y: b.y0 + 56, w: 80, h: 80 },
+                tip: this.edgeWalkTip(tip, 0),
+                uiDock: false,
+                arrowDeg: 0,
+            };
+        }
+        if (deg === 90) {
+            return {
+                hole: { x: b.x1 - 56, y: midY, w: 80, h: 80 },
+                tip: this.edgeWalkTip(tip, 90),
                 uiDock: false,
                 arrowDeg: 90,
             };
         }
         return {
-            hole: { x: band.x0 + 56, y, w: 80, h: 80 },
-            tip: tip.includes('走') ? tip : '跟着箭头往左走，靠近了再动手',
+            hole: { x: b.x0 + 56, y: midY, w: 80, h: 80 },
+            tip: this.edgeWalkTip(tip, -90),
             uiDock: false,
             arrowDeg: -90,
         };
     }
 
+    /** Keep author tips only when they match the chevron facing. */
+    private edgeWalkTip(tip: string, deg: number): string {
+        const north = tip.includes('北');
+        const south = tip.includes('南');
+        const east = tip.includes('右') || tip.includes('东');
+        const west = tip.includes('左') || tip.includes('西');
+        if (deg === 180 && (north || (!south && !east && !west && tip.includes('走')))) return tip;
+        if (deg === 0 && (south || (!north && !east && !west && tip.includes('走')))) return tip;
+        if (deg === 90 && (east || (!west && !north && !south && tip.includes('走')))) return tip;
+        if (deg === -90 && (west || (!east && !north && !south && tip.includes('走')))) return tip;
+        if (deg === 180) return '跟着箭头往北走，靠近了再动手';
+        if (deg === 0) return '跟着箭头往南走，靠近了再动手';
+        if (deg === 90) return '跟着箭头往右走，靠近了再动手';
+        return '跟着箭头往左走，靠近了再动手';
+    }
+
     /**
-     * Sticky plot aim — hold the same tile briefly so nearest-picking can't
+     * Latch edge *facing* so N/S/L/R don't thrash, but always refresh the
+     * hole from the live guide — freezing canvas coords made the chevron
+     * sit on whatever building scrolled underneath (shop / clinic).
+     */
+    private stickEdgeGuide(guide: IdleGuide): IdleGuide {
+        const now = Date.now();
+        const prev = this._edgeGuide;
+        const prevDeg = prev?.arrowDeg ?? 0;
+        const nextDeg = guide.arrowDeg ?? 0;
+        if (prev && now < this._edgeUntil && prevDeg !== nextDeg) {
+            const oppositeLR =
+                Math.abs(prevDeg) === 90 &&
+                Math.abs(nextDeg) === 90 &&
+                prevDeg !== nextDeg;
+            const oppositeNS =
+                (prevDeg === 180 && nextDeg === 0) || (prevDeg === 0 && nextDeg === 180);
+            if (oppositeLR || oppositeNS) {
+                const held = this.edgeGuideForDeg(prevDeg, guide.hole, guide.tip);
+                held.groundRipple = guide.groundRipple;
+                held.rippleWorld = guide.rippleWorld;
+                this._edgeGuide = held;
+                return held;
+            }
+        }
+        if (!prev || prevDeg !== nextDeg || now >= this._edgeUntil) {
+            this._edgeUntil = now + STICKY_MS;
+        }
+        this._edgeGuide = guide;
+        return guide;
+    }
+
+    /**
+     * Sticky plot aim — hold the same tile so nearest-picking can't
      * thrash the arrow between two equal-distance plots.
      */
     private stickyPlotPos(
@@ -1016,10 +1303,13 @@ export class TutorialGuide extends Component {
             if (this._stickyKey === key) this.clearStickyTarget();
             return null;
         }
-        if (this._stickyKey === key && this._stickyPos && now < this._stickyUntil) {
+        if (this._stickyKey === key && this._stickyPos) {
             const dx = fresh.x - this._stickyPos.x;
             const dy = fresh.y - this._stickyPos.y;
-            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) return this._stickyPos;
+            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) {
+                this._stickyUntil = now + STICKY_MS;
+                return this._stickyPos;
+            }
         }
         this._stickyKey = key;
         this._stickyNode = null;
@@ -1220,16 +1510,8 @@ export class TutorialGuide extends Component {
     private worldPosHole(pos: { x: number; y: number } | null): HoleRect | null {
         if (!pos || !this.farm?.world?.isValid) return null;
         const world = this.farm.world;
-        const canvasUi = this.node.getComponent(UITransform);
-        if (!canvasUi) return null;
-        // World-local point → canvas via the World node's UITransform when present.
-        const worldUi = world.getComponent(UITransform);
-        if (worldUi) {
-            this._worldPt.set(pos.x, pos.y, 0);
-            worldUi.convertToWorldSpaceAR(this._worldPt, this._worldPt);
-            canvasUi.convertToNodeSpaceAR(this._worldPt, this._localPt);
-            return { x: this._localPt.x, y: this._localPt.y, w: 96, h: 96 };
-        }
+        // Match CameraFollow / FarmHUD — World UIT is 0×0 and convertToWorldSpaceAR
+        // can disagree with the snapped world.position math used for gameplay.
         const s = Math.max(0.0001, world.scale.x);
         return {
             x: world.position.x + pos.x * s,
@@ -1523,10 +1805,28 @@ export class TutorialGuide extends Component {
     }
 
     private isInPlayfield(hole: HoleRect): boolean {
+        return this.isInPlayfieldInset(hole, 0);
+    }
+
+    /**
+     * Edge latch: stay on the chevron until the aim is clearly inside the band
+     * (inset), so lip jitter can't flip on-target ↔ edge every frame.
+     */
+    private isInPlayfieldForMode(hole: HoleRect): boolean {
+        return this.isInPlayfieldInset(hole, this._edgeLatch ? EDGE_HYSTERESIS : 0);
+    }
+
+    private isInPlayfieldInset(hole: HoleRect, inset: number): boolean {
         const b = this.playfieldBand();
-        // Also keep clear of the top-right info-board corner.
-        if (hole.x > 80 && hole.y > b.y1 - 80) return false;
-        return hole.x >= b.x0 && hole.x <= b.x1 && hole.y >= b.y0 && hole.y <= b.y1;
+        const { halfH } = this.canvasHalf();
+        const x0 = b.x0 + inset;
+        const x1 = b.x1 - inset;
+        const y0 = b.y0 + inset;
+        // Left/civic column can use more of the top; right side yields to the clock board.
+        const y1Soft = hole.x <= 120 ? halfH - 120 - inset : b.y1 - inset;
+        // Hard exclude the top-right info-board corner.
+        if (hole.x > 80 && hole.y > halfH - 340) return false;
+        return hole.x >= x0 && hole.x <= x1 && hole.y >= y0 && hole.y <= y1Soft;
     }
 
     /**
@@ -1591,12 +1891,9 @@ export class TutorialGuide extends Component {
 
         const key = 'grass';
         const now = Date.now();
-        if (
-            this._stickyKey === key &&
-            this._stickyNode?.isValid &&
-            now < this._stickyUntil
-        ) {
-            // Drop sticky if the locked weed was pulled / invalidated.
+        // Keep the locked weed until pulled or a rival is clearly closer —
+        // do NOT retarget just because STICKY_MS elapsed (that was a bounce).
+        if (this._stickyKey === key && this._stickyNode?.isValid) {
             const stickyStill = list.includes(this._stickyNode);
             if (stickyStill) {
                 const sx = this._stickyNode.position.x - px;
@@ -1608,7 +1905,15 @@ export class TutorialGuide extends Component {
                         : bestYardSq < Number.POSITIVE_INFINITY
                           ? bestYardSq
                           : bestNearSq;
-                if (rivalSq + STICKY_SWITCH_SQ >= stickySq || !(bestTut ?? bestYard ?? bestNear)) {
+                if (
+                    rivalSq + STICKY_SWITCH_SQ >= stickySq ||
+                    !(bestTut ?? bestYard ?? bestNear)
+                ) {
+                    this._stickyUntil = now + STICKY_MS;
+                    this._stickyPos = {
+                        x: this._stickyNode.position.x,
+                        y: this._stickyNode.position.y,
+                    };
                     return this._stickyNode;
                 }
             }
@@ -1749,16 +2054,23 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Pier / lake tap cue — AI ripple locked to the world aim (canvas hole).
-     * Only while idle fishing guide asks the player to click the ground.
+     * Place aims only (door / gate / pier / sign). NPCs, props, crops, weeds —
+     * chevron alone. Edge / UI-dock / drag-demo also skip the ripple.
      */
     private syncGroundRipple() {
-        if (!this._idleOn || !this._idleGroundRipple || !this._idleRippleWorld) {
+        const want =
+            this._idleOn &&
+            this._idleGroundRipple &&
+            !this._idleUiDock &&
+            !this._idleDragTo &&
+            (this._idleArrowDeg ?? 0) === 0;
+        if (!want) {
             this.hideGroundRipple();
             return;
         }
-        // Prefer live world→UI of the pier tip so the ripple stays on the dock.
-        const hole = this.worldPosHole(this._idleRippleWorld) ?? this._hole;
+        const hole = (this._idleRippleWorld
+            ? this.worldPosHole(this._idleRippleWorld)
+            : null) ?? this._hole;
         const n = this.ensureGroundRipple();
         if (!n) return;
         n.active = true;
@@ -1785,14 +2097,14 @@ export class TutorialGuide extends Component {
         if (n?.isValid) n.destroy();
         this._ripplePulsing = false;
 
-        n = new Node('FishGroundRipple');
+        n = new Node('GuideGroundRipple');
         n.layer = root.layer;
         // Under Finger / Tip so the chevron stays readable.
         n.setParent(root);
         n.setSiblingIndex(0);
         n.active = false;
         const ui = n.addComponent(UITransform);
-        ui.setContentSize(140, 140);
+        ui.setContentSize(160, 160);
         ui.setAnchorPoint(0.5, 0.5);
         const sp = n.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -1827,20 +2139,20 @@ export class TutorialGuide extends Component {
         // Already looping — don't restart every lateUpdate frame.
         if (this._ripplePulsing) return;
         this._ripplePulsing = true;
-        n.setScale(0.72, 0.72, 1);
-        op.opacity = 220;
+        n.setScale(0.65, 0.65, 1);
+        op.opacity = 235;
         tween(n)
             .repeatForever(
                 tween(n)
-                    .to(1.05, { scale: new Vec3(1.28, 1.28, 1) }, { easing: 'sineOut' })
-                    .set({ scale: new Vec3(0.72, 0.72, 1) }),
+                    .to(1.1, { scale: new Vec3(1.45, 1.45, 1) }, { easing: 'sineOut' })
+                    .set({ scale: new Vec3(0.65, 0.65, 1) }),
             )
             .start();
         tween(op)
             .repeatForever(
                 tween(op)
-                    .to(1.05, { opacity: 70 }, { easing: 'sineOut' })
-                    .set({ opacity: 220 }),
+                    .to(1.1, { opacity: 55 }, { easing: 'sineOut' })
+                    .set({ opacity: 235 }),
             )
             .start();
     }

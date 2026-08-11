@@ -1,4 +1,4 @@
-import { Node, Sprite, UITransform, Vec3 } from 'cc';
+import { Node, Sprite, UIOpacity, UITransform, Vec3, tween } from 'cc';
 import { NPC_FRAMES } from './NpcFrames';
 import { NpcAnimator } from './NpcAnimator';
 
@@ -16,8 +16,36 @@ export class MayorHouseWorldLayout {
     /** Mayor stands by the desk (NE of room). */
     static readonly MAYOR_SPAWN = { x: 1.6 * 64, y: 1.35 * 64 };
 
+    /** South open exit — walk in to auto-return to town (matches bake door_exit). */
+    static readonly EXIT_ZONE = { x: 0, y: -280, hw: 72, hh: 52 };
+
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__mayor_house_baked');
+    }
+
+    /** Feet inside the glowing south threshold. */
+    static inExitZone(x: number, y: number): boolean {
+        const z = this.EXIT_ZONE;
+        return Math.abs(x - z.x) <= z.hw && Math.abs(y - z.y) <= z.hh;
+    }
+
+    /** Soft breathe on the doorway floor sheen (idempotent). */
+    static mountExitFx(world: Node): void {
+        if ((world as Node & { __mayorExitFx?: boolean }).__mayorExitFx) return;
+        (world as Node & { __mayorExitFx?: boolean }).__mayorExitFx = true;
+
+        const glow = world.getChildByName('exit_floor_glow');
+        if (!glow?.isValid) return;
+        let op = glow.getComponent(UIOpacity);
+        if (!op) op = glow.addComponent(UIOpacity);
+        op.opacity = 170;
+        tween(op)
+            .repeatForever(
+                tween(op)
+                    .to(1.8, { opacity: 110 }, { easing: 'sineInOut' })
+                    .to(1.8, { opacity: 170 }, { easing: 'sineInOut' }),
+            )
+            .start();
     }
 
     /** Spawn mayor NPC once (idempotent). */
@@ -71,7 +99,7 @@ export class MayorHouseWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
-        if (name === 'door_exit') return 'door_exit';
+        // door_exit is walk-through auto-travel — not a tap target.
         if (name === 'prop_desk_mayor') return 'desk';
         if (name === 'prop_tea_table') return 'tea';
         if (name === 'prop_bookshelf') return 'shelf';
@@ -84,9 +112,6 @@ export class MayorHouseWorldLayout {
         | { kind: 'travel'; dest: 'town'; title: string }
         | { kind: 'info'; title: string; body: string }
         | null {
-        if (key === 'door_exit') {
-            return { kind: 'travel', dest: 'town', title: '离开镇长府' };
-        }
         const info: Record<string, { title: string; body: string }> = {
             desk: {
                 title: '镇长办公桌',

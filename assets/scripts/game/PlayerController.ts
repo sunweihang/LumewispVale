@@ -810,6 +810,8 @@ export class PlayerController extends Component {
     private isSolidName(name: string): boolean {
         // Archway prop — walk through; info prompt still works via MineWorldLayout.
         if (name === 'bld_mine_mouth') return false;
+        // Mayor garden layer — Y-sort occluder only; walk through.
+        if (name === 'bld_mayor_yard') return false;
         // Interior exit mat / door — walk through to leave MayorHouse.
         if (name === 'door_exit') return false;
         return (

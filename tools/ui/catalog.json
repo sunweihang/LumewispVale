@@ -1494,12 +1494,36 @@
       "kind": "building",
       "spriteType": "simple",
       "designSize": [
-        288,
-        256
+        311,
+        199
       ],
       "path": "assets/textures/buildings/bld-mayor.png",
       "prefab": "",
       "layer": "Midground"
+    },
+    {
+      "id": "bld-mayor-yard",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        310,
+        152
+      ],
+      "path": "assets/textures/buildings/bld-mayor-yard.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-mayor-yard-ground",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        311,
+        86
+      ],
+      "path": "assets/textures/buildings/bld-mayor-yard-ground.png",
+      "prefab": "",
+      "layer": "Ground"
     },
     {
       "id": "bld-chapel",

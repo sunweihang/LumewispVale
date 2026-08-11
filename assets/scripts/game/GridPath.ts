@@ -25,6 +25,10 @@ export function footSolidFor(
     if (name === 'bld_mine_mouth') {
         return null;
     }
+    // Mayor front yard is draw-only — walk the garden; house keeps the solid.
+    if (name === 'bld_mayor_yard') {
+        return null;
+    }
     // Interior room seal — tile-wide so players can't slip between panels.
     if (name.startsWith('wall_solid_')) {
         const hw = Math.max(30, contentW * 0.45);

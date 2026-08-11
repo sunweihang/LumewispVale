@@ -35,7 +35,10 @@ BUILDINGS = {
     "post": ("bld-post", 256, 224),
     "clinic": ("bld-clinic", 288, 224),
     "school": ("bld-school", 288, 256),
-    "mayor": ("bld-mayor", 320, 272),
+    # House / yard-occluders / underfoot lot — see split_bld_mayor_yard.py.
+    "mayor": ("bld-mayor", 311, 199),
+    "mayor_yard": ("bld-mayor-yard", 310, 152),
+    "mayor_yard_ground": ("bld-mayor-yard-ground", 311, 86),
     "saloon": ("bld-saloon", 288, 240),
     "fishshop": ("bld-fishshop", 288, 240),
     "library": ("bld-library", 256, 256),
@@ -580,7 +583,12 @@ class TownBake:
         # North civic terrace
         self._bld("community", *at(0, 11))
         self._bld("school", *at(-7, 11))
-        self._bld("mayor", *at(7, 11))
+        # Mayor layers share the legacy combined foot, then crop offsets.
+        # Ground node uses decor_garden_* so WorldYSort keeps flowers underfoot.
+        mx, my = at(7, 11)
+        self._bld("mayor", mx - 0.5, my + 43)
+        self._bld("mayor_yard", mx + 0.0, my + 2)
+        self._bld("mayor_yard_ground", mx - 0.5, my + 2, "decor_garden_mayor_yard")
 
         # North meadow (~1/3 screen above civic) — chapel / mill / orchard
         self._bld("chapel", *at(0, 19))

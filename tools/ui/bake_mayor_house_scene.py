@@ -44,15 +44,25 @@ PROPS = {
     "shelf": ("prop-bookshelf", 80, 112),
     "chair": ("prop-chair", 48, 56),
     "rug": ("prop-rug-mayor", 128, 80),
-    "door": ("prop-door-exit", 96, 112),
+    "exitFloorGlow": ("prop-exit-floor-glow", 112, 64),
     "wall": ("prop-wall-mayor", 128, 96),  # window — use sparingly
     "wallPlain": ("prop-wall-plain", 128, 96),
     "wallDecor": ("prop-wall-decor", 128, 96),
     "wallSide": ("prop-wall-side", 48, 112),
+    "wallSideTall": ("prop-wall-side-tall", 40, 672),
+    "wallSideTallR": ("prop-wall-side-tall-r", 40, 672),
     "crate": ("prop-crate", 56, 56),
     "barrel": ("prop-barrel", 48, 56),
     "bench": ("prop-bench", 96, 48),
 }
+
+# Flush wall geometry (1 world unit = 1 px). Panels are 128×96, step = 128.
+PANEL_W, PANEL_H = 128, 96
+SIDE_W, SIDE_H = 40, 672
+ROOM_LEFT = X0 * TILE - TILE // 2  # -352
+ROOM_RIGHT = X1 * TILE + TILE // 2  # 352
+ROOM_BOTTOM = Y0 * TILE - TILE // 2  # -288
+ROOM_TOP = Y1 * TILE + TILE // 2  # 288
 
 # South door walk gap (tile x inclusive) — solids leave this open.
 DOOR_GAP = {-1, 0, 1}
@@ -153,121 +163,87 @@ class MayorHouseBake:
         return None
 
     def place_walls(self) -> None:
-        """Visual + solid wall rim. Mostly plain panels; 1–2 north windows."""
+        """Flush room frame: grid N/S panels + one tall E/W strip each side.
+
+        Visual faces use wall_face_* (no collision). Rim seal uses wall_solid_*
+        with small footprints so players cannot walk out (see GridPath).
+        """
         self.build_wall_rim()
-        sf_tile = self.sf("tile-wall-interior")
         sf_plain = self._wall_sf("plain")
         sf_decor = self._wall_sf("decor")
         sf_window = self._wall_sf("window")
-        sf_side = self._wall_sf("side")
-        if not sf_plain and not sf_tile:
+        sf_tall_l = self.sf("prop-wall-side-tall") or self._wall_sf("side")
+        sf_tall_r = self.sf("prop-wall-side-tall-r") or sf_tall_l
+        if not sf_plain:
             print("WARN no wall sprites — sealing with invisible solids only")
 
-        # Ground wall tiles under the rim (visual fill)
-        if sf_tile:
-            for key in sorted(self.wall):
-                ix, iy = map(int, key.split(","))
-                self.add_ground(f"tile-wall_{ix}_{iy}", sf_tile, ix, iy)
-
-        # East / west: continuous plain side strips (never window panels)
-        for key in sorted(self.wall):
-            ix, iy = map(int, key.split(","))
-            if ix not in (X0 - 1, X1 + 1):
-                continue
-            if iy == Y1 + 1:
-                continue  # north corners handled with N panels
-            x = ix * TILE + (10 if ix == X0 - 1 else -10)
-            y = iy * TILE - 16
-            sf = sf_side or sf_plain or sf_tile
-            if not sf:
-                continue
-            self.add_actor(
-                f"wall_solid_ew_{ix}_{iy}",
-                sf,
-                x,
-                y,
-                48,
-                112,
-                0.0,
-            )
-
-        # South: plain panels only, flanking the door
-        for key in sorted(self.wall):
-            ix, iy = map(int, key.split(","))
-            if iy != Y0 - 1:
-                continue
-            sf = sf_plain or sf_tile
-            if not sf:
-                continue
-            self.add_actor(
-                f"wall_solid_s_{ix}_{iy}",
-                sf,
-                ix * TILE,
-                iy * TILE - 8,
-                96,
-                80,
-                0.0,
-            )
-
-        # North: mostly plain + one decor + one window (not a window parade)
-        # Panel order left→right across the room width.
-        north_kinds = [
-            "plain",
-            "plain",
-            "window",  # one window near west-center
-            "plain",
-            "decor",  # painting accent
-            "plain",
-            "plain",
-        ]
-        span = (X1 - X0) * TILE
-        step = span / max(1, len(north_kinds) - 1)
-        base_x = X0 * TILE
-        base_y = (Y1 + 0.55) * TILE
-        for i, kind in enumerate(north_kinds):
+        def panel_sf(kind: str) -> Optional[str]:
             if kind == "window":
-                sf = sf_window or sf_decor or sf_plain
-            elif kind == "decor":
-                sf = sf_decor or sf_plain
-            else:
-                sf = sf_plain or sf_tile
+                return sf_window or sf_decor or sf_plain
+            if kind == "decor":
+                return sf_decor or sf_plain
+            return sf_plain
+
+        # --- North: 6×128 panels, centers on tile grid (-320 … 320) ---
+        north_kinds = ["plain", "window", "plain", "decor", "plain", "plain"]
+        n_y = ROOM_TOP  # feet on north floor edge
+        for i, kind in enumerate(north_kinds):
+            sf = panel_sf(kind)
             if not sf:
                 continue
+            x = -320 + i * PANEL_W
+            self.add_actor(f"wall_face_n_{i}", sf, x, n_y, PANEL_W, PANEL_H, 0.0)
+
+        # --- South: 2 panels west + 2 east of door (same size / baseline) ---
+        s_y = ROOM_BOTTOM
+        for i, x in enumerate((-288, -160)):
+            if sf_plain:
+                self.add_actor(f"wall_face_s_w_{i}", sf_plain, x, s_y, PANEL_W, PANEL_H, 0.0)
+        for i, x in enumerate((160, 288)):
+            if sf_plain:
+                self.add_actor(f"wall_face_s_e_{i}", sf_plain, x, s_y, PANEL_W, PANEL_H, 0.0)
+
+        # --- East / west: ONE continuous tall strip (no stacked bands) ---
+        side_y = ROOM_BOTTOM
+        if sf_tall_l:
             self.add_actor(
-                f"wall_solid_n_{i}",
-                sf,
-                base_x + i * step,
-                base_y,
-                128,
-                96,
+                "wall_face_ew_w",
+                sf_tall_l,
+                ROOM_LEFT + SIDE_W // 2,
+                side_y,
+                SIDE_W,
+                SIDE_H,
+                0.0,
+            )
+        if sf_tall_r:
+            self.add_actor(
+                "wall_face_ew_e",
+                sf_tall_r,
+                ROOM_RIGHT - SIDE_W // 2,
+                side_y,
+                SIDE_W,
+                SIDE_H,
                 0.0,
             )
 
-        # Corner seals (plain / side)
-        for ix, iy in (
-            (X0 - 1, Y0 - 1),
-            (X1 + 1, Y0 - 1),
-            (X0 - 1, Y1 + 1),
-            (X1 + 1, Y1 + 1),
-        ):
-            if f"{ix},{iy}" not in self.wall:
-                continue
-            sf = sf_side or sf_plain or sf_tile
-            if not sf:
-                continue
+        # --- Collision rim (invisible / no sprite) — one box per rim cell ---
+        for key in sorted(self.wall):
+            ix, iy = map(int, key.split(","))
+            # Leave south door vestibule open (those cells are floor, not wall).
             self.add_actor(
-                f"wall_solid_corner_{ix}_{iy}",
-                sf,
+                f"wall_solid_{ix}_{iy}",
+                None,
                 ix * TILE,
-                iy * TILE - 12,
+                iy * TILE,
                 56,
-                80,
+                40,
                 0.0,
             )
 
         print(
             f"wall rim cells={len(self.wall)} north={north_kinds} "
-            f"door_gap={sorted(DOOR_GAP)}"
+            f"door_gap={sorted(DOOR_GAP)} "
+            f"frame L{ROOM_LEFT} R{ROOM_RIGHT} B{ROOM_BOTTOM} T{ROOM_TOP}"
         )
 
     def place_furniture(self) -> None:
@@ -293,8 +269,19 @@ class MayorHouseBake:
         if self.sf("prop-barrel"):
             self._prop("barrel", 3.5 * TILE, 0.5 * TILE, "prop_barrel_corner")
 
-        # Exit door south-center (in the gap — not solid)
-        self._prop("door", 0.0, (Y0 - 0.35) * TILE, "door_exit")
+        # South exit: subtle floor sheen only (walk-in auto-travel via door_exit).
+        exit_y = ROOM_BOTTOM + 8
+        if self.sf("prop-exit-floor-glow"):
+            self.add_actor(
+                "exit_floor_glow",
+                self.sf("prop-exit-floor-glow"),
+                0.0,
+                exit_y + 20,
+                112,
+                64,
+                0.5,
+            )
+        self.add_actor("door_exit", None, 0.0, exit_y, 120, 56, 0.0)
 
     def build(self) -> List[Tuple]:
         self.build_floor()

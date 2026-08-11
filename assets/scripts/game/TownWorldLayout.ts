@@ -24,7 +24,8 @@ export class TownWorldLayout {
     /**
      * Foot positions for runtime NPC actors (south of building doors / plaza).
      * Mayor lives inside MayorHouse.scene — not outdoors.
-     * bld_mayor=(448,740), bld_carpenter=(832,-348), spawn=(0,-96).
+     * bld_mayor=(447.5,783), bld_mayor_yard=(448,742), decor_garden_mayor_yard=(447.5,742),
+     * bld_carpenter=(832,-348), spawn=(0,-96).
      */
     static readonly NPC_SPAWNS: readonly NpcSpawn[] = [
         { id: 'carpenter', x: 832, y: -428, face: 'left' },
@@ -157,6 +158,8 @@ export class TownWorldLayout {
     }
 
     private static buildingKey(name: string): string | null {
+        // Front-yard occluder shares the mayor interact (enter house).
+        if (name === 'bld_mayor_yard') return 'mayor';
         if (name.startsWith('bld_')) return name.slice(4);
         if (name.startsWith('home_')) return 'home';
         // legacy single names

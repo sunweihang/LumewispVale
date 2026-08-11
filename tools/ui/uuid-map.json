@@ -592,7 +592,11 @@
   "bld-mayor": {
     "texture": "0fbd2c56-2698-4894-8479-85885ae07b03",
     "spriteFrame": "0fbd2c56-2698-4894-8479-85885ae07b03@f9941",
-    "prefab": ""
+    "prefab": "",
+    "w": 311,
+    "h": 199,
+    "foot_from_bottom": 43,
+    "cx_delta": -0.5
   },
   "bld-home-green": {
     "texture": "256ce736-4fb4-483a-9dfd-56e55394411e",
@@ -1665,5 +1669,53 @@
     "texture": "43a7f6d6-2649-42bb-b9b5-dac573c148d3",
     "spriteFrame": "43a7f6d6-2649-42bb-b9b5-dac573c148d3@f9941",
     "prefab": ""
+  },
+  "prop-wall-side-tall": {
+    "texture": "72d5370d-aea6-411e-8f45-ffe1b217f984",
+    "spriteFrame": "72d5370d-aea6-411e-8f45-ffe1b217f984@f9941",
+    "prefab": ""
+  },
+  "prop-wall-side-tall-r": {
+    "texture": "27b0ffe9-25bb-4c4b-b92b-4e31e08b7151",
+    "spriteFrame": "27b0ffe9-25bb-4c4b-b92b-4e31e08b7151@f9941",
+    "prefab": ""
+  },
+  "prop-exit-glow": {
+    "texture": "31c0d745-85fe-463f-a0a0-304be4cdc21c",
+    "spriteFrame": "31c0d745-85fe-463f-a0a0-304be4cdc21c@f9941",
+    "prefab": ""
+  },
+  "prop-exit-ripple": {
+    "texture": "2dd7aae0-bd92-4ec8-81e2-c1dce0c40688",
+    "spriteFrame": "2dd7aae0-bd92-4ec8-81e2-c1dce0c40688@f9941",
+    "prefab": ""
+  },
+  "prop-exit-arrow": {
+    "texture": "d663e76f-4031-407c-a85b-9acfa448fc67",
+    "spriteFrame": "d663e76f-4031-407c-a85b-9acfa448fc67@f9941",
+    "prefab": ""
+  },
+  "prop-exit-floor-glow": {
+    "texture": "a1e0fe5b-8bc4-4fc5-adfe-0e621206059e",
+    "spriteFrame": "a1e0fe5b-8bc4-4fc5-adfe-0e621206059e@f9941",
+    "prefab": ""
+  },
+  "bld-mayor-yard": {
+    "texture": "fb943402-3b71-4e8a-a0d3-1a73a06ae32d",
+    "spriteFrame": "fb943402-3b71-4e8a-a0d3-1a73a06ae32d@f9941",
+    "prefab": "",
+    "w": 310,
+    "h": 152,
+    "foot_from_bottom": 2,
+    "cx_delta": 0.0
+  },
+  "bld-mayor-yard-ground": {
+    "texture": "03f2b60e-3708-4450-9296-5db3d32147d1",
+    "spriteFrame": "03f2b60e-3708-4450-9296-5db3d32147d1@f9941",
+    "prefab": "",
+    "w": 311,
+    "h": 86,
+    "foot_from_bottom": 2,
+    "cx_delta": -0.5
   }
 }

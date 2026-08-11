@@ -28,6 +28,8 @@ const FARM_TOWN_PORTAL = { x: 13 * 64, y: 4 * 64 + 36 };
 const PORTAL_TAP_RADIUS = 90;
 /** Player must be this close before travel fires — farther taps walk over first. */
 const PORTAL_USE_RANGE = 72;
+/** Player must be this close before NPC dialogue fires — farther taps walk over first. */
+const NPC_TALK_RANGE = 72;
 
 /**
  * Story props + proximity / portal hooks for the mainline.
@@ -44,6 +46,8 @@ export class StoryWorldHooks extends Component {
     isTown = false;
     /** Bumps when a new portal walk starts so stale arrive callbacks no-op. */
     private _portalWalkGen = 0;
+    /** Bumps when a new NPC approach walk starts so stale arrive callbacks no-op. */
+    private _npcWalkGen = 0;
 
     bind(opts: {
         world: Node;
@@ -77,6 +81,56 @@ export class StoryWorldHooks extends Component {
 
     update() {
         // Portal travel is tap-driven; nothing to poll each frame.
+    }
+
+    /**
+     * Tap NPC: if already in talk range, run `act` now; otherwise walk beside
+     * them (south / free stand) and run `act` on arrive. Far taps must not
+     * open dialogue instantly.
+     */
+    approachNpcThen(npc: Node, act: () => void): boolean {
+        if (!npc?.isValid) return false;
+        if (!this.player?.isValid) {
+            act();
+            return true;
+        }
+        const pp = this.player.position;
+        const np = npc.position;
+        const dist = Math.hypot(pp.x - np.x, pp.y - np.y);
+        if (dist <= NPC_TALK_RANGE) {
+            act();
+            return true;
+        }
+
+        this.farm?.cancelPending();
+        const ctrl = this.player.getComponent(PlayerController);
+        if (!ctrl) {
+            act();
+            return true;
+        }
+
+        ctrl.rebuildSolids();
+        // Prefer standing in front of the NPC (south of feet).
+        const prefer = { x: np.x, y: np.y - 36 };
+        const stand = ctrl.freeStandNear(prefer.x, prefer.y, pp.x, pp.y, 48);
+        const gen = (this._npcWalkGen += 1);
+        const npcRef = npc;
+        ctrl.walkTo(
+            stand.x,
+            stand.y,
+            () => {
+                if (!this.isValid || gen !== this._npcWalkGen) return;
+                if (!npcRef.isValid) return;
+                act();
+            },
+            () => {
+                /* stick drag / cancel — stay quiet */
+            },
+            16,
+            null,
+            { x: np.x, y: np.y, dist: NPC_TALK_RANGE },
+        );
+        return true;
     }
 
     /** Farm: tap town portal sign — walk up first, then travel. */
