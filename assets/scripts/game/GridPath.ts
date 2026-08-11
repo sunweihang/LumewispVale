@@ -25,6 +25,12 @@ export function footSolidFor(
     if (name === 'bld_mine_mouth') {
         return null;
     }
+    // Interior room seal — tile-wide so players can't slip between panels.
+    if (name.startsWith('wall_solid_')) {
+        const hw = Math.max(30, contentW * 0.45);
+        const hh = Math.max(20, Math.min(36, contentH * 0.22));
+        return { x: footX, y: footY + hh * 0.7, hw, hh };
+    }
     if (
         name.startsWith('water_') ||
         name.startsWith('cliff_') ||

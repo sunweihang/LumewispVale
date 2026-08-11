@@ -122,6 +122,16 @@ export class DialoguePanel extends Component {
         return this._open;
     }
 
+    /** GM / skip: close immediately without running the play `onDone` callback. */
+    forceClose() {
+        this._pending = null;
+        this._onDone = null;
+        this._lines = [];
+        this._index = 0;
+        this._busy = false;
+        if (this._open) this.hide();
+    }
+
     onLoad() {
         this.build();
         this.hideVisualImmediate();

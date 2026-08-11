@@ -1,7 +1,14 @@
 import type { FarmMaterial, FarmTool } from './FarmSystem';
 
 /** Maps that can be gated by mainline progress. */
-export type StoryMapId = 'farm' | 'town' | 'mine' | 'beach' | 'forest' | 'deepMine';
+export type StoryMapId =
+    | 'farm'
+    | 'town'
+    | 'mine'
+    | 'mayorHouse'
+    | 'beach'
+    | 'forest'
+    | 'deepMine';
 
 export type InventorySnapshot = {
     seeds: number;
@@ -44,6 +51,7 @@ class GameStateStore {
         farm: true,
         town: false,
         mine: false,
+        mayorHouse: true,
         beach: false,
         forest: false,
         deepMine: false,

@@ -477,6 +477,12 @@ export class FarmHUD extends Component {
         return this._tutorialCraftAwaitClose;
     }
 
+    /** GM: drop first-seed craft input locks so the player can leave the panel. */
+    clearTutorialCraftGuide() {
+        this._tutorialCraftLock = false;
+        this._tutorialCraftAwaitClose = false;
+    }
+
     /** True while quest 1003 still needs the in-panel craft / close guide. */
     needsFirstSeedCraftGuide() {
         if (!this._craftOpen) return false;
@@ -862,14 +868,24 @@ export class FarmHUD extends Component {
         this.playCanvasLootFly(sf, from.x, from.y, count);
     }
 
-    /** Canvas-space icons arc into the backpack button (quest claim, shop, etc.). */
-    playCanvasLootFly(sf: SpriteFrame, fromX: number, fromY: number, count = 1) {
+    /**
+     * Canvas-space icons arc into a HUD target.
+     * `bag` → backpack button; `gold` → top-right G coin mark on FarmInfoBoard.
+     */
+    playCanvasLootFly(
+        sf: SpriteFrame,
+        fromX: number,
+        fromY: number,
+        count = 1,
+        target: 'bag' | 'gold' = 'bag',
+    ) {
         if (!this._lootFxRoot?.isValid || !sf?.isValid) return;
-        const to = this.bagFlyTarget();
+        const to = target === 'gold' ? this.goldFlyTarget() : this.bagFlyTarget();
+        const onLand = target === 'gold' ? () => this.pulseGoldBar() : () => this.pulseBagBtn();
         // Quest UI grants often show large counts (gold×20); a few icons read cleaner.
         const n = Math.max(1, Math.min(count, 3));
         for (let i = 0; i < n; i++) {
-            this.spawnLootFlyIcon(sf, fromX, fromY, to.x, to.y, i, n);
+            this.spawnLootFlyIcon(sf, fromX, fromY, to.x, to.y, i, n, onLand, target);
         }
         // Above RewardPopup / other canvas chrome while the arc plays.
         this._lootFxRoot.setSiblingIndex(this.node.children.length - 1);
@@ -899,6 +915,13 @@ export class FarmHUD extends Component {
         return { x: 420, y: BAR_Y + SLOT };
     }
 
+    private goldFlyTarget(): { x: number; y: number } {
+        const board = this._quests?.infoBoard;
+        if (board?.isValid) return board.goldFlyTarget();
+        // Design-space approx of the top-right G coin (1080×1920).
+        return { x: 144, y: 664 };
+    }
+
     private spawnLootFlyIcon(
         sf: SpriteFrame,
         fromX: number,
@@ -907,6 +930,8 @@ export class FarmHUD extends Component {
         toY: number,
         index: number,
         total: number,
+        onLand?: () => void,
+        target: 'bag' | 'gold' = 'bag',
     ) {
         const root = this._lootFxRoot;
         if (!root?.isValid) return;
@@ -938,9 +963,17 @@ export class FarmHUD extends Component {
         const popDur = 0.12;
         const riseDur = travel * 0.38;
         const fallDur = travel * 0.62;
-        const arcH = Math.min(180, 70 + dist * 0.1) + (index % 3) * 12;
-        const peakX = startX + (toX - startX) * 0.4 + spread * 0.4;
-        const peakY = Math.max(startY, toY) + arcH;
+        // Gold → G mark: tighter, more direct arc so it reads as landing on the coin.
+        const arcH =
+            target === 'gold'
+                ? Math.min(90, 36 + dist * 0.04) + (index % 3) * 6
+                : Math.min(180, 70 + dist * 0.1) + (index % 3) * 12;
+        const peakT = target === 'gold' ? 0.55 : 0.4;
+        const peakX = startX + (toX - startX) * peakT + spread * (target === 'gold' ? 0.15 : 0.4);
+        const peakY =
+            target === 'gold'
+                ? startY + (toY - startY) * peakT + arcH
+                : Math.max(startY, toY) + arcH;
         const peak = new Vec3(peakX, peakY, 0);
         const end = new Vec3(toX, toY, 0);
         const landScale = new Vec3(0.35, 0.35, 1);
@@ -956,7 +989,7 @@ export class FarmHUD extends Component {
             .to(fallDur, { position: end, scale: landScale }, { easing: 'quadIn' })
             .call(() => {
                 if (node.isValid) node.destroy();
-                if (index === total - 1) this.pulseBagBtn();
+                if (index === total - 1) onLand?.();
             })
             .start();
 
@@ -980,6 +1013,10 @@ export class FarmHUD extends Component {
                 btn.setScale(1, 1, 1);
             })
             .start();
+    }
+
+    private pulseGoldBar() {
+        this._quests?.infoBoard?.pulseGold();
     }
 
     private buildBagButton(bar: Node) {

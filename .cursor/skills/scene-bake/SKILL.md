@@ -55,6 +55,7 @@ Task Progress:
 |------|------|-------|--------|------|
 | 农场 | `bake_farm_scene.py` | `Main.scene` | `FarmWorldLayout.ts` | `__farm_baked` |
 | 城镇 | `bake_town_scene.py` | `Town.scene` | `TownWorldLayout.ts` | `__town_baked` |
+| 镇长府 | `bake_mayor_house_scene.py` | `MayorHouse.scene` | `MayorHouseWorldLayout.ts` | `__mayor_house_baked` |
 | 浅层矿洞 | `bake_mine_scene.py` | `Mine.scene` | `MineWorldLayout.ts` | `__mine_baked` |
 
 新场景命名约定：`bake_<name>_scene.py` → `assets/scenes/<Name>.scene` → `<Name>WorldLayout.ts` → `__<name>_baked` + `__<name>_spawn`。
@@ -173,6 +174,8 @@ python tools/ui/bake_farm_scene.py
 python tools/ui/bake_town_scene.py
 python tools/ui/draw_mine_props.py   # 矿洞专用贴图
 python tools/ui/bake_mine_scene.py
+python tools/ui/portal_rmbg_mayor_house.py   # 镇长府室内家具（门户；不通则本地灰底）
+python tools/ui/bake_mayor_house_scene.py
 
 # 新场景：复制 bake_town_scene.py → 改 OUT_SCENE / 标记名 / 布局 → 跑 bake
 ```

@@ -51,6 +51,7 @@ import { StoryDialogue } from './StoryDialogue';
 import { StoryIntroPanel } from './StoryIntroPanel';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TutorialGuide } from './TutorialGuide';
+import { MayorHouseWorldLayout } from './MayorHouseWorldLayout';
 import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
 import { TownWorldLayout } from './TownWorldLayout';
@@ -153,8 +154,9 @@ export class GameBootstrap extends Component {
         this.fixPropAnchors(world);
         const isTown = TownWorldLayout.isBaked(world);
         const isMine = MineWorldLayout.isBaked(world);
+        const isMayorHouse = MayorHouseWorldLayout.isBaked(world);
         const isFarmBaked = FarmWorldLayout.isBaked(world);
-        const authored = isTown || isMine || isFarmBaked;
+        const authored = isTown || isMine || isMayorHouse || isFarmBaked;
         // Match reference: map fills 1080 width; ground covers the portrait frame.
         // Authored scenes already have full terrain — don't expand/repaint tiles.
         const frame = this.fitWorldToDesign(canvas, world, authored);
@@ -163,8 +165,16 @@ export class GameBootstrap extends Component {
             world.addComponent(WorldYSort);
         }
 
-        const player = this.spawnPlayer(world, isTown ? 'town' : isMine ? 'mine' : 'farm');
+        const bootMap = isTown
+            ? 'town'
+            : isMine
+              ? 'mine'
+              : isMayorHouse
+                ? 'mayorHouse'
+                : 'farm';
+        const player = this.spawnPlayer(world, bootMap);
         if (isTown) TownWorldLayout.spawnNpcs(world);
+        else if (isMayorHouse) MayorHouseWorldLayout.spawnNpcs(world);
         else if (!isMine) FarmWorldLayout.spawnNpcs(world);
         const stick = this.spawnTouchControls(canvas);
 
@@ -197,7 +207,7 @@ export class GameBootstrap extends Component {
         if (oldGm) canvas.removeComponent(oldGm);
         let gm = canvas.addComponent(GmPanel);
 
-        StoryWorldHooks.applyPendingSpawn(player, isTown ? 'town' : isMine ? 'mine' : 'farm');
+        StoryWorldHooks.applyPendingSpawn(player, bootMap);
 
         let farm = canvas.getComponent(FarmSystem);
         if (!farm) farm = canvas.addComponent(FarmSystem);
@@ -237,21 +247,113 @@ export class GameBootstrap extends Component {
         questPanel.bind(quests);
         questPanel.ensureMounted();
         rewardPopup.bind(quests);
-        const mapId = isTown ? 'town' : isMine ? 'mine' : 'farm';
-        storyIntro.syncMapBgm(mapId);
+        const mapId = bootMap;
+        storyIntro.syncMapBgm(mapId === 'mayorHouse' ? 'town' : mapId);
         storyDlg.bind({
             dialogue,
             intro: storyIntro,
             quests,
-            map: mapId,
-            guide: isTown || isMine ? null : guide,
+            map: mapId === 'mayorHouse' ? 'mayorHouse' : mapId,
+            guide: isTown || isMine || isMayorHouse ? null : guide,
         });
 
         const oldInfoComp = canvas.getComponent(FarmInfoBoard);
         if (oldInfoComp) canvas.removeComponent(oldInfoComp);
         let infoBoard: FarmInfoBoard | null = null;
 
-        if (isMine) {
+        if (isMayorHouse) {
+            let hud = canvas.getComponent(FarmHUD);
+            if (!hud) hud = canvas.addComponent(FarmHUD);
+            hud.farm = farm;
+            quests.hud = hud;
+            hud.bindQuests(quests);
+
+            story.bind({
+                world,
+                player,
+                quests,
+                farm,
+                infoBoard: null,
+                storyDialogue: storyDlg,
+                isTown: false,
+            });
+
+            const oldShop = canvas.getComponent(TownShopPanel);
+            if (oldShop) canvas.removeComponent(oldShop);
+            const shopPanel = canvas.addComponent(TownShopPanel);
+            shopPanel.farm = farm;
+            shopPanel.quests = quests;
+
+            stick.onTap = (x, y) => {
+                guide.noteActivity();
+                if (storyIntro.handleTap(x, y)) return;
+                if (dialogue.handleTap(x, y)) return;
+                if (rewardPopup.handleTap(x, y)) return;
+                if (gm.handleTap(x, y)) return;
+                if (questPanel.handleTap(x, y)) return;
+                if (shopPanel.handleTap(x, y)) return;
+                if (infoBoard?.handleTap(x, y)) return;
+                const worldPt = this.screenToWorld(follow, world, x, y);
+                if (worldPt) {
+                    const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
+                    if (npcHit?.id === 'mayor') {
+                        npcHit.node.getComponent(NpcAnimator)?.faceToward(
+                            player.position.x,
+                            player.position.y,
+                        );
+                        if (storyDlg.tryBuilding('mayor')) return;
+                        const chat = TownWorldLayout.npcInfo('mayor');
+                        if (chat) {
+                            if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
+                            shopPanel.openInfo(chat.title, chat.body);
+                        }
+                        return;
+                    }
+                    const hit = MayorHouseWorldLayout.findInteract(world, worldPt.x, worldPt.y);
+                    if (hit?.kind === 'travel') {
+                        if (!canTravel('town')) return;
+                        travelTo('town', {
+                            farm,
+                            quests,
+                            spawnX: MayorHouseWorldLayout.TOWN_RETURN.x,
+                            spawnY: MayorHouseWorldLayout.TOWN_RETURN.y,
+                        });
+                        return;
+                    }
+                    if (hit?.kind === 'info') {
+                        shopPanel.openInfo(hit.title, hit.body);
+                        return;
+                    }
+                }
+                hud!.handleTap(x, y);
+            };
+            stick.onDragStart = () => {
+                guide.noteActivity();
+                farm!.cancelPending();
+                player.getComponent(PlayerController)?.onManualMoveStart();
+            };
+
+            const infoReady = this.mountInfoBoard(canvas, farm, (info) => {
+                infoBoard = info;
+                gm.setInfoBoard(info);
+                quests.infoBoard = info;
+                story.infoBoard = info;
+            });
+
+            void this.finishBoot({
+                canvas,
+                loading,
+                storyDlg,
+                quests,
+                questPanel,
+                player,
+                hud,
+                infoReady,
+                afterTables: () => {
+                    hud.reloadCraftRecipes();
+                },
+            });
+        } else if (isMine) {
             let hud = canvas.getComponent(FarmHUD);
             if (!hud) hud = canvas.addComponent(FarmHUD);
             hud.farm = farm;
@@ -407,6 +509,15 @@ export class GameBootstrap extends Component {
                                 });
                                 return;
                             }
+                            if (hit.dest === 'mayorHouse') {
+                                travelTo('mayorHouse', {
+                                    farm,
+                                    quests,
+                                    spawnX: MayorHouseWorldLayout.PLAYER_SPAWN.x,
+                                    spawnY: MayorHouseWorldLayout.PLAYER_SPAWN.y,
+                                });
+                                return;
+                            }
                             story.tryTownFarmSignTap();
                             return;
                         }
@@ -419,7 +530,7 @@ export class GameBootstrap extends Component {
                             }
                         } else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
                         else if (storyDlg.tryBuilding(hit.key)) {
-                            // Story dialogue owns mayor / carpenter / community beats.
+                            // Story dialogue owns carpenter / community / clinic beats.
                         } else {
                             if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
                             shopPanel.openInfo(hit.title, hit.body);
@@ -517,7 +628,8 @@ export class GameBootstrap extends Component {
                     const npcHit = FarmWorldLayout.findNpc(world, worldPt.x, worldPt.y);
                     if (npcHit) {
                         const anim = npcHit.node.getComponent(NpcAnimator);
-                        anim?.pausePatrol(4);
+                        // StoryDialogue holds/releases for the full chat; face now.
+                        anim?.holdPatrol();
                         anim?.faceToward(player.position.x, player.position.y);
                         if (storyDlg.tryFarmNpc(npcHit.key)) return;
                         const chat = FarmWorldLayout.npcInfo(npcHit.id);
@@ -594,8 +706,9 @@ export class GameBootstrap extends Component {
             const tables = await loadConfigTables();
             if (!canvas.isValid) return;
             applyCraftTables(tables);
-            opts.afterTables?.(tables);
+            // Restore quest snapshot before afterTables flags (enter_town / enter_mine).
             quests.bindTables(tables);
+            opts.afterTables?.(tables);
             await loadUiFont();
 
             const anim = player.getComponent(PlayerAnimator);
@@ -738,6 +851,8 @@ export class GameBootstrap extends Component {
                 !n.startsWith('tile-grass') &&
                 !n.startsWith('tile-dirt') &&
                 !n.startsWith('tile-stone') &&
+                !n.startsWith('tile-wood') &&
+                !n.startsWith('tile-cave') &&
                 !n.startsWith('water_') &&
                 !n.startsWith('pond_')
             ) {
@@ -1046,6 +1161,8 @@ export class GameBootstrap extends Component {
                 n === '__town_spawn' ||
                 n === '__mine_baked' ||
                 n === '__mine_spawn' ||
+                n === '__mayor_house_baked' ||
+                n === '__mayor_house_spawn' ||
                 n.startsWith('tile-') ||
                 n.startsWith('water_') ||
                 n.startsWith('cliff_') ||
@@ -1106,7 +1223,10 @@ export class GameBootstrap extends Component {
         return touch;
     }
 
-    private spawnPlayer(world: Node, map: 'farm' | 'town' | 'mine' = 'farm'): Node {
+    private spawnPlayer(
+        world: Node,
+        map: 'farm' | 'town' | 'mine' | 'mayorHouse' = 'farm',
+    ): Node {
         const player = new Node('Player');
         player.layer = world.layer;
         player.setParent(world);
@@ -1115,7 +1235,9 @@ export class GameBootstrap extends Component {
                 ? TownWorldLayout.PLAYER_SPAWN
                 : map === 'mine'
                   ? MineWorldLayout.PLAYER_SPAWN
-                  : FarmWorldLayout.PLAYER_SPAWN;
+                  : map === 'mayorHouse'
+                    ? MayorHouseWorldLayout.PLAYER_SPAWN
+                    : FarmWorldLayout.PLAYER_SPAWN;
         player.setPosition(new Vec3(spawn.x, spawn.y, 0));
 
         const ui = player.addComponent(UITransform);

@@ -1,6 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { DialogueLine, DialoguePanel } from './DialoguePanel';
 import { GameState } from './GameState';
+import { NpcAnimator } from './NpcAnimator';
 import { QuestSystem } from './QuestSystem';
 import { ORIGIN_STORY_PAGES, StoryIntroPanel } from './StoryIntroPanel';
 import { TutorialGuide } from './TutorialGuide';
@@ -26,9 +27,20 @@ type ScriptId =
     | 'quest_1012'
     | 'quest_1013'
     | 'carpenter_nails'
-    | 'quest_1014'
     | 'community_bell'
     | 'ch1_done'
+    | 'quest_1020'
+    | 'quest_1021'
+    | 'quest_1022'
+    | 'spring_pack'
+    | 'quest_1023'
+    | 'clinic_advice'
+    | 'quest_1024'
+    | 'quest_1025'
+    | 'quest_1026'
+    | 'quest_1027'
+    | 'spring_light'
+    | 'ch2_done'
     | 'girl_chat';
 
 type QueueItem = { id: ScriptId; onDone?: () => void; force?: boolean };
@@ -112,7 +124,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: '你',
-            text: '去北区的镇长府打个招呼。若任务可领奖，先点一下领取。',
+            text: '往北走到镇长府，点大门进屋，再跟镇长·艾岚打个招呼。若任务可领奖，先点一下领取。',
         },
     ],
     mayor_tea: [
@@ -126,7 +138,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: '镇长·艾岚',
-            text: '眼下要紧的是：熟悉市集、听听镇上的委托，再去木工坊认认石楠。',
+            text: '眼下先认认镇子：听听公告板的委托，再去木工坊认认石楠。买卖的事，摸熟路了再教你。',
         },
         {
             speaker: '镇长·艾岚',
@@ -134,22 +146,16 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: '你',
-            text: '我明白了。先去商店买点日用，再看看警察局或邮局的公告板。',
+            text: '我明白了。先去警察局或邮局的公告板看看。',
         },
     ],
     quest_1011: [
         {
-            speaker: '镇长·艾岚',
-            text: '对了——任意一家店买一件东西就好，熟个手。种子店、杂货铺都行。',
+            speaker: '你',
+            text: '去警察局或邮局的公告板接一单委托，听听镇上在忙什么。',
         },
     ],
     quest_1012: [
-        {
-            speaker: '你',
-            text: '补给齐了。去警察局或邮局的公告板接一单委托，听听镇上在忙什么。',
-        },
-    ],
-    quest_1013: [
         {
             speaker: '镇长·艾岚',
             text: '木工坊在东市。工匠石楠管修路、扩建——钉子和木料的事，问他就对了。',
@@ -169,7 +175,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
             text: '好，我去社区中心看看。',
         },
     ],
-    quest_1014: [
+    quest_1013: [
         {
             speaker: '你',
             text: '前往社区中心——那座破旧钟楼。看看修复工程还缺什么。',
@@ -181,16 +187,110 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
         },
         {
             speaker: '你',
-            text: '先记下这里。等材料与人手齐了，春厅会重新亮起来——那是后话。',
+            text: '先记下这里。材料齐了，春厅会重新亮起来。',
         },
         {
-            text: '第一章的线索接到了。领取任务奖励后，可以继续熟悉镇子，或回农场照看田地。',
+            text: '第一章的线索接到了。领取奖励后，镇长会教你在市集买卖。',
         },
     ],
     ch1_done: [
         {
             speaker: '镇长·艾岚',
-            text: '（信件）站稳了就好。社区收集包的事，我会再派人知会你。溪谷慢慢来。',
+            text: '（信件）站稳了就好。第二章从市集开始——先买一件日用，再把背包里的收获卖掉一单。熟了手，再谈春厅。',
+        },
+    ],
+    quest_1020: [
+        {
+            speaker: '镇长·艾岚',
+            text: '任意一家店买一件东西就好，熟个手。种子店、杂货铺都行。',
+        },
+    ],
+    quest_1021: [
+        {
+            speaker: '镇长·艾岚',
+            text: '买过就会卖。打开商店点「出售」，把防风草或鱼卖掉一件——金币进袋，才算真正进了市集。',
+        },
+    ],
+    quest_1022: [
+        {
+            speaker: '你',
+            text: '买卖摸熟了。回社区中心，春厅收集包该签字立项了。',
+        },
+    ],
+    spring_pack: [
+        {
+            text: '木桌上摊着一份「春厅收集包」名册，墨迹未干，旁边压着一枚镇徽章。',
+        },
+        {
+            speaker: '镇长·艾岚',
+            text: '（字条）先签你的名字。春厅要亮，得有钉子、药草和铜——诊所与矿脉商会那边，你去打个招呼。',
+        },
+        {
+            speaker: '你',
+            text: '签字。下一步：先去微光诊所。',
+        },
+    ],
+    quest_1023: [
+        {
+            speaker: '你',
+            text: '去微光诊所。下矿前，先听听医生的叮嘱。',
+        },
+    ],
+    clinic_advice: [
+        {
+            speaker: '医生·荷叶',
+            text: '新邻居？手伸过来——脉象还稳。矿洞里潮、暗、滑，别逞强。',
+        },
+        {
+            speaker: '医生·荷叶',
+            text: '浅层铜脉可以碰。若头晕耳鸣，立刻上来找我。药柜里的伤药，回头再备。',
+        },
+        {
+            speaker: '你',
+            text: '明白了。接下来去矿脉商会拿通行证。',
+        },
+    ],
+    quest_1024: [
+        {
+            speaker: '你',
+            text: '走进矿脉商会——就是矿石店。打听浅层矿洞放行的事。',
+        },
+    ],
+    quest_1025: [
+        {
+            speaker: '你',
+            text: '商会放行了。去北山路牌，进入浅层矿洞。',
+        },
+    ],
+    quest_1026: [
+        {
+            speaker: '你',
+            text: '选中锄头，把洞里的铜矿石挖下来——先采三块带回镇上。',
+        },
+    ],
+    quest_1027: [
+        {
+            speaker: '你',
+            text: '铜够了。回社区中心，把第一袋矿交给春厅。',
+        },
+    ],
+    spring_light: [
+        {
+            text: '你把铜矿搁上木台。钟楼角落一盏旧灯忽然亮起——微弱，却稳。',
+        },
+        {
+            speaker: '镇长·艾岚',
+            text: '春厅有光了。后面还有钉子、药草和南路……不急，溪谷会记着你这一袋铜。',
+        },
+        {
+            speaker: '你',
+            text: '市集与春厅都站住了。领取奖励后，可以继续熟悉镇子，或回农场。',
+        },
+    ],
+    ch2_done: [
+        {
+            speaker: '镇长·艾岚',
+            text: '（信件）买卖熟了，春厅也亮了。南路与海滩的事，等社区再凑齐一批材料再说。慢慢来。',
         },
     ],
 };
@@ -206,19 +306,28 @@ const QUEST_INTRO: Partial<Record<number, ScriptId>> = {
     1011: 'quest_1011',
     1012: 'quest_1012',
     1013: 'quest_1013',
-    1014: 'quest_1014',
+    1020: 'quest_1020',
+    1021: 'quest_1021',
+    1022: 'quest_1022',
+    1023: 'quest_1023',
+    1024: 'quest_1024',
+    1025: 'quest_1025',
+    1026: 'quest_1026',
+    1027: 'quest_1027',
 };
 
 const BUILDING_STORY: Record<string, ScriptId> = {
     mayor: 'mayor_tea',
     carpenter: 'carpenter_nails',
     community: 'community_bell',
+    clinic: 'clinic_advice',
 };
 
 const BUILDING_FLAG: Record<string, string> = {
     mayor: 'visit_mayor',
     carpenter: 'visit_carpenter',
     community: 'visit_community',
+    clinic: 'visit_clinic',
 };
 
 /**
@@ -232,7 +341,7 @@ export class StoryDialogue extends Component {
     guide: TutorialGuide | null = null;
 
     private _lastActiveId = -1;
-    private _map: 'farm' | 'town' | 'mine' | 'other' = 'other';
+    private _map: 'farm' | 'town' | 'mine' | 'mayorHouse' | 'other' = 'other';
     private _queue: QueueItem[] = [];
     private _playing = false;
     private _booted = false;
@@ -240,7 +349,7 @@ export class StoryDialogue extends Component {
     bind(opts: {
         dialogue: DialoguePanel;
         quests: QuestSystem;
-        map: 'farm' | 'town' | 'mine' | 'other';
+        map: 'farm' | 'town' | 'mine' | 'mayorHouse' | 'other';
         guide?: TutorialGuide | null;
         intro?: StoryIntroPanel | null;
     }) {
@@ -253,6 +362,64 @@ export class StoryDialogue extends Component {
         opts.quests.onChange(() => this.onQuestChange());
     }
 
+    /**
+     * GM: mark farm tutorial scripts seen, clear the play queue, and close
+     * any open intro / dialogue without running their onDone callbacks.
+     */
+    skipNewbieGuide() {
+        this.markScriptsSeen([
+            'origin_story',
+            'wake_farm',
+            'quest_1002',
+            'quest_1003',
+            'quest_1004',
+            'quest_1005',
+            'quest_1006',
+            'quest_1007',
+            'quest_1009',
+        ]);
+        GameState.markDialogueSeen('guide_wake_yard');
+        this.clearPlayQueue();
+    }
+
+    /**
+     * GM: silence story beats before a chapter jump.
+     * Town jump keeps `arrive_town` so the first Town boot can still play it.
+     */
+    prepareQuestLineJump(line: 'town' | 'market' | 'spring') {
+        this.skipNewbieGuide();
+        if (line === 'market' || line === 'spring') {
+            this.markScriptsSeen([
+                'arrive_town',
+                'mayor_tea',
+                'quest_1011',
+                'quest_1012',
+                'quest_1013',
+                'carpenter_nails',
+                'community_bell',
+                'ch1_done',
+            ]);
+        }
+        if (line === 'spring') {
+            this.markScriptsSeen(['quest_1020', 'quest_1021']);
+        }
+        this.clearPlayQueue();
+        this._lastActiveId = this.quests?.activeQuest?.id ?? this._lastActiveId;
+    }
+
+    private markScriptsSeen(ids: ScriptId[]) {
+        for (const id of ids) GameState.markDialogueSeen(id);
+    }
+
+    private clearPlayQueue() {
+        this._queue = [];
+        this._playing = false;
+        this.releaseCompanion();
+        this.intro?.forceClose();
+        this.dialogue?.forceClose();
+        this._lastActiveId = this.quests?.activeQuest?.id ?? this._lastActiveId;
+    }
+
     /** Call after config tables bound. */
     boot() {
         if (this._booted) return;
@@ -262,18 +429,11 @@ export class StoryDialogue extends Component {
         if (this._map === 'farm') {
             const active = this.quests?.activeQuest?.id ?? 0;
             if (!this.quests?.isCompleted(1001) && active === 1001) {
-                const startGuide = () => this.guide?.startWakeYardGuide();
                 const needOrigin = !GameState.hasSeenDialogue('origin_story');
-                const needWake = !GameState.hasSeenDialogue('wake_farm');
-                if (needOrigin && needWake) {
+                // Free roam until the player taps 露穗 — never auto-play wake or
+                // force the yard spotlight on boot (idle arrow points at her).
+                if (needOrigin) {
                     this.enqueue('origin_story');
-                    this.enqueue('wake_farm', startGuide);
-                } else if (needOrigin) {
-                    this.enqueue('origin_story', startGuide);
-                } else if (needWake) {
-                    this.enqueue('wake_farm', startGuide);
-                } else {
-                    startGuide();
                 }
             } else if (active) {
                 const intro = QUEST_INTRO[active];
@@ -289,6 +449,14 @@ export class StoryDialogue extends Component {
             // First arrival: arrive_town points at the mayor. On return, remind the live step.
             if (returning) {
                 const active = this.quests?.activeQuest?.id ?? 0;
+                // Old / new saves finishing Ch.1 — play the bridge letter once.
+                if (
+                    active === 1020 &&
+                    (this.quests?.isCompleted(1013) || this.quests?.isCompleted(1014)) &&
+                    !GameState.hasSeenDialogue('ch1_done')
+                ) {
+                    this.enqueue('ch1_done');
+                }
                 if (active && active !== 1010) {
                     const intro = QUEST_INTRO[active];
                     if (intro) this.enqueue(intro);
@@ -302,14 +470,51 @@ export class StoryDialogue extends Component {
      * Town building tap. Returns true if story dialogue consumed the interaction.
      */
     tryBuilding(key: string): boolean {
+        const active = this.quests?.activeQuest?.id ?? 0;
+
+        if (key === 'community') {
+            if (active === 1022) {
+                this.enqueue(
+                    'spring_pack',
+                    () => {
+                        if ((this.quests?.flagOf('accept_spring_pack') ?? 0) < 1) {
+                            this.quests?.noteFlag('accept_spring_pack');
+                        }
+                    },
+                    true,
+                );
+                this.drain();
+                return true;
+            }
+            if (active === 1027) {
+                this.enqueue(
+                    'spring_light',
+                    () => {
+                        const farm = this.quests?.farm;
+                        if (farm && farm.copper > 0) {
+                            const use = Math.min(3, farm.copper);
+                            farm.copper -= use;
+                            farm.notifyInventoryChanged();
+                        }
+                        if ((this.quests?.flagOf('light_spring_hall') ?? 0) < 1) {
+                            this.quests?.noteFlag('light_spring_hall');
+                        }
+                    },
+                    true,
+                );
+                this.drain();
+                return true;
+            }
+        }
+
         const id = BUILDING_STORY[key];
         if (!id) return false;
         const unseen = !GameState.hasSeenDialogue(id);
-        const active = this.quests?.activeQuest?.id ?? 0;
         const relevant =
             (key === 'mayor' && (active === 1010 || unseen)) ||
-            (key === 'carpenter' && (active === 1013 || unseen)) ||
-            (key === 'community' && (active === 1014 || unseen));
+            (key === 'carpenter' && (active === 1012 || unseen)) ||
+            (key === 'community' && (active === 1013 || unseen)) ||
+            (key === 'clinic' && (active === 1023 || unseen));
         if (!unseen && !relevant) return false;
 
         const flag = BUILDING_FLAG[key];
@@ -332,7 +537,9 @@ export class StoryDialogue extends Component {
     tryFarmNpc(key: string): boolean {
         if (key !== 'girl') return false;
         const active = this.quests?.activeQuest?.id ?? 0;
-        if (!GameState.hasSeenDialogue('wake_farm') && active === 1001) {
+        // Yard spotlight starts only after this talk — re-play wake if an older
+        // boot path marked wake_farm without opening the guide.
+        if (active === 1001 && !GameState.hasSeenDialogue('guide_wake_yard')) {
             this.enqueue('wake_farm', () => this.guide?.startWakeYardGuide(), true);
             this.drain();
             return true;
@@ -354,9 +561,15 @@ export class StoryDialogue extends Component {
         if (id === this._lastActiveId) return;
         const prev = this._lastActiveId;
         this._lastActiveId = id;
+        if (
+            (prev === 1013 || prev === 1014) &&
+            (id === 1020 || this.quests?.isCompleted(1013) || this.quests?.isCompleted(1014))
+        ) {
+            this.enqueue('ch1_done');
+        }
         if (!id) {
-            if (prev === 1014 || this.quests?.isCompleted(1014)) {
-                this.enqueue('ch1_done');
+            if (prev === 1027 || this.quests?.isCompleted(1027)) {
+                this.enqueue('ch2_done');
                 this.drain();
             }
             return;
@@ -414,10 +627,38 @@ export class StoryDialogue extends Component {
         this._playing = true;
         // Idle chat may replay; don't permanently mark it as "seen" blocking force.
         if (item.id !== 'girl_chat') GameState.markDialogueSeen(item.id);
+        if (this.scriptUsesCompanion(item.id, lines)) this.engageCompanion();
         panel.play(lines, () => {
+            this.releaseCompanion();
             this._playing = false;
             item.onDone?.();
             this.drain();
         });
+    }
+
+    /** Farm companion lines — freeze patrol + face the player for the whole chat. */
+    private scriptUsesCompanion(id: ScriptId, lines: DialogueLine[]): boolean {
+        if (this._map !== 'farm') return false;
+        if (id === 'wake_farm' || id === 'girl_chat') return true;
+        return lines.some((l) => l.speaker === GIRL);
+    }
+
+    private companionAnim(): NpcAnimator | null {
+        const node = this.guide?.farm?.findWorldNode('npc_girl');
+        return node?.getComponent(NpcAnimator) ?? null;
+    }
+
+    private engageCompanion() {
+        const anim = this.companionAnim();
+        if (!anim) return;
+        anim.holdPatrol();
+        const player = this.guide?.farm?.player;
+        if (player?.isValid) {
+            anim.faceToward(player.position.x, player.position.y);
+        }
+    }
+
+    private releaseCompanion() {
+        this.companionAnim()?.releasePatrol();
     }
 }

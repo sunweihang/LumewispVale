@@ -104,6 +104,8 @@ export class StoryIntroPanel extends Component {
     private _hintOp: UIOpacity | null = null;
     private _hintBaseY = 0;
     private _arrowBaseY = 18;
+    private _skipBtn: Node | null = null;
+    private _skipLab: Label | null = null;
 
     private _pages: StoryIntroPage[] = [];
     private _index = 0;
@@ -126,6 +128,19 @@ export class StoryIntroPanel extends Component {
 
     get isOpen() {
         return this._open;
+    }
+
+    /** GM / skip: close immediately without running the play `onDone` callback. */
+    forceClose() {
+        this._pending = null;
+        this._onDone = null;
+        this._pages = [];
+        this._index = 0;
+        this._busy = false;
+        this.stopTypewriter();
+        // Keep calm piano looping into the farm / main scene.
+        this._audio.continueCalm();
+        if (this._open) this.hide();
     }
 
     /** Farm / mine → calm piano; town → Unravel hub BGM. */
@@ -189,6 +204,7 @@ export class StoryIntroPanel extends Component {
         if (!this._open) return;
         this.ensureChromeHidden();
         this.layoutArt();
+        this.layoutSkip();
         this.bringToFront();
     }
 
@@ -213,8 +229,12 @@ export class StoryIntroPanel extends Component {
      * From GameBootstrap stick.onTap — advance + consume while open.
      * Debounced tryAdvance merges with global mouse/touch listeners.
      */
-    handleTap(_uiX: number, _uiY: number): boolean {
+    handleTap(uiX: number, uiY: number): boolean {
         if (!this._open) return false;
+        if (this.hitSkip(uiX, uiY)) {
+            this.skip();
+            return true;
+        }
         this.tryAdvance();
         return true;
     }
@@ -238,6 +258,7 @@ export class StoryIntroPanel extends Component {
     private applyFonts() {
         if (this._bodyLab) applyUiFont(this._bodyLab);
         if (this._hintLab) applyUiFont(this._hintLab);
+        if (this._skipLab) applyUiFont(this._skipLab);
         this.ensureBodyLayout();
     }
 
@@ -360,6 +381,16 @@ export class StoryIntroPanel extends Component {
         this.hide(() => done?.());
     }
 
+    /** Top-right skip — same exit as finishing the last page (runs `onDone`). */
+    private skip() {
+        if (!this._open) return;
+        this._busy = false;
+        this.stopTypewriter();
+        this._audio.unlockFromGesture();
+        playUiClick();
+        this.finish();
+    }
+
     private show() {
         if (!this._open) {
             this._prevBlocking = InputBridge.uiBlocking;
@@ -372,7 +403,8 @@ export class StoryIntroPanel extends Component {
         this._open = true;
         this._inputReady = false;
         this.unschedule(this.enableInput);
-        this.unlisten();
+        // Listen immediately so top-right Skip works during the advance guard.
+        this.listen();
         this.fadeIn();
         this.scheduleOnce(this.enableInput, INPUT_GUARD_SEC);
     }
@@ -380,7 +412,6 @@ export class StoryIntroPanel extends Component {
     private enableInput = () => {
         if (!this._open) return;
         this._inputReady = true;
-        this.listen();
     };
 
     private hide(after?: () => void) {
@@ -529,16 +560,43 @@ export class StoryIntroPanel extends Component {
     }
 
     private onTouchEnd(e: EventTouch) {
-        if (!this._open || !this._inputReady) return;
+        if (!this._open) return;
         e.propagationStopped = true;
+        const loc = e.getUILocation();
+        if (this.hitSkip(loc.x, loc.y)) {
+            this.skip();
+            return;
+        }
+        if (!this._inputReady) return;
         this.tryAdvance();
     }
 
     private onMouseUp(e: EventMouse) {
-        if (!this._open || !this._inputReady) return;
+        if (!this._open) return;
         if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
         e.propagationStopped = true;
+        const loc = e.getUILocation();
+        if (this.hitSkip(loc.x, loc.y)) {
+            this.skip();
+            return;
+        }
+        if (!this._inputReady) return;
         this.tryAdvance();
+    }
+
+    private hitSkip(uiX: number, uiY: number): boolean {
+        if (!this._skipBtn?.isValid || !this._skipBtn.active) return false;
+        const ut = this._skipBtn.getComponent(UITransform);
+        if (!ut) return false;
+        const canvasUt = this.node.getComponent(UITransform);
+        const halfW = (canvasUt?.contentSize.width || DESIGN_W) * 0.5;
+        const halfH = (canvasUt?.contentSize.height || DESIGN_H) * 0.5;
+        const x = uiX - halfW;
+        const y = uiY - halfH;
+        const p = this._skipBtn.position;
+        const hw = ut.contentSize.width * 0.5;
+        const hh = ut.contentSize.height * 0.5;
+        return Math.abs(x - p.x) <= hw && Math.abs(y - p.y) <= hh;
     }
 
     private layoutArt() {
@@ -563,6 +621,18 @@ export class StoryIntroPanel extends Component {
         ut?.setContentSize(w, h);
         const y = (vh * 0.5 - topPad) - h * 0.5 - 20;
         this._art.node.setPosition(0, Math.min(220, y - (DESIGN_H - vh) * 0.25), 0);
+    }
+
+    private layoutSkip() {
+        if (!this._skipBtn?.isValid) return;
+        const vis = portraitVisibleSize();
+        const vw = vis.width || DESIGN_W;
+        const vh = vis.height || DESIGN_H;
+        const ut = this._skipBtn.getComponent(UITransform);
+        const bw = ut?.contentSize.width ?? 148;
+        const bh = ut?.contentSize.height ?? 56;
+        const pad = 36;
+        this._skipBtn.setPosition(vw * 0.5 - pad - bw * 0.5, vh * 0.5 - pad - bh * 0.5, 0);
     }
 
     private ensureBodyLayout() {
@@ -708,5 +778,44 @@ export class StoryIntroPanel extends Component {
         hint.string = '点击继续';
         this._hintLab = hint;
         hintRoot.active = false;
+
+        // Top-right skip — same wood/gold family as the caption chrome.
+        const skipW = 148;
+        const skipH = 56;
+        const skip = new Node('SkipBtn');
+        skip.layer = root.layer;
+        skip.setParent(root);
+        skip.setSiblingIndex(root.children.length - 1);
+        skip.addComponent(UITransform).setContentSize(skipW, skipH);
+        const sg = skip.addComponent(Graphics);
+        sg.fillColor = new Color(36, 28, 20, 230);
+        sg.roundRect(-skipW * 0.5, -skipH * 0.5, skipW, skipH, 14);
+        sg.fill();
+        sg.fillColor = new Color(52, 40, 28, 255);
+        sg.roundRect(-skipW * 0.5 + 5, -skipH * 0.5 + 5, skipW - 10, skipH - 10, 10);
+        sg.fill();
+        sg.strokeColor = new Color(214, 176, 104, 255);
+        sg.lineWidth = 3;
+        sg.roundRect(-skipW * 0.5, -skipH * 0.5, skipW, skipH, 14);
+        sg.stroke();
+
+        const skipLabN = new Node('Label');
+        skipLabN.layer = root.layer;
+        skipLabN.setParent(skip);
+        skipLabN.addComponent(UITransform).setContentSize(skipW, skipH);
+        const skipLab = skipLabN.addComponent(Label);
+        skipLab.string = '跳过';
+        skipLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        skipLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(skipLab, {
+            size: 28,
+            color: new Color(255, 236, 190, 255),
+            outline: true,
+            outlineWidth: 2,
+            outlineColor: new Color(60, 36, 12, 255),
+        });
+        this._skipLab = skipLab;
+        this._skipBtn = skip;
+        this.layoutSkip();
     }
 }

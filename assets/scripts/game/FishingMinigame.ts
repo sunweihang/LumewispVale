@@ -44,14 +44,16 @@ export class FishingMinigame extends Component {
     private _holdPulse: Graphics | null = null;
     private _fingerG: Graphics | null = null;
     private _fingerN: Node | null = null;
-    private _coachArrowG: Graphics | null = null;
     private _barSp: Sprite | null = null;
 
     private _panelSf: SpriteFrame | null = null;
     private _barSf: SpriteFrame | null = null;
+    /** Red AI paddle when fish is outside the catch zone. */
+    private _barMissSf: SpriteFrame | null = null;
     private _fishSf: SpriteFrame | null = null;
     private _framesReady = false;
     private _loadGen = 0;
+    private _barShowingMiss = false;
 
     private _active = false;
     private _holding = false;
@@ -137,6 +139,7 @@ export class FishingMinigame extends Component {
         this._perfect = true;
         this._ended = false;
         this._fishIn = false;
+        this._barShowingMiss = true;
         this._coach = 'ready';
         this._age = 0;
         this._pulseT = 0;
@@ -154,7 +157,6 @@ export class FishingMinigame extends Component {
             this.bindInput(true);
             this.layoutDynamic();
             this.paintHoldPad();
-            this.paintCoachArrow();
         });
     }
 
@@ -243,7 +245,6 @@ export class FishingMinigame extends Component {
         this.refreshCoach();
         this.layoutDynamic();
         this.paintHoldPad();
-        this.paintCoachArrow();
         this.updateFinger();
 
         if (this._progress >= 1) {
@@ -319,26 +320,38 @@ export class FishingMinigame extends Component {
         this._holdPulse = null;
         this._fingerG = null;
         this._fingerN = null;
-        this._coachArrowG = null;
         this._barSp = null;
+        this._barShowingMiss = false;
     }
 
     private ensureFrames(done?: () => void) {
-        if (this._framesReady && this._panelSf && this._barSf && this._fishSf) {
+        if (
+            this._framesReady &&
+            this._panelSf &&
+            this._barSf &&
+            this._barMissSf &&
+            this._fishSf
+        ) {
             done?.();
             return;
         }
         const gen = ++this._loadGen;
-        const jobs: { key: 'panel' | 'bar' | 'fish'; uuid: string }[] = [
+        const jobs: { key: 'panel' | 'bar' | 'barMiss' | 'fish'; uuid: string }[] = [
             { key: 'panel', uuid: FISHING_FRAMES.panel },
             { key: 'bar', uuid: FISHING_FRAMES.bar },
+            { key: 'barMiss', uuid: FISHING_FRAMES.barMiss },
             { key: 'fish', uuid: FISHING_FRAMES.fish },
         ];
         let left = jobs.length;
         const finishOne = () => {
             left--;
             if (left > 0 || gen !== this._loadGen) return;
-            this._framesReady = !!(this._panelSf && this._barSf && this._fishSf);
+            this._framesReady = !!(
+                this._panelSf &&
+                this._barSf &&
+                this._barMissSf &&
+                this._fishSf
+            );
             done?.();
         };
         for (const job of jobs) {
@@ -350,6 +363,7 @@ export class FishingMinigame extends Component {
                 if (!err && asset) {
                     if (job.key === 'panel') this._panelSf = asset as SpriteFrame;
                     else if (job.key === 'bar') this._barSf = asset as SpriteFrame;
+                    else if (job.key === 'barMiss') this._barMissSf = asset as SpriteFrame;
                     else this._fishSf = asset as SpriteFrame;
                 }
                 finishOne();
@@ -415,17 +429,25 @@ export class FishingMinigame extends Component {
         bar.setParent(track);
         const barW = Math.max(20, this.TRACK_W - this.BAR_INSET_X * 2);
         bar.addComponent(UITransform).setContentSize(barW, 120);
-        if (this._barSf) {
+        const applyBarInsets = (sf: SpriteFrame | null) => {
+            if (!sf) return;
             // Vertical 9-slice only — left/right slice was collapsing the AI bar to a hairline.
-            this._barSf.insetTop = 18;
-            this._barSf.insetBottom = 18;
-            this._barSf.insetLeft = 0;
-            this._barSf.insetRight = 0;
+            sf.insetTop = 18;
+            sf.insetBottom = 18;
+            sf.insetLeft = 0;
+            sf.insetRight = 0;
+        };
+        applyBarInsets(this._barSf);
+        applyBarInsets(this._barMissSf);
+        if (this._barSf || this._barMissSf) {
             const sp = bar.addComponent(Sprite);
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
             sp.trim = false;
             sp.type = Sprite.Type.SLICED;
-            sp.spriteFrame = this._barSf;
+            // Start red (miss) — fish usually begins above the paddle.
+            const startMiss = !this._fishIn;
+            this._barShowingMiss = startMiss;
+            sp.spriteFrame = (startMiss ? this._barMissSf : this._barSf) ?? this._barSf!;
             sp.color = new Color(255, 255, 255, 255);
             this._barSp = sp;
         }
@@ -442,12 +464,6 @@ export class FishingMinigame extends Component {
             sp.spriteFrame = this._fishSf;
         }
         this._fishNode = fish;
-
-        const coachArrow = new Node('CoachArrow');
-        coachArrow.layer = root.layer;
-        coachArrow.setParent(track);
-        coachArrow.addComponent(UITransform).setContentSize(40, 48);
-        this._coachArrowG = coachArrow.addComponent(Graphics);
 
         const prog = new Node('Progress');
         prog.layer = root.layer;
@@ -637,32 +653,6 @@ export class FishingMinigame extends Component {
         }
     }
 
-    private paintCoachArrow() {
-        const g = this._coachArrowG;
-        if (!g || !this._barNode) return;
-        g.clear();
-        if (this._ended || this._fishIn) return;
-        const barMid = this._barY + this._barH * 0.5;
-        const up = this._fishY > barMid;
-        // Draw beside the green bar inside the track.
-        const y = (-this.TRACK_H * 0.5 + this._barY * this.TRACK_H + (this._barH * this.TRACK_H) * 0.5);
-        const node = g.node;
-        node.setPosition(0, y + (up ? 48 : -48), 0);
-        const flash = 0.55 + 0.45 * Math.sin(this._pulseT * 7);
-        g.fillColor = new Color(255, 236, 140, Math.floor(140 + flash * 100));
-        if (up) {
-            g.moveTo(0, 16);
-            g.lineTo(-14, -8);
-            g.lineTo(14, -8);
-        } else {
-            g.moveTo(0, -16);
-            g.lineTo(-14, 8);
-            g.lineTo(14, 8);
-        }
-        g.close();
-        g.fill();
-    }
-
     private updateFinger() {
         const n = this._fingerN;
         if (!n?.isValid) return;
@@ -691,10 +681,14 @@ export class FishingMinigame extends Component {
             ui?.setContentSize(bw, bh);
             this._barNode.setPosition(0, by, 0);
             if (this._barSp) {
-                // Bright when covering the fish; cool/dim when missing.
-                this._barSp.color = this._fishIn
-                    ? new Color(255, 255, 255, 255)
-                    : new Color(170, 200, 255, 210);
+                // Swap AI green/red paddle art — no runtime tint.
+                const wantMiss = !this._fishIn;
+                if (wantMiss !== this._barShowingMiss) {
+                    this._barShowingMiss = wantMiss;
+                    const sf = wantMiss ? this._barMissSf : this._barSf;
+                    if (sf) this._barSp.spriteFrame = sf;
+                }
+                this._barSp.color = new Color(255, 255, 255, 255);
             }
         }
 

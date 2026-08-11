@@ -209,3 +209,23 @@ export const POST_QUEST_POOL: TownBoardQuest[] = [
 export function shopByBuilding(kind: string): TownShopDef | null {
     return TOWN_SHOPS.find((s) => s.building === kind) ?? null;
 }
+
+/** Player inventory lines a town shop will buy. */
+export type TownSellId = 'parsnip' | 'fish' | 'grass' | 'wood' | 'stone' | 'copper';
+
+export interface TownSellGoods {
+    id: TownSellId;
+    title: string;
+    desc: string;
+    /** Gold paid to the player per unit. */
+    price: number;
+}
+
+export const TOWN_SELL_GOODS: TownSellGoods[] = [
+    { id: 'parsnip', title: '防风草', desc: '刚收获的作物，杂货铺最爱收', price: 35 },
+    { id: 'fish', title: '鱼', desc: '湖鲜，渔具店与酒馆都收', price: 40 },
+    { id: 'grass', title: '草料', desc: '编织与饲料原料', price: 5 },
+    { id: 'wood', title: '木料', desc: '修缮常用', price: 8 },
+    { id: 'stone', title: '石料', desc: '基础建材', price: 8 },
+    { id: 'copper', title: '铜矿石', desc: '矿脉商会回收', price: 25 },
+];

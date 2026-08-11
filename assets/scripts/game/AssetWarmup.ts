@@ -2,6 +2,7 @@ import { AudioClip, Prefab, SpriteFrame, assetManager, resources } from 'cc';
 import { loadConfigTables } from './ConfigService';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FARM_FRAMES } from './FarmFrames';
+import { FISHING_FRAMES } from './FishingFrames';
 import { INFO_BOARD_FRAMES, INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
@@ -63,6 +64,7 @@ function collectSpriteUuids(): string[] {
     flattenUuids(FARM_FRAMES, set);
     flattenUuids(QUEST_FRAMES, set);
     flattenUuids(INFO_BOARD_FRAMES, set);
+    flattenUuids(FISHING_FRAMES, set);
     for (const u of STORY_UUIDS) set.add(u);
     return [...set];
 }

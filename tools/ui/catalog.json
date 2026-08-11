@@ -1312,6 +1312,40 @@
       ]
     },
     {
+      "id": "ui-fishing-bar-miss",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-bar-miss.png",
+      "spriteFrame": "1e2e0fd7-db69-4c3c-93af-e39ecca0edc2@f9941",
+      "size": [
+        48,
+        104
+      ],
+      "tags": [
+        "fishing",
+        "bar",
+        "miss",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-fishing-ground-ripple",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-ground-ripple.png",
+      "spriteFrame": "3db7d5df-233c-4092-9678-7ea971e4c624@f9941",
+      "size": [
+        128,
+        128
+      ],
+      "tags": [
+        "fishing",
+        "guide",
+        "ripple",
+        "ai"
+      ]
+    },
+    {
       "id": "bld-seedshop",
       "kind": "building",
       "spriteType": "simple",
@@ -1464,6 +1498,42 @@
         256
       ],
       "path": "assets/textures/buildings/bld-mayor.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-chapel",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        288
+      ],
+      "path": "assets/textures/buildings/bld-chapel.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-windmill",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        256,
+        320
+      ],
+      "path": "assets/textures/buildings/bld-windmill.png",
+      "prefab": "",
+      "layer": "Midground"
+    },
+    {
+      "id": "bld-greenhouse",
+      "kind": "building",
+      "spriteType": "simple",
+      "designSize": [
+        288,
+        240
+      ],
+      "path": "assets/textures/buildings/bld-greenhouse.png",
       "prefab": "",
       "layer": "Midground"
     },

@@ -810,6 +810,8 @@ export class PlayerController extends Component {
     private isSolidName(name: string): boolean {
         // Archway prop — walk through; info prompt still works via MineWorldLayout.
         if (name === 'bld_mine_mouth') return false;
+        // Interior exit mat / door — walk through to leave MayorHouse.
+        if (name === 'door_exit') return false;
         return (
             name.startsWith('cottage_') ||
             name.startsWith('home_') ||
@@ -821,6 +823,10 @@ export class PlayerController extends Component {
             name.startsWith('lamp_') ||
             name.startsWith('fence') ||
             name.startsWith('tree_') ||
+            name.startsWith('wall_solid_') ||
+            name.startsWith('prop_desk') ||
+            name.startsWith('prop_bookshelf') ||
+            name.startsWith('prop_tea_table') ||
             name.startsWith('prop_shipping') ||
             name.startsWith('prop_mailbox') ||
             name.startsWith('prop_craftbench') ||

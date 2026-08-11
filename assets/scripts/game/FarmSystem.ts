@@ -17,6 +17,7 @@ import { GotoAction } from '../cfg/schema';
 import { FARM_FRAMES } from './FarmFrames';
 import { FarmWorldLayout } from './FarmWorldLayout';
 import { FishingMinigame, FishingResult } from './FishingMinigame';
+import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
 import { ActionAnim, PlayerAnimator } from './PlayerAnimator';
 import { footSolidFor } from './GridPath';
@@ -126,7 +127,7 @@ interface PendingJob {
 /**
  * Stardew-like farm loop: equip a tool, then use it on a matching target.
  * Hand → weeds / harvest; hoe → till / dig rock; seeds → plant; can → water; axe → chop;
- * rod → shore / pier fishing minigame.
+ * rod → tap lake water to start fishing minigame.
  */
 @ccclass('FarmSystem')
 export class FarmSystem extends Component {
@@ -448,13 +449,20 @@ export class FarmSystem extends Component {
             activeGotoAction?: () => GotoAction;
         } | null;
         if (!quests?.activeQuest || quests.isAwaitingClaim) return null;
+        // Quest 1001: no action gating until 露穗 talk starts the yard spotlight.
+        if (
+            quests.activeQuest.id === 1001 &&
+            !GameState.hasSeenDialogue('guide_wake_yard')
+        ) {
+            return null;
+        }
         const action = quests.activeGotoAction?.() ?? GotoAction.None;
         switch (action) {
             case GotoAction.HintMeteor:
             case GotoAction.HintTownGate:
                 return '跟着箭头往右走，点东侧路牌';
             case GotoAction.HintMayor:
-                return '跟着箭头前往镇长府';
+                return '跟着箭头前往镇长府进屋';
             case GotoAction.SelectRod:
             case GotoAction.HintFish:
                 if (kind === 'fish') return null;

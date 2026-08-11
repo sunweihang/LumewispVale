@@ -532,12 +532,12 @@ export class FarmWorldLayout {
     }
 
     /**
-     * Resolve a cast target (water / shore / pier) into a walk stand + aim point.
-     * Returns null when the tap is not a fishing spot.
+     * Resolve a water tap into a shore/pier stand + cast aim.
+     * Only water cells cast — shore / pier / ground taps return null.
      */
-    /** Mid-pier stand for idle quest arrows. */
+    /** Water tile north of mid-pier — idle quest arrow + tap aim. */
     static fishingHintWorld(): { x: number; y: number } {
-        return { x: -5 * TILE, y: -2 * TILE };
+        return { x: -5 * TILE, y: -1 * TILE };
     }
 
     static findFishingStand(
@@ -549,56 +549,32 @@ export class FarmWorldLayout {
         const water = this.pondWaterKeys();
         const pier = this.lakePierKeys();
 
-        const nearestWater = (sx: number, sy: number): { x: number; y: number } | null => {
-            let best: { x: number; y: number; d: number } | null = null;
-            for (let dy = -2; dy <= 2; dy++) {
-                for (let dx = -2; dx <= 2; dx++) {
-                    if (!dx && !dy) continue;
-                    const nx = sx + dx;
-                    const ny = sy + dy;
-                    if (!water.has(`${nx},${ny}`)) continue;
+        // Must tap water — ground / shore / pier alone never starts fishing.
+        if (!water.has(`${ix},${iy}`)) return null;
+
+        let best: { sx: number; sy: number; d: number } | null = null;
+        for (let r = 1; r <= 4; r++) {
+            for (let dy = -r; dy <= r; dy++) {
+                for (let dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                    const sx = ix + dx;
+                    const sy = iy + dy;
+                    const key = `${sx},${sy}`;
+                    if (water.has(key)) continue;
+                    if (!this.isPondShore(sx, sy) && !pier.has(key)) continue;
                     const d = dx * dx + dy * dy;
-                    if (!best || d < best.d) best = { x: nx * TILE, y: ny * TILE, d };
+                    if (!best || d < best.d) best = { sx, sy, d };
                 }
             }
-            return best ? { x: best.x, y: best.y } : null;
+            if (best) break;
+        }
+        if (!best) return null;
+        return {
+            standX: best.sx * TILE,
+            standY: best.sy * TILE,
+            waterX: ix * TILE,
+            waterY: iy * TILE,
         };
-
-        // Standing on shore / pier — cast into adjacent water.
-        if (!water.has(`${ix},${iy}`) && (this.isPondShore(ix, iy) || pier.has(`${ix},${iy}`))) {
-            const w = nearestWater(ix, iy);
-            if (!w) return null;
-            return { standX: ix * TILE, standY: iy * TILE, waterX: w.x, waterY: w.y };
-        }
-
-        // Tapped water — walk to the nearest shore / pier neighbor.
-        if (water.has(`${ix},${iy}`)) {
-            let best: { sx: number; sy: number; d: number } | null = null;
-            for (let r = 1; r <= 4; r++) {
-                for (let dy = -r; dy <= r; dy++) {
-                    for (let dx = -r; dx <= r; dx++) {
-                        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-                        const sx = ix + dx;
-                        const sy = iy + dy;
-                        const key = `${sx},${sy}`;
-                        if (water.has(key)) continue;
-                        if (!this.isPondShore(sx, sy) && !pier.has(key)) continue;
-                        const d = dx * dx + dy * dy;
-                        if (!best || d < best.d) best = { sx, sy, d };
-                    }
-                }
-                if (best) break;
-            }
-            if (!best) return null;
-            return {
-                standX: best.sx * TILE,
-                standY: best.sy * TILE,
-                waterX: ix * TILE,
-                waterY: iy * TILE,
-            };
-        }
-
-        return null;
     }
 
     /** One-tile ring around water — keep open for walking the shore. */

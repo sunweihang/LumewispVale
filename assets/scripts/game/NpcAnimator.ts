@@ -37,6 +37,8 @@ export class NpcAnimator extends Component {
     private _patrolIdx = 0;
     private _patrolIdle = 0;
     private _patrolPauseUntil = 0;
+    /** Hard stop (dialogue) — ignores timed pause expiry until released. */
+    private _patrolHeld = false;
     private readonly _pos = new Vec3();
 
     get isReady() {
@@ -118,6 +120,7 @@ export class NpcAnimator extends Component {
         this._patrolIdx = 0;
         this._patrolIdle = 0.35;
         this._patrolPauseUntil = 0;
+        this._patrolHeld = false;
         if (opts?.speed != null) this.patrolSpeed = opts.speed;
         this._idleMin = opts?.idleMin ?? 0.6;
         this._idleMax = opts?.idleMax ?? 1.6;
@@ -141,6 +144,16 @@ export class NpcAnimator extends Component {
         this.setMoving(false);
     }
 
+    /** Freeze patrol until `releasePatrol` (full dialogue, not a timed pause). */
+    holdPatrol() {
+        this._patrolHeld = true;
+        this.setMoving(false);
+    }
+
+    releasePatrol() {
+        this._patrolHeld = false;
+    }
+
     private _idleMin = 0.6;
     private _idleMax = 1.6;
 
@@ -159,6 +172,10 @@ export class NpcAnimator extends Component {
 
     private tickPatrol(dt: number) {
         if (!this._patrolOn || this._patrol.length < 2) return;
+        if (this._patrolHeld) {
+            this.setMoving(false);
+            return;
+        }
         if (Date.now() / 1000 < this._patrolPauseUntil) {
             this.setMoving(false);
             return;

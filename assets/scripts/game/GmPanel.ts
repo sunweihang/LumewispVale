@@ -9,11 +9,19 @@ import {
     Label,
     Node,
     UITransform,
+    director,
     input,
     view,
 } from 'cc';
+import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
+import { FarmSystem } from './FarmSystem';
 import { InputBridge } from './InputBridge';
+import { travelTo } from './MapTravel';
+import { QuestSystem } from './QuestSystem';
+import { StoryDialogue } from './StoryDialogue';
+import { TownWorldLayout } from './TownWorldLayout';
+import { TutorialGuide } from './TutorialGuide';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -23,8 +31,21 @@ type GmBtn = {
     action: () => void;
 };
 
+type GmTabId = 'time' | 'quest' | 'system';
+
+type GmTabDef = {
+    id: GmTabId;
+    label: string;
+};
+
+const GM_TABS: GmTabDef[] = [
+    { id: 'time', label: '时间' },
+    { id: 'quest', label: '任务' },
+    { id: 'system', label: '系统' },
+];
+
 /**
- * Dev / GM overlay for scrubbing the farm clock.
+ * Dev / GM overlay: farm clock, skip newbie tutorial, jump quest lines.
  * Toggle: F1 or ` · Esc closes · small GM chip stays on-screen.
  */
 @ccclass('GmPanel')
@@ -40,6 +61,9 @@ export class GmPanel extends Component {
     private _pauseLab: Label | null = null;
     private _btns: GmBtn[] = [];
     private _chipHit = { x: 0, y: 0, hw: 0, hh: 0 };
+    private _tab: GmTabId = 'time';
+    private _tabPages = new Map<GmTabId, Node>();
+    private _tabBtns = new Map<GmTabId, Node>();
 
     onLoad() {
         InputBridge.gmUiHit = (x, y) => this.hitChip(x, y) || this._open;
@@ -96,6 +120,8 @@ export class GmPanel extends Component {
             this._dateLab = null;
             this._pauseLab = null;
             this._btns = [];
+            this._tabPages.clear();
+            this._tabBtns.clear();
         }
         if (this._chip) this._chip.active = !open;
     }
@@ -185,6 +211,9 @@ export class GmPanel extends Component {
         const old = canvas.getChildByName('GmPanel');
         if (old) old.destroy();
         this._btns = [];
+        this._tabPages.clear();
+        this._tabBtns.clear();
+        if (!GM_TABS.some((t) => t.id === this._tab)) this._tab = 'time';
 
         const root = new Node('GmPanel');
         root.layer = canvas.layer;
@@ -204,7 +233,7 @@ export class GmPanel extends Component {
         dimG.fill();
 
         const panelW = 560;
-        const panelH = 520;
+        const panelH = 620;
         const panel = new Node('Panel');
         panel.layer = root.layer;
         panel.setParent(root);
@@ -217,10 +246,10 @@ export class GmPanel extends Component {
         const titleN = new Node('Title');
         titleN.layer = root.layer;
         titleN.setParent(panel);
-        titleN.setPosition(0, panelH * 0.5 - 40, 0);
-        titleN.addComponent(UITransform).setContentSize(panelW, 40);
+        titleN.setPosition(0, panelH * 0.5 - 38, 0);
+        titleN.addComponent(UITransform).setContentSize(panelW - 120, 40);
         const title = titleN.addComponent(Label);
-        title.string = 'GM · 游戏时间';
+        title.string = 'GM · 调试';
         title.horizontalAlign = Label.HorizontalAlign.CENTER;
         title.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(title, {
@@ -229,38 +258,37 @@ export class GmPanel extends Component {
             outline: true,
         });
 
-        const clockN = new Node('Clock');
-        clockN.layer = root.layer;
-        clockN.setParent(panel);
-        clockN.setPosition(0, panelH * 0.5 - 110, 0);
-        clockN.addComponent(UITransform).setContentSize(panelW - 40, 64);
-        const clock = clockN.addComponent(Label);
-        clock.string = '06:00';
-        clock.horizontalAlign = Label.HorizontalAlign.CENTER;
-        clock.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(clock, {
-            size: 52,
-            color: new Color(255, 236, 160, 255),
-            outline: true,
-            outlineWidth: 5,
-        });
-        this._clockLab = clock;
+        this.addBtn(panel, '关闭', panelW * 0.5 - 66, panelH * 0.5 - 38, 88, 40, () => this.setOpen(false), true);
 
-        const dateN = new Node('Date');
-        dateN.layer = root.layer;
-        dateN.setParent(panel);
-        dateN.setPosition(0, panelH * 0.5 - 168, 0);
-        dateN.addComponent(UITransform).setContentSize(panelW - 40, 36);
-        const date = dateN.addComponent(Label);
-        date.string = '';
-        date.horizontalAlign = Label.HorizontalAlign.CENTER;
-        date.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(date, {
-            size: 24,
-            color: new Color(220, 200, 160, 255),
-            outline: true,
+        // Tab bar
+        const tabY = panelH * 0.5 - 96;
+        const tabW = 148;
+        const tabH = 44;
+        const tabGap = 12;
+        const tabTotal = GM_TABS.length * tabW + (GM_TABS.length - 1) * tabGap;
+        GM_TABS.forEach((t, i) => {
+            const x = -tabTotal * 0.5 + tabW * 0.5 + i * (tabW + tabGap);
+            const btn = this.addBtn(panel, t.label, x, tabY, tabW, tabH, () => this.selectTab(t.id));
+            this._tabBtns.set(t.id, btn);
         });
-        this._dateLab = date;
+
+        const pageHost = new Node('Pages');
+        pageHost.layer = root.layer;
+        pageHost.setParent(panel);
+        pageHost.setPosition(0, -18, 0);
+        pageHost.addComponent(UITransform).setContentSize(panelW - 48, panelH - 180);
+
+        const timePage = this.makePage(pageHost, 'Page_time');
+        this.buildTimePage(timePage, panelW);
+        this._tabPages.set('time', timePage);
+
+        const questPage = this.makePage(pageHost, 'Page_quest');
+        this.buildQuestPage(questPage);
+        this._tabPages.set('quest', questPage);
+
+        const systemPage = this.makePage(pageHost, 'Page_system');
+        this.buildSystemPage(systemPage);
+        this._tabPages.set('system', systemPage);
 
         const hintN = new Node('Hint');
         hintN.layer = root.layer;
@@ -277,58 +305,246 @@ export class GmPanel extends Component {
             outline: false,
         });
 
-        // Presets
+        this.applyTabVisuals();
+
+        loadUiFont().then((font) => {
+            if (!font || !root.isValid) return;
+            for (const lab of root.getComponentsInChildren(Label)) applyUiFont(lab);
+        });
+    }
+
+    private makePage(host: Node, name: string): Node {
+        const page = new Node(name);
+        page.layer = host.layer;
+        page.setParent(host);
+        page.setPosition(0, 0, 0);
+        page.addComponent(UITransform).setContentSize(host.getComponent(UITransform)!.contentSize);
+        return page;
+    }
+
+    private buildTimePage(page: Node, panelW: number) {
+        const clockN = new Node('Clock');
+        clockN.layer = page.layer;
+        clockN.setParent(page);
+        clockN.setPosition(0, 168, 0);
+        clockN.addComponent(UITransform).setContentSize(panelW - 40, 64);
+        const clock = clockN.addComponent(Label);
+        clock.string = '06:00';
+        clock.horizontalAlign = Label.HorizontalAlign.CENTER;
+        clock.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(clock, {
+            size: 52,
+            color: new Color(255, 236, 160, 255),
+            outline: true,
+            outlineWidth: 5,
+        });
+        this._clockLab = clock;
+
+        const dateN = new Node('Date');
+        dateN.layer = page.layer;
+        dateN.setParent(page);
+        dateN.setPosition(0, 112, 0);
+        dateN.addComponent(UITransform).setContentSize(panelW - 40, 36);
+        const date = dateN.addComponent(Label);
+        date.string = '';
+        date.horizontalAlign = Label.HorizontalAlign.CENTER;
+        date.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(date, {
+            size: 24,
+            color: new Color(220, 200, 160, 255),
+            outline: true,
+        });
+        this._dateLab = date;
+
         const presets: { label: string; h: number; m: number }[] = [
             { label: '清晨 6:00', h: 6, m: 0 },
             { label: '正午 12:00', h: 12, m: 0 },
             { label: '黄昏 18:00', h: 18, m: 0 },
             { label: '深夜 22:00', h: 22, m: 0 },
         ];
-        const presetY = 70;
+        const presetY = 40;
         const presetW = 118;
         const presetGap = 12;
         const presetTotal = presets.length * presetW + (presets.length - 1) * presetGap;
         presets.forEach((p, i) => {
             const x = -presetTotal * 0.5 + presetW * 0.5 + i * (presetW + presetGap);
-            this.addBtn(panel, p.label, x, presetY, presetW, 48, () => {
+            this.addBtn(page, p.label, x, presetY, presetW, 48, () => {
                 this.infoBoard?.setTime(p.h, p.m);
             });
         });
 
-        // Nudge row
         const nudges: { label: string; fn: () => void }[] = [
             { label: '-1时', fn: () => this.infoBoard?.addMinutes(-60) },
             { label: '-10分', fn: () => this.infoBoard?.addMinutes(-10) },
             { label: '+10分', fn: () => this.infoBoard?.addMinutes(10) },
             { label: '+1时', fn: () => this.infoBoard?.addMinutes(60) },
         ];
-        const nudgeY = -10;
+        const nudgeY = -36;
         const nudgeW = 110;
         const nudgeGap = 14;
         const nudgeTotal = nudges.length * nudgeW + (nudges.length - 1) * nudgeGap;
         nudges.forEach((n, i) => {
             const x = -nudgeTotal * 0.5 + nudgeW * 0.5 + i * (nudgeW + nudgeGap);
-            this.addBtn(panel, n.label, x, nudgeY, nudgeW, 48, n.fn);
+            this.addBtn(page, n.label, x, nudgeY, nudgeW, 48, n.fn);
         });
 
-        // Day / pause / close
-        const dayY = -90;
-        this.addBtn(panel, '-1日', -180, dayY, 100, 48, () => this.infoBoard?.addMinutes(-20 * 60));
-        this.addBtn(panel, '+1日', -60, dayY, 100, 48, () => this.infoBoard?.addMinutes(20 * 60));
-
-        const pauseBtn = this.addBtn(panel, '暂停', 80, dayY, 110, 48, () => {
+        const dayY = -112;
+        this.addBtn(page, '-1日', -150, dayY, 120, 48, () => this.infoBoard?.addMinutes(-20 * 60));
+        this.addBtn(page, '+1日', 0, dayY, 120, 48, () => this.infoBoard?.addMinutes(20 * 60));
+        const pauseBtn = this.addBtn(page, '暂停', 150, dayY, 120, 48, () => {
             const board = this.infoBoard;
             if (!board) return;
             board.setPaused(!board.paused);
         });
         this._pauseLab = pauseBtn.getChildByName('Label')?.getComponent(Label) ?? null;
+    }
 
-        this.addBtn(panel, '关闭', 200, dayY, 100, 48, () => this.setOpen(false), true);
+    private buildQuestPage(page: Node) {
+        this.addSectionLabel(page, '跳转到主线章节起点（会自动前往小镇）', 140);
 
-        loadUiFont().then((font) => {
-            if (!font || !root.isValid) return;
-            for (const lab of root.getComponentsInChildren(Label)) applyUiFont(lab);
+        const lines: { label: string; line: 'town' | 'market' | 'spring'; desc: string }[] = [
+            { label: '城镇任务', line: 'town', desc: '解锁小镇后的城镇线' },
+            { label: '市集任务', line: 'market', desc: '市集 / 交易相关章节' },
+            { label: '春厅任务', line: 'spring', desc: '春厅剧情线' },
+        ];
+        lines.forEach((q, i) => {
+            const y = 60 - i * 96;
+            this.addBtn(page, q.label, 0, y, 280, 48, () => this.jumpQuestLine(q.line));
+            this.addSectionLabel(page, q.desc, y - 36, 20);
         });
+    }
+
+    private buildSystemPage(page: Node) {
+        this.addSectionLabel(page, '引导与调试开关', 140);
+        this.addBtn(page, '跳过新手引导', 0, 40, 300, 52, () => this.skipNewbieGuide(), true);
+        this.addSectionLabel(page, '结束农场新手、解锁小镇并跳到城镇线', -20, 20);
+    }
+
+    private addSectionLabel(parent: Node, text: string, y: number, size = 22) {
+        const n = new Node('Section');
+        n.layer = parent.layer;
+        n.setParent(parent);
+        n.setPosition(0, y, 0);
+        n.addComponent(UITransform).setContentSize(480, 32);
+        const lab = n.addComponent(Label);
+        lab.string = text;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, {
+            size,
+            color: new Color(120, 88, 48, 255),
+            outline: false,
+        });
+        return lab;
+    }
+
+    private selectTab(id: GmTabId) {
+        if (this._tab === id) return;
+        this._tab = id;
+        this.applyTabVisuals();
+    }
+
+    private applyTabVisuals() {
+        for (const [id, page] of this._tabPages) {
+            page.active = id === this._tab;
+        }
+        for (const [id, btn] of this._tabBtns) {
+            this.paintBtn(btn, id === this._tab ? 'tabOn' : 'tabOff');
+        }
+    }
+
+    private paintBtn(btn: Node, kind: 'normal' | 'danger' | 'tabOn' | 'tabOff') {
+        const ut = btn.getComponent(UITransform);
+        const g = btn.getComponent(Graphics);
+        if (!ut || !g) return;
+        const w = ut.contentSize.width;
+        const h = ut.contentSize.height;
+        let fill: Color;
+        let inner: Color;
+        if (kind === 'danger') {
+            fill = new Color(160, 72, 48, 255);
+            inner = new Color(210, 120, 80, 255);
+        } else if (kind === 'tabOn') {
+            fill = new Color(120, 72, 32, 255);
+            inner = new Color(210, 150, 72, 255);
+        } else if (kind === 'tabOff') {
+            fill = new Color(176, 110, 48, 255);
+            inner = new Color(236, 214, 170, 255);
+        } else {
+            fill = new Color(176, 110, 48, 255);
+            inner = new Color(232, 198, 140, 255);
+        }
+        g.clear();
+        g.fillColor = fill;
+        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
+        g.fill();
+        g.fillColor = inner;
+        g.roundRect(-w * 0.5 + 4, -h * 0.5 + 4, w - 8, h - 8, 9);
+        g.fill();
+        g.strokeColor = new Color(54, 30, 14, 255);
+        g.lineWidth = 3;
+        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
+        g.stroke();
+
+        const lab = btn.getChildByName('Label')?.getComponent(Label);
+        if (lab) {
+            lab.color =
+                kind === 'tabOn' ? new Color(255, 244, 214, 255) : new Color(48, 32, 18, 255);
+        }
+    }
+
+    /** Close spotlight / story, finish farm quests 1001–1007, unlock town → 1009. */
+    private skipNewbieGuide() {
+        const story = this.node.getComponent(StoryDialogue);
+        const guide = this.node.getComponent(TutorialGuide);
+        const quests = this.node.getComponent(QuestSystem);
+        const hud = this.node.getComponent(FarmHUD);
+
+        story?.skipNewbieGuide();
+        hud?.clearTutorialCraftGuide();
+        const jumped = quests?.skipFarmTutorial() ?? false;
+        guide?.dismissSpotlight();
+
+        this.infoBoard?.showToast(
+            jumped ? '已跳过新手引导 · 小镇已解锁' : '新手引导已跳过 / 已完成',
+        );
+        this.setOpen(false);
+    }
+
+    /** Jump to chapter start and travel to the matching map when needed. */
+    private jumpQuestLine(line: 'town' | 'market' | 'spring') {
+        const story = this.node.getComponent(StoryDialogue);
+        const guide = this.node.getComponent(TutorialGuide);
+        const quests = this.node.getComponent(QuestSystem);
+        const hud = this.node.getComponent(FarmHUD);
+        const farm = this.node.getComponent(FarmSystem);
+
+        story?.prepareQuestLineJump(line);
+        hud?.clearTutorialCraftGuide();
+        guide?.dismissSpotlight();
+
+        const result = quests?.jumpToQuestLine(line);
+        if (!result) {
+            this.infoBoard?.showToast('任务线跳转失败');
+            return;
+        }
+
+        const scene = director.getScene()?.name ?? '';
+        const onTown = scene === 'Town';
+        this.setOpen(false);
+
+        if (!onTown) {
+            this.infoBoard?.showToast(`已跳转 ${result.label} · 前往小镇`);
+            travelTo('town', {
+                farm,
+                quests,
+                spawnX: TownWorldLayout.PLAYER_SPAWN.x,
+                spawnY: TownWorldLayout.PLAYER_SPAWN.y,
+            });
+            return;
+        }
+
+        this.infoBoard?.showToast(`已跳转 ${result.label}（${result.activeId}）`);
     }
 
     private addBtn(
@@ -346,19 +562,7 @@ export class GmPanel extends Component {
         btn.setParent(parent);
         btn.setPosition(x, y, 0);
         btn.addComponent(UITransform).setContentSize(w, h);
-        const g = btn.addComponent(Graphics);
-        const fill = danger ? new Color(160, 72, 48, 255) : new Color(176, 110, 48, 255);
-        const inner = danger ? new Color(210, 120, 80, 255) : new Color(232, 198, 140, 255);
-        g.fillColor = fill;
-        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
-        g.fill();
-        g.fillColor = inner;
-        g.roundRect(-w * 0.5 + 4, -h * 0.5 + 4, w - 8, h - 8, 9);
-        g.fill();
-        g.strokeColor = new Color(54, 30, 14, 255);
-        g.lineWidth = 3;
-        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
-        g.stroke();
+        btn.addComponent(Graphics);
 
         const labN = new Node('Label');
         labN.layer = parent.layer;
@@ -374,6 +578,7 @@ export class GmPanel extends Component {
             outline: false,
         });
 
+        this.paintBtn(btn, danger ? 'danger' : 'normal');
         this._btns.push({ node: btn, action });
         return btn;
     }
@@ -429,13 +634,18 @@ export class GmPanel extends Component {
     }
 
     private hitNode(n: Node | null, lx: number, ly: number): boolean {
-        if (!n?.isValid || !n.active || !this._root) return false;
+        if (!n?.isValid || !n.activeInHierarchy || !this._root) return false;
         const ut = n.getComponent(UITransform);
         if (!ut) return false;
-        // Panel is at (0, 20); buttons are children of panel.
-        const panel = this._root.getChildByName('Panel');
-        const px = (panel?.position.x ?? 0) + n.position.x;
-        const py = (panel?.position.y ?? 0) + n.position.y;
+        // Accumulate local positions up to canvas (root's parent).
+        let px = 0;
+        let py = 0;
+        let cur: Node | null = n;
+        while (cur && cur !== this.node) {
+            px += cur.position.x;
+            py += cur.position.y;
+            cur = cur.parent;
+        }
         const hw = ut.contentSize.width * 0.5 + 6;
         const hh = ut.contentSize.height * 0.5 + 6;
         return lx >= px - hw && lx <= px + hw && ly >= py - hh && ly <= py + hh;

@@ -2,5 +2,7 @@
 export const FISHING_FRAMES = {
     "panel": "d23846ce-021e-44eb-b4ea-b59a9a8effe7@f9941",
     "bar": "62ab3063-839a-4446-8cf0-9a2ff4610657@f9941",
-    "fish": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941"
+    "fish": "1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941",
+    "barMiss": "1e2e0fd7-db69-4c3c-93af-e39ecca0edc2@f9941",
+    "groundRipple": "3db7d5df-233c-4092-9678-7ea971e4c624@f9941"
 }

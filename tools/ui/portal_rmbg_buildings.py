@@ -58,6 +58,10 @@ SPECS = [
     ("bld-cottage-blue", ["ai-bld-cottage-blue-v3", "ai-bld-cottage-blue-ortho-ref"], 256, 224),
     # Hero farmhouse — larger cozy home (farm + town cottage_red)
     ("bld-cottage-red", ["ai-bld-cottage-red-hero-ref", "ai-bld-cottage-red-hero-v2", "ai-bld-cottage-red-v3"], 288, 272),
+    # North meadow district (civic terrace → orchard / chapel / mill)
+    ("bld-chapel", ["ai-bld-chapel-v3"], 256, 288),
+    ("bld-windmill", ["ai-bld-windmill-v3"], 256, 320),
+    ("bld-greenhouse", ["ai-bld-greenhouse-v3"], 288, 240),
 ]
 
 
@@ -308,12 +312,25 @@ def alpha_pct(im: Image.Image) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="comma names without bld- prefix, e.g. oreshop,home-purple")
+    ap.add_argument(
+        "--local",
+        action="store_true",
+        help="skip portal; mid-gray AI canvas key (only when refs are solid gray, not outdoor grass)",
+    )
     args = ap.parse_args()
     only = {x.strip() for x in args.only.split(",") if x.strip()}
 
     CUTOUT_DIR.mkdir(parents=True, exist_ok=True)
-    portal = Portal()
-    portal.login()
+    portal = None
+    use_local = args.local
+    if not use_local:
+        try:
+            portal = Portal()
+            portal.login()
+        except Exception as e:
+            print(f"WARN portal unreachable ({e}); falling back to local gray-key cutout")
+            use_local = True
+            portal = None
 
     umap = json.loads(UUID_MAP.read_text(encoding="utf-8")) if UUID_MAP.exists() else {}
 
@@ -326,8 +343,16 @@ def main() -> None:
             print("SKIP missing", name)
             continue
         print(f"\n=== {name} <- {ref.name} ===")
-        cut = portal.cutout(ref)
         cut_path = CUTOUT_DIR / f"{name}-rmbg.png"
+        if portal is not None:
+            cut = portal.cutout(ref)
+        else:
+            # Solid mid-gray AI canvas only — not for outdoor-grass refs.
+            from process_bag_ai import flood_corners, knock_gray_bg
+
+            cut = knock_gray_bg(Image.open(ref).convert("RGBA"))
+            cut = flood_corners(cut)
+            cut = quantize(cut)
         cut.save(cut_path)
         print(f"  cutout alpha={alpha_pct(cut):.1f}% -> {cut_path.name}")
 

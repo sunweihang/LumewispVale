@@ -50,7 +50,13 @@ const INK = new Color(68, 40, 18, 255);
 const INK_MUTE = new Color(110, 78, 42, 255);
 const COUNT_INK = new Color(140, 84, 24, 255);
 
-type RewardChip = { uuid: string | null; count: number; name: string };
+type RewardChip = {
+    uuid: string | null;
+    count: number;
+    name: string;
+    /** Gold flies to the top-right G mark; items to the backpack. */
+    kind: 'gold' | 'item';
+};
 
 /**
  * Quest claim modal — title + reward grid + 领取.
@@ -134,10 +140,22 @@ export class RewardPopup extends Component {
         });
     }
 
-    private collectFlyPayloads(): { sf: SpriteFrame; x: number; y: number; count: number }[] {
+    private collectFlyPayloads(): {
+        sf: SpriteFrame;
+        x: number;
+        y: number;
+        count: number;
+        target: 'bag' | 'gold';
+    }[] {
         const host = this._chipHost;
         if (!host?.isValid) return [];
-        const out: { sf: SpriteFrame; x: number; y: number; count: number }[] = [];
+        const out: {
+            sf: SpriteFrame;
+            x: number;
+            y: number;
+            count: number;
+            target: 'bag' | 'gold';
+        }[] = [];
         for (const chip of host.children) {
             const icon = chip.getChildByName('Icon');
             const sf = icon?.getComponent(Sprite)?.spriteFrame ?? null;
@@ -148,23 +166,26 @@ export class RewardPopup extends Component {
             const lab = chip.getChildByName('Label')?.getComponent(Label)?.string ?? '';
             const m = /x\s*(\d+)/i.exec(lab);
             if (m) count = Math.max(1, parseInt(m[1]!, 10) || 1);
-            out.push({ sf, x: pos.x, y: pos.y, count });
+            const target: 'bag' | 'gold' = chip.name === 'ChipGold' ? 'gold' : 'bag';
+            out.push({ sf, x: pos.x, y: pos.y, count, target }); // ChipGold → G mark
         }
         return out;
     }
 
-    private playRewardFlies(flies: { sf: SpriteFrame; x: number; y: number; count: number }[]) {
+    private playRewardFlies(
+        flies: { sf: SpriteFrame; x: number; y: number; count: number; target: 'bag' | 'gold' }[],
+    ) {
         const hud = this.quests?.hud;
         if (!hud || flies.length <= 0) return;
         for (let i = 0; i < flies.length; i++) {
             const f = flies[i]!;
             const delay = i * 0.08;
             if (delay <= 0) {
-                hud.playCanvasLootFly(f.sf, f.x, f.y, f.count);
+                hud.playCanvasLootFly(f.sf, f.x, f.y, f.count, f.target);
             } else {
                 this.scheduleOnce(() => {
                     if (!hud.isValid) return;
-                    hud.playCanvasLootFly(f.sf, f.x, f.y, f.count);
+                    hud.playCanvasLootFly(f.sf, f.x, f.y, f.count, f.target);
                 }, delay);
             }
         }
@@ -254,7 +275,7 @@ export class RewardPopup extends Component {
         chipH: number,
         iconS: number,
     ) {
-        const chip = new Node('Chip');
+        const chip = new Node(r.kind === 'gold' ? 'ChipGold' : 'ChipItem');
         chip.layer = host.layer;
         chip.setParent(host);
         chip.setPosition(x, y, 0);
@@ -295,6 +316,7 @@ export class RewardPopup extends Component {
                 uuid: this.rewardIconUuid('gold'),
                 count: q.rewardGold,
                 name: '金币',
+                kind: 'gold',
             });
         }
         if (q.rewardItem && q.rewardCount > 0) {
@@ -302,6 +324,7 @@ export class RewardPopup extends Component {
                 uuid: this.rewardIconUuid(q.rewardItem),
                 count: q.rewardCount,
                 name: this.rewardName(q.rewardItem),
+                kind: 'item',
             });
         }
         return out;

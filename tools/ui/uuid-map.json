@@ -1575,5 +1575,95 @@
     "texture": "695a362e-30eb-4750-9159-a2f61c636a18",
     "prefab": "",
     "spriteFrame": "695a362e-30eb-4750-9159-a2f61c636a18@f9941"
+  },
+  "ui-fishing-bar-miss": {
+    "texture": "1e2e0fd7-db69-4c3c-93af-e39ecca0edc2",
+    "prefab": "",
+    "spriteFrame": "1e2e0fd7-db69-4c3c-93af-e39ecca0edc2@f9941"
+  },
+  "ui-fishing-ground-ripple": {
+    "texture": "3db7d5df-233c-4092-9678-7ea971e4c624",
+    "prefab": "",
+    "spriteFrame": "3db7d5df-233c-4092-9678-7ea971e4c624@f9941"
+  },
+  "tile-wood-floor": {
+    "texture": "de792ce0-60dc-4fac-9e20-a5a377a70d8c",
+    "spriteFrame": "de792ce0-60dc-4fac-9e20-a5a377a70d8c@f9941",
+    "prefab": ""
+  },
+  "tile-wood-floor-b": {
+    "texture": "62264e6a-6600-41bf-81a7-88a93581a60b",
+    "spriteFrame": "62264e6a-6600-41bf-81a7-88a93581a60b@f9941",
+    "prefab": ""
+  },
+  "prop-desk-mayor": {
+    "texture": "21ec0a8c-a530-418a-9c3f-831c31660305",
+    "spriteFrame": "21ec0a8c-a530-418a-9c3f-831c31660305@f9941",
+    "prefab": ""
+  },
+  "prop-tea-table": {
+    "texture": "9eebbe88-d37d-4f5a-87a9-f71f59f9f262",
+    "spriteFrame": "9eebbe88-d37d-4f5a-87a9-f71f59f9f262@f9941",
+    "prefab": ""
+  },
+  "prop-bookshelf": {
+    "texture": "47e760e8-97ee-435c-8505-3e6eab4c64dd",
+    "spriteFrame": "47e760e8-97ee-435c-8505-3e6eab4c64dd@f9941",
+    "prefab": ""
+  },
+  "prop-chair": {
+    "texture": "a74f53fd-c8d1-4d48-8c25-c9be3ce6e42e",
+    "spriteFrame": "a74f53fd-c8d1-4d48-8c25-c9be3ce6e42e@f9941",
+    "prefab": ""
+  },
+  "prop-rug-mayor": {
+    "texture": "4e77f767-ff26-4cd4-89c6-c277611739ba",
+    "spriteFrame": "4e77f767-ff26-4cd4-89c6-c277611739ba@f9941",
+    "prefab": ""
+  },
+  "prop-door-exit": {
+    "texture": "8cc27dfe-9454-4060-9dc5-830cac5b88d7",
+    "spriteFrame": "8cc27dfe-9454-4060-9dc5-830cac5b88d7@f9941",
+    "prefab": ""
+  },
+  "prop-wall-mayor": {
+    "texture": "f05492a5-9a0f-4b24-aeae-ead678e37a6e",
+    "spriteFrame": "f05492a5-9a0f-4b24-aeae-ead678e37a6e@f9941",
+    "prefab": ""
+  },
+  "bld-chapel": {
+    "texture": "d1356768-e00e-4d8a-9b03-9e154e52a4a1",
+    "spriteFrame": "d1356768-e00e-4d8a-9b03-9e154e52a4a1@f9941",
+    "prefab": ""
+  },
+  "bld-windmill": {
+    "texture": "1c0e387e-11d9-4663-a7e7-91f73fbe1d03",
+    "spriteFrame": "1c0e387e-11d9-4663-a7e7-91f73fbe1d03@f9941",
+    "prefab": ""
+  },
+  "bld-greenhouse": {
+    "texture": "d190d407-06db-49a0-a6b1-ae4c8775c314",
+    "spriteFrame": "d190d407-06db-49a0-a6b1-ae4c8775c314@f9941",
+    "prefab": ""
+  },
+  "tile-wall-interior": {
+    "texture": "717e87a7-8f3d-4daf-9149-7db016623f0a",
+    "spriteFrame": "717e87a7-8f3d-4daf-9149-7db016623f0a@f9941",
+    "prefab": ""
+  },
+  "prop-wall-side": {
+    "texture": "f329f407-d257-4e0c-a9f6-8c4bb52e3c7f",
+    "spriteFrame": "f329f407-d257-4e0c-a9f6-8c4bb52e3c7f@f9941",
+    "prefab": ""
+  },
+  "prop-wall-plain": {
+    "texture": "bf7951bb-f837-421c-ba3b-4b75e05a847f",
+    "spriteFrame": "bf7951bb-f837-421c-ba3b-4b75e05a847f@f9941",
+    "prefab": ""
+  },
+  "prop-wall-decor": {
+    "texture": "43a7f6d6-2649-42bb-b9b5-dac573c148d3",
+    "spriteFrame": "43a7f6d6-2649-42bb-b9b5-dac573c148d3@f9941",
+    "prefab": ""
   }
 }

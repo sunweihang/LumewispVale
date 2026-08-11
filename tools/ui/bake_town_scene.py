@@ -2,7 +2,8 @@
 """Bake a full Stardew-like town into assets/scenes/Town.scene.
 
 Institutions: seed/ore/general shops, police, post, clinic, school, mayor,
-community, saloon, fish shop, library, museum, carpenter, NPC homes.
+community, saloon, fish shop, library, museum, carpenter, NPC homes,
+plus north meadow (chapel / windmill / greenhouse orchard).
 
     python3.12 tools/ui/bake_town_scene.py
 """
@@ -46,6 +47,9 @@ BUILDINGS = {
     "home_yellow": ("bld-home-yellow", 256, 224),
     "home_purple": ("bld-home-purple", 224, 224),
     "shed": ("bld-shed", 128, 128),
+    "chapel": ("bld-chapel", 256, 288),
+    "windmill": ("bld-windmill", 256, 320),
+    "greenhouse": ("bld-greenhouse", 288, 240),
     "fountain": ("prop-fountain", 128, 128),
     "lamp": ("prop-lamp", 64, 128),
     "bench": ("prop-bench", 96, 48),
@@ -218,6 +222,8 @@ class TownBake:
         """
         Districted Pelican-scale town (read left→right, south→north):
 
+           Windmill   Chapel   Greenhouse / orchard homes
+                      Meadow loop (~+10 tile north fringe)
            Yellow  School  Community  Mayor
              Red Blue              Clinic
           Green Purple    [Plaza]  General → Seed
@@ -225,7 +231,8 @@ class TownBake:
           Post
          Museum     Library   pier → river / fish
 
-        Rules: clear district gaps, no strip-mall shop row, homes only in NW.
+        Rules: clear district gaps, no strip-mall shop row,
+        homes in NW + small NE orchard pocket.
         """
         # Intimate plaza — blob, not a stone continent
         self.mark_blob(self.stone, 0, 0, 3.2, 2.4, salt=1, core=0.42)
@@ -256,6 +263,13 @@ class TownBake:
         self.mark_path_h(self.dirt, -7, -4, 5, width=2)
         self.mark_path_v(self.dirt, 4, -11, -6, width=2)
         self.mark_path_h(self.dirt, 1, -14, -7, width=2)
+        # North meadow (~1/3 screen above civic terrace)
+        self.mark_path_v(self.dirt, 0, 11, 19, width=2)      # civic → chapel
+        self.mark_path_h(self.dirt, 16, -11, 11, width=2)    # meadow terrace
+        self.mark_path_v(self.dirt, -11, 12, 18, width=2)    # → windmill
+        self.mark_path_v(self.dirt, 10, 12, 17, width=2)     # → greenhouse
+        self.mark_path_h(self.dirt, 20, 10, 14, width=2)     # NE orchard lane
+        self.mark_blob(self.dirt, 0, 15, 2.2, 1.4, salt=7, core=0.35)  # meadow green
 
         # Building lots — apron only under feet, matching place_buildings()
         lots = [
@@ -279,6 +293,11 @@ class TownBake:
             (-5, 5, 2, 2, False),      # purple home
             (4, -11, 2, 2, False),     # fish
             (8, -10, 2, 2, False),     # shed
+            (0, 19, 3, 2, True),       # chapel
+            (-11, 18, 2, 2, False),    # windmill
+            (10, 16, 2, 2, False),     # greenhouse
+            (13, 20, 2, 2, False),     # NE orchard home
+            (12, 14, 1, 1, False),     # orchard shed
         ]
         for cx, cy, rx, ry, cobble in lots:
             self.yard(cx, cy, rx, ry, cobble=cobble)
@@ -309,7 +328,8 @@ class TownBake:
 
         dirt_spine: Set[str] = set()
         for ix, iy0, iy1 in (
-            (0, 5, 11), (6, 2, 7), (8, -6, 1), (-7, -3, 1), (-9, 1, 8), (4, -11, -6),
+            (0, 5, 19), (6, 2, 7), (8, -6, 1), (-7, -3, 1), (-9, 1, 8), (4, -11, -6),
+            (-11, 12, 18), (10, 12, 17),
         ):
             for iy in range(min(iy0, iy1), max(iy0, iy1) + 1):
                 dirt_spine.add(f"{ix},{iy}")
@@ -317,6 +337,7 @@ class TownBake:
         for iy, x0, x1 in (
             (11, -7, 7), (4, 6, 11), (-6, 8, 13), (5, -14, -7), (8, -13, -9),
             (-7, -4, 5), (1, -14, -7), (-6, -12, -4),
+            (16, -11, 11), (20, 10, 14),
         ):
             for ix in range(min(x0, x1), max(x0, x1) + 1):
                 dirt_spine.add(f"{ix},{iy}")
@@ -325,6 +346,7 @@ class TownBake:
         self.dirt -= self.stone
 
         self.build_river()
+        self.build_north_pond()
 
     def build_river(self) -> None:
         """Southern river as a wavy band (farm lake ellipse + shoreline jitter)."""
@@ -380,6 +402,26 @@ class TownBake:
                 self.clear.add(f"{ix},{iy}")
                 self.dirt.discard(f"{ix},{iy}")
 
+    def build_north_pond(self) -> None:
+        """Quiet reflecting pool east of chapel — breaks empty north grass."""
+        self.mark_blob(self.water, 5, 21, 2.4, 1.6, salt=88, core=0.4)
+        for key in list(self.water):
+            ix, iy = map(int, key.split(","))
+            if iy < 18:
+                continue
+            for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                nk = f"{ix + dx},{iy + dy}"
+                if nk in self.water or nk in self.stone or nk in self.dirt:
+                    continue
+                if noise01(ix + dx, iy + dy, 89) < 0.14:
+                    self.water.add(nk)
+        self.water -= self.stone
+        self.dirt -= self.water
+        # Keep chapel approach dry
+        for iy in range(18, 21):
+            for ix in (-1, 0, 1):
+                self.water.discard(f"{ix},{iy}")
+
     def is_clearing(self, ix: int, iy: int) -> bool:
         key = f"{ix},{iy}"
         if key in self.water:
@@ -400,8 +442,8 @@ class TownBake:
     def paint_terrain(self) -> None:
         stone_sf = self.sf("tile-stone")
         water_sf = self.sf("water") or self.sf("tile-water")
-        # Room for NW homes + SE workshop — still compact, not continental
-        for iy in range(-15, 14):
+        # Room for NW homes + SE workshop + north meadow (~+10 tile)
+        for iy in range(-15, 25):
             for ix in range(-17, 16):
                 key = f"{ix},{iy}"
                 if key in self.water and water_sf:
@@ -540,6 +582,13 @@ class TownBake:
         self._bld("school", *at(-7, 11))
         self._bld("mayor", *at(7, 11))
 
+        # North meadow (~1/3 screen above civic) — chapel / mill / orchard
+        self._bld("chapel", *at(0, 19))
+        self._bld("windmill", *at(-11, 18))
+        self._bld("greenhouse", *at(10, 16))
+        self._bld("home_green", *at(13, 20), "home_npc_f")
+        self._bld("shed", *at(12, 14), "bld_orchard_shed")
+
         # SW culture pair
         self._bld("museum", *at(-12, -6))
         self._bld("library", *at(-4, -9))
@@ -560,12 +609,17 @@ class TownBake:
             (-160, 100), (160, 100), (-160, -90), (160, -90),
             (0, 180), (-6 * TILE, 20), (6 * TILE, 40),
             (0, 8 * TILE), (4 * TILE, -7 * TILE),
+            # Meadow terrace
+            (0, 15 * TILE), (-10 * TILE, 16 * TILE), (10 * TILE, 15 * TILE),
+            (2 * TILE, 21 * TILE),
         ]
         for i, (x, y) in enumerate(lamps):
             self._bld("lamp", x, y, f"lamp_{i}")
 
         benches = [
             (-96, -36), (96, -36), (-120, 72), (120, 72), (0, -120),
+            # Chapel apron + meadow overlook
+            (-80, 17 * TILE), (80, 17 * TILE), (3 * TILE, 20 * TILE),
         ]
         for i, (x, y) in enumerate(benches):
             self._bld("bench", x, y, f"bench_{i}")
@@ -576,30 +630,34 @@ class TownBake:
             (0, 7 * TILE, "sign_civic"),
             # North of oreshop — shallow mine road
             (8 * TILE, 1 * TILE + 36, "sign_mine"),
+            (0, 13 * TILE + 36, "sign_meadow"),
         ]
         for x, y, name in signs:
             self._bld("sign", x, y, name)
 
-        # Short fence runs framing home yards / school lot
+        # Short fence runs framing home yards / school lot / orchard
         for i, (x, y) in enumerate([
             (-10 * TILE, 5.5 * TILE), (-9.4 * TILE, 5.5 * TILE),
             (-13 * TILE, 4 * TILE), (-6.2 * TILE, 9.5 * TILE),
             (-5.6 * TILE, 9.5 * TILE),
+            (9 * TILE, 14.5 * TILE), (9.6 * TILE, 14.5 * TILE),
+            (11 * TILE, 14.5 * TILE), (12 * TILE, 18.5 * TILE),
         ]):
             self._bld("fence", x, y, f"fence_{i}")
 
     def place_trees(self) -> None:
         n = 0
-        for iy in range(-15, 14):
+        for iy in range(-15, 25):
             for ix in range(-17, 16):
                 if self.is_clearing(ix, iy):
                     continue
                 if abs(ix) <= 3 and abs(iy) <= 2:
                     continue
                 shore = self.is_shore(ix, iy)
-                edge = shore or ix <= -15 or ix >= 14 or iy <= -13 or iy >= 12
-                mid = (not edge) and (abs(ix) >= 9 or abs(iy) >= 8)
-                chance = 0.4 if shore else 0.36 if edge else 0.18 if mid else 0.05
+                edge = shore or ix <= -15 or ix >= 14 or iy <= -13 or iy >= 22
+                orchard = 8 <= ix <= 15 and 13 <= iy <= 22
+                mid = (not edge) and (abs(ix) >= 9 or abs(iy) >= 8 or 14 <= iy <= 21)
+                chance = 0.4 if shore else 0.42 if orchard else 0.36 if edge else 0.18 if mid else 0.05
                 if f"{ix},{iy}" in self.dirt:
                     chance *= 0.4
                 if noise01(ix, iy, 41) > chance:
@@ -607,6 +665,13 @@ class TownBake:
                 roll = noise01(ix, iy, 43)
                 jx = noise(ix, iy + 2) * 22
                 jy = noise(ix + 2, iy) * 18
+                # North meadow / orchard favors blossom canopy
+                if (orchard or (edge and iy >= 18) or (14 <= iy <= 23 and noise01(ix, iy, 46) > 0.55)) \
+                        and self.sf("nat-tree-blossom") and noise01(ix, iy, 45) > 0.35:
+                    sf = self.sf("nat-tree-blossom")
+                    self.add_actor(f"decor_blossom_soft_t{n}", sf, ix * TILE + jx, iy * TILE + jy, 128, 160)
+                    n += 1
+                    continue
                 if edge and noise01(ix, iy, 45) > 0.62 and self.sf("nat-tree-blossom"):
                     sf = self.sf("nat-tree-blossom")
                     self.add_actor(f"decor_blossom_soft_t{n}", sf, ix * TILE + jx, iy * TILE + jy, 128, 160)
@@ -644,7 +709,7 @@ class TownBake:
         if not hard:
             return
         n = 0
-        for iy in range(-14, 13):
+        for iy in range(-14, 24):
             for ix in range(-16, 15):
                 key = f"{ix},{iy}"
                 if key in self.stone or key in self.water:
@@ -656,6 +721,8 @@ class TownBake:
                     continue
                 shore = self.is_shore(ix, iy)
                 dens = 0.09 if shore else 0.055 if key in self.dirt else 0.04
+                if 14 <= iy <= 23:
+                    dens *= 1.15
                 if noise01(ix, iy, 51) > dens:
                     continue
                 kind = hard[int(noise01(ix, iy, 52) * len(hard)) % len(hard)]
@@ -674,7 +741,7 @@ class TownBake:
 
     def place_shore_flora(self) -> None:
         n = 0
-        for iy in range(-15, 14):
+        for iy in range(-15, 25):
             for ix in range(-17, 16):
                 if not self.is_shore(ix, iy):
                     continue
@@ -720,7 +787,7 @@ class TownBake:
         if not available:
             return
         n = 0
-        for iy in range(-15, 14):
+        for iy in range(-15, 25):
             for ix in range(-17, 16):
                 key = f"{ix},{iy}"
                 if key in self.stone or key in self.water:
@@ -731,6 +798,8 @@ class TownBake:
                 dirt = key in self.dirt
                 shore = self.is_shore(ix, iy)
                 dens = 0.4 if shore else 0.34 if dirt else 0.26
+                if 14 <= iy <= 23:
+                    dens = max(dens, 0.3)
                 if key in self.clear and not dirt:
                     dens *= 0.35
                 if noise01(ix, iy, 1) > dens:

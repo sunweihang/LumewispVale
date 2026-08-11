@@ -208,6 +208,8 @@ export class WorldYSort extends Component {
             name === '__town_spawn' ||
             name === '__mine_baked' ||
             name === '__mine_spawn' ||
+            name === '__mayor_house_baked' ||
+            name === '__mayor_house_spawn' ||
             name.startsWith('tile-') ||
             name.startsWith('fringe_') ||
             name.startsWith('water_') ||
@@ -215,6 +217,7 @@ export class WorldYSort extends Component {
             name.startsWith('pond_') ||
             // Floor tracks — always under timber/mouth/player (not Y-merged as props)
             name.startsWith('prop_rails') ||
+            name.startsWith('prop_rug') ||
             name === 'lake_bridge'
         );
     }

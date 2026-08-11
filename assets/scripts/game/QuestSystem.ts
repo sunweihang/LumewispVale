@@ -109,6 +109,26 @@ export class QuestSystem extends Component {
             this._activeId = 1009;
             this._awaitingClaim = false;
         }
+        // Retired Ch.1 end id 1014 → community is now 1013; resume into market chapter.
+        if (this._activeId === 1014) {
+            this._completed.add(1014);
+            if (this.flagOf('visit_community') >= 1) this._completed.add(1013);
+            this._activeId = this._completed.has(1013) ? 1020 : 1013;
+            this._awaitingClaim = false;
+        }
+        if (this._completed.has(1014) && !this._completed.has(1013)) {
+            if (this.flagOf('visit_community') >= 1) this._completed.add(1013);
+        }
+        // Ch.1 used to end with activeId=0. Resume into market (buy/sell) chapter.
+        if (
+            this._activeId === 0 &&
+            (this._completed.has(1013) || this._completed.has(1014)) &&
+            !this._completed.has(1020) &&
+            !this._completed.has(1027)
+        ) {
+            this._activeId = 1020;
+            this._awaitingClaim = false;
+        }
     }
 
     /** Town unlocks after the farm tutorial (fishing) — go straight to the road sign. */
@@ -123,6 +143,16 @@ export class QuestSystem extends Component {
             (this._flags.get('inspect_meteor') ?? 0) >= 1
         ) {
             GameState.unlock('town');
+        }
+        if (
+            (this._flags.get('visit_oreshop') ?? 0) >= 1 ||
+            (this._flags.get('enter_mine') ?? 0) >= 1 ||
+            this._completed.has(1022) ||
+            this._completed.has(1023) ||
+            this._activeId === 1023 ||
+            (this._activeId !== null && this._activeId >= 1024)
+        ) {
+            GameState.unlock('mine');
         }
     }
 
@@ -239,6 +269,104 @@ export class QuestSystem extends Component {
         this.syncMapUnlocks();
         this.checkProgress();
         this.persistToGameState();
+    }
+
+    /**
+     * GM: finish farm tutorial (1001–1007), grant remaining rewards, unlock town,
+     * and park on quest 1009 (road sign). Returns false if already past the farm chain.
+     */
+    skipFarmTutorial(): boolean {
+        if (!this._tables) return false;
+        const inFarmTutorial = this._activeId >= 1001 && this._activeId <= 1007;
+        const granted = this.completeQuestIds([1001, 1002, 1003, 1004, 1005, 1006, 1007]);
+        this.syncFarmTutorialCounters();
+        this._awaitingClaim = false;
+        // Only advance while still on the farm tutorial band — never rewind later quests.
+        if (inFarmTutorial || granted) {
+            if (this._activeId <= 1007) this._activeId = 1009;
+        }
+        this.persistToGameState();
+        this.emitChange();
+        return inFarmTutorial || granted;
+    }
+
+    /**
+     * GM: jump to the start of a mainline chapter.
+     * Completes every prior quest (with rewards), sets flags, parks on `activeId`.
+     */
+    jumpToQuestLine(
+        line: 'town' | 'market' | 'spring',
+    ): { activeId: number; label: string } | null {
+        if (!this._tables) return null;
+        if (line === 'town') {
+            this.completeQuestIds([1001, 1002, 1003, 1004, 1005, 1006, 1007, 1009]);
+            this.syncFarmTutorialCounters();
+            this.ensureFlag('enter_town');
+            this._awaitingClaim = false;
+            this._activeId = 1010;
+            this.persistToGameState();
+            this.emitChange();
+            return { activeId: 1010, label: '第一章·城镇' };
+        }
+        // market = Ch.2 买卖起点
+        this.completeQuestIds([
+            1001, 1002, 1003, 1004, 1005, 1006, 1007, 1009, 1010, 1011, 1012, 1013,
+        ]);
+        this.syncFarmTutorialCounters();
+        this.ensureFlag('enter_town');
+        this.ensureFlag('visit_mayor');
+        this.ensureFlag('accept_board');
+        this.ensureFlag('visit_carpenter');
+        this.ensureFlag('visit_community');
+        if (line === 'market') {
+            this._awaitingClaim = false;
+            this._activeId = 1020;
+            this.persistToGameState();
+            this.emitChange();
+            return { activeId: 1020, label: '第二章·市集' };
+        }
+        // spring = 买卖之后的春厅 / 矿洞
+        this.completeQuestIds([1020, 1021]);
+        this.ensureFlag('shop_buy');
+        this.ensureFlag('shop_sell');
+        this._awaitingClaim = false;
+        this._activeId = 1022;
+        this.persistToGameState();
+        this.emitChange();
+        return { activeId: 1022, label: '第二章·春厅' };
+    }
+
+    /** Grant + mark complete for each id not yet finished. */
+    private completeQuestIds(ids: number[]): boolean {
+        if (!this._tables) return false;
+        let granted = false;
+        for (const id of ids) {
+            if (this._completed.has(id)) continue;
+            const quest = this._tables.TQuest.get(id);
+            if (!quest) continue;
+            this._completed.add(id);
+            if (quest.rewardGold > 0) this.farm?.addGold(quest.rewardGold);
+            if (quest.rewardItem && quest.rewardCount > 0) {
+                this.grantReward(quest.rewardItem, quest.rewardCount);
+            }
+            granted = true;
+        }
+        return granted;
+    }
+
+    private syncFarmTutorialCounters() {
+        this._gather.set('grass', Math.max(this._gather.get('grass') ?? 0, 3));
+        this._craft.set('seed_from_grass', Math.max(this._craft.get('seed_from_grass') ?? 0, 1));
+        this._till = Math.max(this._till, 1);
+        this._plant = Math.max(this._plant, 1);
+        this._water = Math.max(this._water, 1);
+        this._harvest = Math.max(this._harvest, 1);
+        this._fish = Math.max(this._fish, 1);
+    }
+
+    private ensureFlag(id: string) {
+        if (!id) return;
+        this._flags.set(id, Math.max(this._flags.get(id) ?? 0, 1));
     }
 
     flagOf(id: string): number {
@@ -384,7 +512,16 @@ export class QuestSystem extends Component {
         if (id === 'seeds') return this.farm.seeds;
         if (id === 'parsnip') return this.farm.crops;
         if (id === 'boost') return this.farm.boosts;
-        const mats: FarmMaterial[] = ['wood', 'grass', 'dirt', 'stone', 'fish'];
+        const mats: FarmMaterial[] = [
+            'wood',
+            'grass',
+            'dirt',
+            'stone',
+            'fish',
+            'copper',
+            'iron',
+            'goldOre',
+        ];
         if ((mats as string[]).includes(id)) return this.farm[id as FarmMaterial];
         return 0;
     }
@@ -442,12 +579,19 @@ export class QuestSystem extends Component {
             fish: '鱼',
             seeds: '种子',
             parsnip: '防风草',
+            copper: '铜矿石',
             enter_town: '抵达小镇',
             visit_mayor: '拜访镇长府',
             shop_buy: '商店购物',
+            shop_sell: '商店出售',
             accept_board: '接取公告板',
             visit_carpenter: '拜访木工坊',
             visit_community: '探访社区中心',
+            accept_spring_pack: '春厅立项签字',
+            visit_clinic: '拜访微光诊所',
+            visit_oreshop: '取得矿脉通行证',
+            enter_mine: '进入浅层矿洞',
+            light_spring_hall: '点亮春厅',
         };
         return names[param] ?? param;
     }

@@ -31,6 +31,7 @@ node_modules/
 .DS_Store
 **/__pycache__/
 *.pyc
+.venv-tools/
 tools/ui/ai-raw/
 
 # Ephemeral QA / alignment overlays (not source art)

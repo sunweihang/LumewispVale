@@ -20,6 +20,7 @@ import { DialoguePanel } from './DialoguePanel';
 import { FarmHUD } from './FarmHUD';
 import { FarmSystem } from './FarmSystem';
 import { FarmWorldLayout } from './FarmWorldLayout';
+import { FISHING_FRAMES } from './FishingFrames';
 import { FishingMinigame } from './FishingMinigame';
 import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
@@ -90,9 +91,14 @@ type IdleGuide = {
     dragItem?: string;
     /**
      * Finger Z euler degrees. Sprite defaults to pointing down (0).
-     * 90 = walk east / right edge; -90 = walk west / left edge.
+     * 90 = walk east / right edge; -90 = walk west / left edge;
+     * 180 = walk north / top edge (target above the playfield).
      */
     arrowDeg?: number;
+    /** Fishing cast step — pulse AI ripple on the pier / water aim. */
+    groundRipple?: boolean;
+    /** World position for `groundRipple` (mid-pier tip). */
+    rippleWorld?: WorldPos;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -135,6 +141,12 @@ export class TutorialGuide extends Component {
     private _trailN: Node | null = null;
     private _trailG: Graphics | null = null;
     private _rootOp: UIOpacity | null = null;
+    /** World-space ground ripple under the fishing cast aim. */
+    private _rippleN: Node | null = null;
+    private _rippleOp: UIOpacity | null = null;
+    private _rippleSp: Sprite | null = null;
+    private _rippleLoaded = false;
+    private _ripplePulsing = false;
 
     private _open = false;
     private _idleOn = false;
@@ -145,6 +157,8 @@ export class TutorialGuide extends Component {
     private _idleDragItem = '';
     /** Idle chevron Z euler; 0 = down, 90 = right. */
     private _idleArrowDeg = 0;
+    private _idleGroundRipple = false;
+    private _idleRippleWorld: WorldPos | null = null;
     private _step: GuideStep = 'quest';
     private _inputReady = false;
     private _prevBlocking = false;
@@ -241,6 +255,23 @@ export class TutorialGuide extends Component {
         this._grassTarget = null;
         this.show();
         this.applyStep();
+    }
+
+    /**
+     * GM: dismiss forced spotlight immediately (marks guide seen, unlocks input).
+     * Idle quest arrows resume from the live objective on the next frame.
+     */
+    dismissSpotlight() {
+        GameState.markDialogueSeen(GUIDE_ID);
+        if (!this._open) return;
+        this._open = false;
+        this._inputReady = false;
+        this._grassTarget = null;
+        this.unschedule(this.enableInput);
+        InputBridge.uiBlocking = false;
+        if (this._rootOp) Tween.stopAllByTarget(this._rootOp);
+        this.setSpotlightChrome(false);
+        this.hideImmediate();
     }
 
     /** From GameBootstrap stick.onTap — consume while spotlight open. */
@@ -366,9 +397,12 @@ export class TutorialGuide extends Component {
         this._idleDragTo = null;
         this._idleDragItem = '';
         this._idleArrowDeg = 0;
+        this._idleGroundRipple = false;
+        this._idleRippleWorld = null;
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         this.clearStickyTarget();
         this.clearDragDemoChrome();
+        this.hideGroundRipple();
     }
 
     private canShowIdleArrow(): boolean {
@@ -423,10 +457,13 @@ export class TutorialGuide extends Component {
         this._idleDragTo = null;
         this._idleDragItem = '';
         this._idleArrowDeg = 0;
+        this._idleGroundRipple = false;
+        this._idleRippleWorld = null;
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         // Keep sticky aim across brief dialogue / modal hides so the arrow
         // doesn't re-pick a different weed/plot when it comes back.
         this.clearDragDemoChrome();
+        this.hideGroundRipple();
         if (!this._open && this._root) this._root.active = false;
     }
 
@@ -452,8 +489,11 @@ export class TutorialGuide extends Component {
         this._idleDragTo = guide.dragTo ?? null;
         this._idleDragItem = guide.dragItem ?? '';
         this._idleArrowDeg = guide.arrowDeg ?? 0;
+        this._idleGroundRipple = !!guide.groundRipple;
+        this._idleRippleWorld = guide.rippleWorld ?? null;
         if (this._tipLab) this._tipLab.string = guide.tip;
         if (this._idleDragItem) this.ensureDragGhostFrame(this._idleDragItem);
+        this.syncGroundRipple();
     }
 
     private toolSwapTip(tool: string): string {
@@ -522,6 +562,15 @@ export class TutorialGuide extends Component {
             if (!hole) return null;
             this.clearStickyTarget();
             return { hole, tip: '露穗：关掉这个，继续任务呀', uiDock: true };
+        }
+
+        // Before yard spotlight — free roam (no lock); soft arrow on 露穗 only.
+        if (quests.activeQuest.id === 1001 && !GameState.hasSeenDialogue(GUIDE_ID)) {
+            return this.worldNodeGuide(
+                this.farm?.findWorldNode('npc_girl') ?? null,
+                '露穗：点我说话呀～',
+                '露穗：走近点我，点一下～',
+            );
         }
 
         // First-seed craft panel: make → wait (locked 5s) → close, then claim / next.
@@ -631,13 +680,29 @@ export class TutorialGuide extends Component {
             case GotoAction.HintTownGate:
                 return this.resolveTownGateGuide();
             case GotoAction.HintMayor:
-                return this.worldNodeGuide(
-                    this.farm?.findWorldNode('npc_mayor', 'bld_mayor', 'mayor') ?? null,
-                    '点击镇长·艾岚打招呼',
-                );
+                return this.resolveMayorGuide();
             default: {
                 const id = quests.activeQuest.id;
                 if (id === 1011) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_police', 'bld_post', 'police', 'post') ?? null,
+                        '点击警局或邮局接任务',
+                    );
+                }
+                if (id === 1012) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('npc_carpenter', 'bld_carpenter', 'carpenter') ??
+                            null,
+                        '点击工匠·石楠打招呼',
+                    );
+                }
+                if (id === 1013) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_community', 'community') ?? null,
+                        '点击社区中心查看工程',
+                    );
+                }
+                if (id === 1020) {
                     return this.worldNodeGuide(
                         this.farm?.findWorldNode(
                             'bld_seedshop',
@@ -648,23 +713,48 @@ export class TutorialGuide extends Component {
                         '走进商店，点击购买商品',
                     );
                 }
-                if (id === 1012) {
+                if (id === 1021) {
                     return this.worldNodeGuide(
-                        this.farm?.findWorldNode('bld_police', 'bld_post', 'police', 'post') ?? null,
-                        '点击警局或邮局接任务',
+                        this.farm?.findWorldNode(
+                            'bld_seedshop',
+                            'bld_general',
+                            'seedshop',
+                            'general',
+                        ) ?? null,
+                        '打开商店，点「出售」卖掉一件收获物',
                     );
                 }
-                if (id === 1013) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode('npc_carpenter', 'bld_carpenter', 'carpenter') ??
-                            null,
-                        '点击工匠·石楠打招呼',
-                    );
-                }
-                if (id === 1014) {
+                if (id === 1022 || id === 1027) {
                     return this.worldNodeGuide(
                         this.farm?.findWorldNode('bld_community', 'community') ?? null,
-                        '点击社区中心查看工程',
+                        id === 1022 ? '点击社区中心，签署春厅收集包' : '点击社区中心，点亮春厅',
+                    );
+                }
+                if (id === 1023) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_clinic', 'clinic') ?? null,
+                        '点击微光诊所听取叮嘱',
+                    );
+                }
+                if (id === 1024) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('bld_oreshop', 'oreshop') ?? null,
+                        '点击矿脉商会取得通行证',
+                    );
+                }
+                if (id === 1025) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode('sign_mine') ?? null,
+                        '点击北山矿洞路牌进入',
+                    );
+                }
+                if (id === 1026) {
+                    return this.worldNodeGuide(
+                        this.farm?.findWorldNode(
+                            'decor_rock_solid_ore_copper',
+                            'ore_copper',
+                        ) ?? null,
+                        '选中锄头，挖开铜矿石',
                     );
                 }
                 const q = this.questHole();
@@ -749,6 +839,41 @@ export class TutorialGuide extends Component {
     }
 
     /**
+     * Quest 1010: outdoors → enter bld_mayor; indoors → talk to npc_mayor.
+     * Off-screen → “往北走”, never a down-arrow on clinic.
+     */
+    private resolveMayorGuide(): IdleGuide | null {
+        const npc = this.farm?.findWorldNode('npc_mayor') ?? null;
+        if (npc) {
+            const pos = this.stickyWorldPos('mayor', {
+                x: npc.position.x,
+                y: npc.position.y + 36,
+            });
+            return this.worldPosGuide(
+                pos,
+                '点镇长·艾岚打招呼',
+                '走近镇长·艾岚，再点一下',
+            );
+        }
+        const bld = this.farm?.findWorldNode('bld_mayor') ?? null;
+        if (!bld) {
+            const q = this.questHole();
+            if (!q) return null;
+            return { hole: q, tip: '任务：去北区镇长府进屋拜访', uiDock: true };
+        }
+        // Door feet — building sprite center sits too high and reads as “clinic”.
+        const pos = this.stickyWorldPos('mayor', {
+            x: bld.position.x,
+            y: bld.position.y + 20,
+        });
+        return this.worldPosGuide(
+            pos,
+            '点镇长府大门进屋',
+            '往北走到镇长府，点大门进屋',
+        );
+    }
+
+    /**
      * Quest 1009: off-screen gate → right-edge walk cue; on-screen → tap the sign.
      */
     private resolveTownGateGuide(): IdleGuide | null {
@@ -766,7 +891,7 @@ export class TutorialGuide extends Component {
 
     /**
      * Fishing quest chain: equip rod → walk toward pier (edge arrow if off-screen)
-     * → tap water / dock to cast. Never falls back to the quest chip alone.
+     * → tap lake water to cast. Never falls back to the quest chip alone.
      */
     private resolveFishGuide(tool: string | undefined): IdleGuide | null {
         if (tool !== 'rod') {
@@ -779,15 +904,25 @@ export class TutorialGuide extends Component {
 
         const target = this.fishGuideTarget();
         if (this.farm?.isBusy) {
-            return this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再抛竿～');
+            return this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再点湖面～');
         }
         if (target.near) {
-            return this.worldPosGuide(target.pos, '露穗：点码头或湖面抛竿呀', '露穗：往西边码头走，再抛竿～');
+            const guide = this.worldPosGuide(
+                target.pos,
+                '露穗：点湖面抛竿呀',
+                '露穗：往西边码头走，再点湖面～',
+            );
+            // On-screen tap aim → ground ripple; edge chevron (walk) keeps arrow only.
+            if (guide && !guide.uiDock && (guide.arrowDeg ?? 0) === 0) {
+                guide.groundRipple = true;
+                guide.rippleWorld = target.pos;
+            }
+            return guide;
         }
-        return this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再抛竿～');
+        return this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再点湖面～');
     }
 
-    /** Always the fixed mid-pier tip — never retarget to nearest shore (avoids bounce). */
+    /** Always the fixed lake-water tip by the pier — never retarget (avoids bounce). */
     private fishGuideTarget(): { pos: WorldPos; near: boolean } {
         const hint = FarmWorldLayout.fishingHintWorld();
         const pos = this.stickyWorldPos('fish', hint);
@@ -817,23 +952,30 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Target left/right of the playfield → edge chevron pointing that way.
-     * Vertically off but still in X → clamp Y and keep a down arrow.
+     * Target off the playfield → edge chevron pointing that way.
+     * Vertical off-screen must NOT clamp a down-arrow onto a wrong building
+     * (e.g. mayor north of camera looked like “click the clinic”).
      */
     private offscreenEdgeGuide(hole: HoleRect, tip: string): IdleGuide {
         const band = this.playfieldBand();
         const inX = hole.x >= band.x0 && hole.x <= band.x1;
         if (inX) {
+            const above = hole.y > band.y1;
+            const walkTip = tip.includes('走')
+                ? tip
+                : above
+                  ? '跟着箭头往北走，靠近了再动手'
+                  : '跟着箭头往南走，靠近了再动手';
             return {
                 hole: {
-                    x: hole.x,
-                    y: Math.max(band.y0 + 56, Math.min(band.y1 - 56, hole.y)),
+                    x: Math.max(band.x0 + 56, Math.min(band.x1 - 56, hole.x)),
+                    y: above ? band.y1 - 56 : band.y0 + 56,
                     w: 80,
                     h: 80,
                 },
-                tip,
+                tip: walkTip,
                 uiDock: false,
-                arrowDeg: 0,
+                arrowDeg: above ? 180 : 0,
             };
         }
 
@@ -847,14 +989,14 @@ export class TutorialGuide extends Component {
         if (goRight) {
             return {
                 hole: { x: band.x1 - 56, y, w: 80, h: 80 },
-                tip: tip.includes('走') ? tip : '露穗：跟着箭头往右走，靠近了再动手呀',
+                tip: tip.includes('走') ? tip : '跟着箭头往右走，靠近了再动手',
                 uiDock: false,
                 arrowDeg: 90,
             };
         }
         return {
             hole: { x: band.x0 + 56, y, w: 80, h: 80 },
-            tip: tip.includes('走') ? tip : '露穗：跟着箭头往左走，靠近了再动手呀',
+            tip: tip.includes('走') ? tip : '跟着箭头往左走，靠近了再动手',
             uiDock: false,
             arrowDeg: -90,
         };
@@ -1206,8 +1348,11 @@ export class TutorialGuide extends Component {
             // Point west: sit right of the aim and bob into -X.
             fx = this._hole.x + 48;
             fy = this._hole.y;
+        } else if (arrowDeg === 180) {
+            // Point north: sit below the aim and bob into +Y.
+            fy = this._hole.y - 48;
         } else {
-            // Tool-swap: sit tight above the slot so the tip clearly reads as "this tool".
+            // Point south / UI dock: sit above the aim.
             fy = this._idleSilent ? top + 40 : top + 56;
         }
         if (uiDock) {
@@ -1221,6 +1366,8 @@ export class TutorialGuide extends Component {
             finger.setPosition(fx + bob, fy, 0);
         } else if (arrowDeg === -90) {
             finger.setPosition(fx - bob, fy, 0);
+        } else if (arrowDeg === 180) {
+            finger.setPosition(fx, fy + bob, 0);
         } else {
             finger.setPosition(fx, fy + bob, 0);
         }
@@ -1234,10 +1381,17 @@ export class TutorialGuide extends Component {
             const minY = -halfH + SCREEN_INSET + tipHalfH;
             const maxY = halfH - SCREEN_INSET - tipHalfH;
 
-            // Sit the banner above the chevron stem (not through its middle).
-            const arrowTop = fy + ARROW_EXTENT_UP + 12;
-            let tipY = arrowTop + tipHalfH + TIP_ARROW_GAP;
-            if (tipY > maxY) tipY = bot - tipHalfH - TIP_ARROW_GAP;
+            let tipY: number;
+            if (arrowDeg === 180) {
+                // Up-chevron at screen top — banner sits under the stem.
+                const arrowBot = fy - ARROW_EXTENT_UP - 12;
+                tipY = arrowBot - tipHalfH - TIP_ARROW_GAP;
+            } else {
+                // Sit the banner above the chevron stem (not through its middle).
+                const arrowTop = fy + ARROW_EXTENT_UP + 12;
+                tipY = arrowTop + tipHalfH + TIP_ARROW_GAP;
+                if (tipY > maxY) tipY = bot - tipHalfH - TIP_ARROW_GAP;
+            }
             tipY = Math.max(minY, Math.min(maxY, tipY));
 
             // Clamp X — left dock targets (quest / hand) must not shove the tip off-frame.
@@ -1592,6 +1746,103 @@ export class TutorialGuide extends Component {
             fallback.clear();
             fallback.enabled = false;
         });
+    }
+
+    /**
+     * Pier / lake tap cue — AI ripple locked to the world aim (canvas hole).
+     * Only while idle fishing guide asks the player to click the ground.
+     */
+    private syncGroundRipple() {
+        if (!this._idleOn || !this._idleGroundRipple || !this._idleRippleWorld) {
+            this.hideGroundRipple();
+            return;
+        }
+        // Prefer live world→UI of the pier tip so the ripple stays on the dock.
+        const hole = this.worldPosHole(this._idleRippleWorld) ?? this._hole;
+        const n = this.ensureGroundRipple();
+        if (!n) return;
+        n.active = true;
+        n.setPosition(hole.x, hole.y, 0);
+        this.pulseGroundRipple();
+    }
+
+    private hideGroundRipple() {
+        const n = this._rippleN;
+        this._ripplePulsing = false;
+        if (!n?.isValid) return;
+        if (this._rippleOp) Tween.stopAllByTarget(this._rippleOp);
+        Tween.stopAllByTarget(n);
+        n.active = false;
+        n.setScale(1, 1, 1);
+        if (this._rippleOp) this._rippleOp.opacity = 0;
+    }
+
+    private ensureGroundRipple(): Node | null {
+        const root = this._root;
+        if (!root?.isValid) return null;
+        let n = this._rippleN;
+        if (n?.isValid && n.parent === root) return n;
+        if (n?.isValid) n.destroy();
+        this._ripplePulsing = false;
+
+        n = new Node('FishGroundRipple');
+        n.layer = root.layer;
+        // Under Finger / Tip so the chevron stays readable.
+        n.setParent(root);
+        n.setSiblingIndex(0);
+        n.active = false;
+        const ui = n.addComponent(UITransform);
+        ui.setContentSize(140, 140);
+        ui.setAnchorPoint(0.5, 0.5);
+        const sp = n.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = false;
+        const op = n.addComponent(UIOpacity);
+        op.opacity = 0;
+        this._rippleN = n;
+        this._rippleSp = sp;
+        this._rippleOp = op;
+        this._rippleLoaded = false;
+        this.loadGroundRippleFrame();
+        return n;
+    }
+
+    private loadGroundRippleFrame() {
+        const sp = this._rippleSp;
+        if (!sp?.isValid || this._rippleLoaded) return;
+        const uuid = FISHING_FRAMES.groundRipple;
+        if (!uuid) return;
+        assetManager.loadAny({ uuid }, (err, asset) => {
+            if (err || !asset || !sp.isValid) return;
+            sp.spriteFrame = asset as SpriteFrame;
+            this._rippleLoaded = true;
+        });
+    }
+
+    /** Expand + fade loop so the tap spot reads as “click here”. */
+    private pulseGroundRipple() {
+        const n = this._rippleN;
+        const op = this._rippleOp;
+        if (!n?.isValid || !op?.isValid || !n.active) return;
+        // Already looping — don't restart every lateUpdate frame.
+        if (this._ripplePulsing) return;
+        this._ripplePulsing = true;
+        n.setScale(0.72, 0.72, 1);
+        op.opacity = 220;
+        tween(n)
+            .repeatForever(
+                tween(n)
+                    .to(1.05, { scale: new Vec3(1.28, 1.28, 1) }, { easing: 'sineOut' })
+                    .set({ scale: new Vec3(0.72, 0.72, 1) }),
+            )
+            .start();
+        tween(op)
+            .repeatForever(
+                tween(op)
+                    .to(1.05, { opacity: 70 }, { easing: 'sineOut' })
+                    .set({ opacity: 220 }),
+            )
+            .start();
     }
 
     /** Temporary flat chevron if the AI sprite is missing. */

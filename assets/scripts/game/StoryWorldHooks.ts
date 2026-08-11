@@ -199,7 +199,10 @@ export class StoryWorldHooks extends Component {
     }
 
     /** Apply pending spawn after scene load. */
-    static applyPendingSpawn(player: Node, map: Extract<StoryMapId, 'farm' | 'town' | 'mine'>) {
+    static applyPendingSpawn(
+        player: Node,
+        map: Extract<StoryMapId, 'farm' | 'town' | 'mine' | 'mayorHouse'>,
+    ) {
         const pending = GameState.pendingSpawn;
         if (!pending) return;
         if (pending.map !== map) return;

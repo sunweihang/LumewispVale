@@ -23,10 +23,10 @@ export class TownWorldLayout {
 
     /**
      * Foot positions for runtime NPC actors (south of building doors / plaza).
+     * Mayor lives inside MayorHouse.scene — not outdoors.
      * bld_mayor=(448,740), bld_carpenter=(832,-348), spawn=(0,-96).
      */
     static readonly NPC_SPAWNS: readonly NpcSpawn[] = [
-        { id: 'mayor', x: 448, y: 660, face: 'down' },
         { id: 'carpenter', x: 832, y: -428, face: 'left' },
         { id: 'passerby', x: 120, y: -40, face: 'left' },
     ];
@@ -74,14 +74,14 @@ export class TownWorldLayout {
         if (id === 'mayor') {
             return {
                 title: '镇长·艾岚',
-                body: '农庄归你了。先熟悉镇子，社区中心还等着有心人。',
+                body: '先在市集买一卖一，熟了手再谈春厅。溪谷不赶人，但也不养闲人。',
                 storyFlag: 'visit_mayor',
             };
         }
         if (id === 'carpenter') {
             return {
                 title: '工匠·石楠',
-                body: '扩建农舍、修路的事，随时来找我。社区中心那边的钉子，记得去看看。',
+                body: '买卖摸熟了，铜再堆春厅。钉子与南路的事，材料齐了再来找我。',
                 storyFlag: 'visit_carpenter',
             };
         }
@@ -132,7 +132,7 @@ export class TownWorldLayout {
         | { kind: 'shop'; shopId: string; title: string; key: string }
         | { kind: 'board'; board: 'police' | 'post'; title: string; key: string }
         | { kind: 'info'; title: string; body: string; storyFlag?: string; key: string }
-        | { kind: 'travel'; dest: 'farm' | 'mine'; title: string; key: string }
+        | { kind: 'travel'; dest: 'farm' | 'mine' | 'mayorHouse'; title: string; key: string }
         | null {
         let best: { dist: number; node: Node; key: string } | null = null;
         for (const child of world.children) {
@@ -175,6 +175,9 @@ export class TownWorldLayout {
             'library',
             'museum',
             'carpenter',
+            'chapel',
+            'windmill',
+            'greenhouse',
         ];
         if (civic.includes(name)) return name;
         return null;
@@ -191,13 +194,16 @@ export class TownWorldLayout {
         | { kind: 'shop'; shopId: string; title: string }
         | { kind: 'board'; board: 'police' | 'post'; title: string }
         | { kind: 'info'; title: string; body: string; storyFlag?: string }
-        | { kind: 'travel'; dest: 'farm' | 'mine'; title: string }
+        | { kind: 'travel'; dest: 'farm' | 'mine' | 'mayorHouse'; title: string }
         | null {
         if (key === 'sign_farm') {
             return { kind: 'travel', dest: 'farm', title: '通往农场' };
         }
         if (key === 'sign_mine') {
             return { kind: 'travel', dest: 'mine', title: '通往浅层矿洞' };
+        }
+        if (key === 'mayor') {
+            return { kind: 'travel', dest: 'mayorHouse', title: '进入镇长府' };
         }
         if (key === 'police') {
             return { kind: 'board', board: 'police', title: '警察局' };
@@ -215,21 +221,17 @@ export class TownWorldLayout {
         > = {
             community: {
                 title: '社区中心',
-                body: '钟楼积灰，厅堂空置。镇长说：等材料齐了再开工修复。',
+                body: '市集买卖熟了之后，再来签春厅收集包。送过铜，第一盏灯就会亮。',
                 storyFlag: 'visit_community',
             },
             clinic: {
                 title: '微光诊所',
-                body: '治疗与草药补给。医生说：先别在矿洞里逞强。',
+                body: '治疗与草药补给。医生·荷叶说：矿洞潮滑，别逞强。',
+                storyFlag: 'visit_clinic',
             },
             school: {
                 title: '镇立小学',
                 body: '孩子们在这里认字、学农时。午后可以听见铃声。',
-            },
-            mayor: {
-                title: '镇长府',
-                body: '镇长·艾岚为你斟上热茶：「农庄归你了。先熟悉镇子，社区中心还等着有心人。」',
-                storyFlag: 'visit_mayor',
             },
             library: {
                 title: '图书室',
@@ -243,6 +245,18 @@ export class TownWorldLayout {
                 title: '木工坊',
                 body: '工匠·石楠抬起头：「扩建农舍、修路的事，随时来找我。」',
                 storyFlag: 'visit_carpenter',
+            },
+            chapel: {
+                title: '微光小堂',
+                body: '北草场尽头的小堂。风铃轻响，有人在这里许愿春耕顺遂。',
+            },
+            windmill: {
+                title: '北坡风车',
+                body: '磨坊的风车仍在转。麦香混着花树的味道，从北草场一路飘到广场。',
+            },
+            greenhouse: {
+                title: '果园温室',
+                body: '玻璃房里暖着早熟的苗。园丁说：别踩花圃，小路绕着走。',
             },
             home: {
                 title: '居民家',

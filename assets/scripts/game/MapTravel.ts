@@ -7,6 +7,7 @@ const SCENE_FOR: Partial<Record<StoryMapId, string>> = {
     farm: 'Main',
     town: 'Town',
     mine: 'Mine',
+    mayorHouse: 'MayorHouse',
 };
 
 /**
@@ -14,7 +15,7 @@ const SCENE_FOR: Partial<Record<StoryMapId, string>> = {
  * Call only after unlock checks.
  */
 export function travelTo(
-    map: 'farm' | 'town' | 'mine',
+    map: 'farm' | 'town' | 'mine' | 'mayorHouse',
     opts: {
         farm?: FarmSystem | null;
         quests?: QuestSystem | null;

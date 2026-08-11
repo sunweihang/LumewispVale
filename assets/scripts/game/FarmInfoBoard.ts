@@ -5,6 +5,8 @@ import {
     Label,
     Node,
     UITransform,
+    Vec3,
+    tween,
     view,
 } from 'cc';
 import { FarmSystem } from './FarmSystem';
@@ -64,6 +66,7 @@ export class FarmInfoBoard extends Component {
     private _minutes = 0;
     private _acc = 0;
     private _paused = false;
+    private _goldPulseGen = 0;
 
     private _nightIntensity = -1;
 
@@ -325,6 +328,49 @@ export class FarmInfoBoard extends Component {
 
     private refreshGold() {
         if (this.goldLab) this.goldLab.string = String(this.farm?.gold ?? 0);
+    }
+
+    /**
+     * Canvas-local center of the round G coin (left well on the gold bar).
+     * Not the cream digit field — claim FX lands on the G mark itself.
+     */
+    goldFlyTarget(): { x: number; y: number } {
+        const { halfW, halfH } = this.canvasHalf();
+        // Board top-right inset + Gold center + left G well (~barH square).
+        const fallback = { x: halfW - 396, y: halfH - 296 };
+
+        const gold = this.goldNode();
+        const canvas = this.node.parent;
+        const canvasUt = canvas?.getComponent(UITransform);
+        const goldUt = gold?.getComponent(UITransform);
+        if (!gold?.isValid || !canvasUt || !goldUt) return fallback;
+
+        const barW = goldUt.contentSize.width || 320;
+        const barH = goldUt.contentSize.height || 88;
+        // ui-info-gold: circular G coin is the left height×height well.
+        const gLocal = new Vec3(-barW * 0.5 + barH * 0.5, 0, 0);
+        const world = goldUt.convertToWorldSpaceAR(gLocal);
+        const local = canvasUt.convertToNodeSpaceAR(world);
+        return { x: local.x, y: local.y };
+    }
+
+    /** Brief pop when quest gold lands on the top-right bar. */
+    pulseGold() {
+        const gold = this.goldNode();
+        if (!gold?.isValid) return;
+        const gen = ++this._goldPulseGen;
+        tween(gold)
+            .to(0.08, { scale: new Vec3(1.12, 1.12, 1) }, { easing: 'sineOut' })
+            .to(0.12, { scale: new Vec3(1, 1, 1) }, { easing: 'sineIn' })
+            .call(() => {
+                if (gen !== this._goldPulseGen || !gold.isValid) return;
+                gold.setScale(1, 1, 1);
+            })
+            .start();
+    }
+
+    private goldNode(): Node | null {
+        return this.goldLab?.node.parent ?? this.node.getChildByName('Gold');
     }
 
     /** Mid-screen toast retired — bottom FarmActionHint / guide already cover tips. */
