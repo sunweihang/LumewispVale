@@ -6,7 +6,9 @@
 /library/
 /temp/
 /local/
-/build/
+/build/*
+!/build/web-mobile/
+!/build/web-mobile/**
 /profiles/
 /native/engine/android/**/*/assets
 
