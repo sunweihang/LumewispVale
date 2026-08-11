@@ -11,15 +11,11 @@ export class CarpenterShopWorldLayout {
     /** South of bld_carpenter foot (832, -348). */
     static readonly TOWN_RETURN = { x: 832, y: -428 };
     static readonly CARPENTER_SPAWN = { x: 1.5 * 64, y: 1.15 * 64 };
+    /** South doorway AABB (visual / guide only — travel is tap-driven). */
     static readonly EXIT_ZONE = { x: 0, y: -280, hw: 72, hh: 52 };
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__carpenter_shop_baked');
-    }
-
-    static inExitZone(x: number, y: number): boolean {
-        const z = this.EXIT_ZONE;
-        return Math.abs(x - z.x) <= z.hw && Math.abs(y - z.y) <= z.hh;
     }
 
     static mountExitFx(world: Node): void {
@@ -69,7 +65,10 @@ export class CarpenterShopWorldLayout {
         world: Node,
         wx: number,
         wy: number,
-    ): { kind: 'info'; title: string; body: string; node: Node } | null {
+    ):
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
+        | { kind: 'info'; title: string; body: string; node: Node }
+        | null {
         let best: { area: number; key: string; node: Node } | null = null;
         const pad = 8;
         for (const child of world.children) {
@@ -95,13 +94,22 @@ export class CarpenterShopWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
+        if (name === 'door_exit' || name === 'exit_floor_glow') return 'exit';
         if (name === 'prop_workbench') return 'bench';
         if (name === 'prop_shelf_tools') return 'shelf';
         if (name === 'prop_crate_nails') return 'nails';
         return null;
     }
 
-    private static actionFor(key: string): { kind: 'info'; title: string; body: string } | null {
+    private static actionFor(
+        key: string,
+    ):
+        | { kind: 'travel'; dest: 'town'; title: string }
+        | { kind: 'info'; title: string; body: string }
+        | null {
+        if (key === 'exit') {
+            return { kind: 'travel', dest: 'town', title: '离开木工坊' };
+        }
         const info: Record<string, { title: string; body: string }> = {
             bench: {
                 title: '工作台',

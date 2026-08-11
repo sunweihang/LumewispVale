@@ -16,17 +16,11 @@ export class MayorHouseWorldLayout {
     /** Mayor stands by the desk (NE of room). */
     static readonly MAYOR_SPAWN = { x: 1.6 * 64, y: 1.35 * 64 };
 
-    /** South open exit — walk in to auto-return to town (matches bake door_exit). */
+    /** South doorway AABB (visual / guide only — travel is tap-driven). */
     static readonly EXIT_ZONE = { x: 0, y: -280, hw: 72, hh: 52 };
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__mayor_house_baked');
-    }
-
-    /** Feet inside the glowing south threshold. */
-    static inExitZone(x: number, y: number): boolean {
-        const z = this.EXIT_ZONE;
-        return Math.abs(x - z.x) <= z.hw && Math.abs(y - z.y) <= z.hh;
     }
 
     /** Soft breathe on the doorway floor sheen (idempotent). */
@@ -109,7 +103,7 @@ export class MayorHouseWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
-        // door_exit is walk-through auto-travel — not a tap target.
+        if (name === 'door_exit' || name === 'exit_floor_glow') return 'exit';
         if (name === 'prop_desk_mayor') return 'desk';
         if (name === 'prop_tea_table') return 'tea';
         if (name === 'prop_bookshelf') return 'shelf';
@@ -122,6 +116,9 @@ export class MayorHouseWorldLayout {
         | { kind: 'travel'; dest: 'town'; title: string }
         | { kind: 'info'; title: string; body: string }
         | null {
+        if (key === 'exit') {
+            return { kind: 'travel', dest: 'town', title: '离开镇长府' };
+        }
         const info: Record<string, { title: string; body: string }> = {
             desk: {
                 title: '镇长办公桌',

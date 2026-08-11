@@ -64,8 +64,8 @@ const ARROW_EXTENT_UP = 48;
  */
 const PLACE_ARROW_ABOVE = 56;
 /**
- * Ground ripple in World-local px (under feet). Must NOT use Canvas sizes —
- * World already carries fitWorldToDesign / WORLD_ZOOM.
+ * Ground ripple diameter in World-local px. Canvas size = this × world.scale
+ * (World carries fitWorldToDesign / WORLD_ZOOM).
  */
 const PLACE_RIPPLE_WORLD = 64;
 /** Gap between arrow top and tip banner bottom. */
@@ -210,7 +210,7 @@ export class TutorialGuide extends Component {
     private _trailN: Node | null = null;
     private _trailG: Graphics | null = null;
     private _rootOp: UIOpacity | null = null;
-    /** World-space ground ripple under place aims (doors / gates / pier). */
+    /** Canvas place-aim ripple under the chevron (doors / gates / pier). */
     private _rippleN: Node | null = null;
     private _rippleOp: UIOpacity | null = null;
     private _rippleSp: Sprite | null = null;
@@ -690,7 +690,8 @@ export class TutorialGuide extends Component {
 
     /** Match FarmHUD dock layout if the slot node is not ready yet. */
     private toolSlotHoleFallback(itemId: string): HoleRect | null {
-        const order = ['hand', 'hoe', 'seeds', 'can', 'axe', 'rod'];
+        // Slot 0 = hand (locked); 1..6 = hoe/seeds/can/axe/rod/(boost or empty).
+        const order = ['hand', 'hoe', 'seeds', 'can', 'axe', 'rod', 'boost'];
         const i = order.indexOf(itemId);
         if (i < 0) return null;
         const slot = 150;
@@ -1078,8 +1079,8 @@ export class TutorialGuide extends Component {
             return this.withPlaceRipple(
                 this.worldPosGuide(
                     pos,
-                    '往南走到门口即可回镇子',
-                    '往南走到门口出门',
+                    '点击门口回镇子',
+                    '走到门口后点一下出门',
                 ),
                 pos,
             );
@@ -1157,8 +1158,14 @@ export class TutorialGuide extends Component {
         }
 
         if (farm.tool !== 'boost') {
-            this.clearStickyTarget();
-            return this.toolSwapGuide('boost', 'boost');
+            // Already on the dock — select it so the crop tap is one shot (not equip+use).
+            const slot = hud.hotbarSlotNode('boost');
+            if (slot) {
+                farm.setTool('boost');
+            } else {
+                this.clearStickyTarget();
+                return this.toolSwapGuide('boost', 'boost');
+            }
         }
 
         return this.worldPosGuide(this.stickyPlotPos('grow'), '露穗：点作物用催熟剂～');
@@ -1248,7 +1255,7 @@ export class TutorialGuide extends Component {
                 y: exit.position.y + 20,
             });
             return this.withPlaceRipple(
-                this.worldPosGuide(pos, '往南走到门口离开', '往南走到门口离开'),
+                this.worldPosGuide(pos, '点击门口离开', '走到门口后点一下离开'),
                 pos,
             );
         }
@@ -2604,7 +2611,7 @@ export class TutorialGuide extends Component {
         n = new Node('GuidePath');
         n.layer = root.layer;
         n.setParent(root);
-        // Under Finger / Tip; above dim. Ground ripple lives in World.
+        // Under Finger / Tip / place ripple; above dim.
         n.setSiblingIndex(1);
         n.addComponent(UITransform).setContentSize(10, 10);
         n.active = false;
@@ -2729,7 +2736,8 @@ export class TutorialGuide extends Component {
     /**
      * Place aims only (door / gate / pier / sign). NPCs, props, crops, weeds —
      * chevron alone. Edge / UI-dock / drag-demo also skip the ripple.
-     * Lives in World ground band so the ring never paints over the player.
+     * Canvas chrome (with the chevron) — World ground-band parenting hid the ring
+     * under opaque porch / facade sprites (carpenter door, mayor steps, …).
      */
     private syncGroundRipple() {
         // Click-move owns destination chrome while auto-walking — never stack rings.
@@ -2754,11 +2762,16 @@ export class TutorialGuide extends Component {
             this.hideGroundRipple();
             return;
         }
-        const n = this.ensureGroundRipple(world);
+        const hole = this.worldPosHole(aim);
+        if (!hole) {
+            this.hideGroundRipple();
+            return;
+        }
+        const n = this.ensureGroundRipple();
         if (!n) return;
         n.active = true;
-        n.setPosition(aim.x, aim.y, 0);
-        this.applyGroundRippleSize(n);
+        n.setPosition(hole.x, hole.y, 0);
+        this.applyGroundRippleSize(n, world.scale.x);
         this.pulseGroundRipple();
     }
 
@@ -2773,20 +2786,24 @@ export class TutorialGuide extends Component {
         if (this._rippleOp) this._rippleOp.opacity = 0;
     }
 
-    private ensureGroundRipple(world: Node): Node | null {
+    private ensureGroundRipple(): Node | null {
+        const root = this._root;
+        if (!root?.isValid) return null;
         let n = this._rippleN;
-        if (n?.isValid && n.parent === world) return n;
+        if (n?.isValid && n.parent === root) return n;
         if (n?.isValid) n.destroy();
         this._ripplePulsing = false;
 
-        // World child named for WorldYSort ground litter — under player / porch.
         n = new Node('guide_ground_ripple');
-        n.layer = world.layer;
-        n.setParent(world);
+        n.layer = root.layer;
+        n.setParent(root);
+        // Under Finger / Tip; above dim + path so porch aims stay readable.
+        const finger = root.getChildByName('Finger');
+        n.setSiblingIndex(finger ? finger.getSiblingIndex() : 2);
         n.active = false;
         const ui = n.addComponent(UITransform);
         ui.setAnchorPoint(0.5, 0.5);
-        this.applyGroundRippleSize(n);
+        this.applyGroundRippleSize(n, this.farm?.world?.scale.x ?? 1);
         const sp = n.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
         sp.trim = false;
@@ -2800,14 +2817,15 @@ export class TutorialGuide extends Component {
         return n;
     }
 
-    private applyGroundRippleSize(n: Node) {
+    private applyGroundRippleSize(n: Node, worldScale = 1) {
         const ui = n.getComponent(UITransform);
         if (!ui) return;
+        const px = PLACE_RIPPLE_WORLD * Math.max(0.0001, worldScale);
         if (
-            Math.abs(ui.contentSize.width - PLACE_RIPPLE_WORLD) > 0.5 ||
-            Math.abs(ui.contentSize.height - PLACE_RIPPLE_WORLD) > 0.5
+            Math.abs(ui.contentSize.width - px) > 0.5 ||
+            Math.abs(ui.contentSize.height - px) > 0.5
         ) {
-            ui.setContentSize(PLACE_RIPPLE_WORLD, PLACE_RIPPLE_WORLD);
+            ui.setContentSize(px, px);
         }
     }
 
@@ -2821,7 +2839,9 @@ export class TutorialGuide extends Component {
             sp.spriteFrame = asset as SpriteFrame;
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
             const host = this._rippleN;
-            if (host?.isValid) this.applyGroundRippleSize(host);
+            if (host?.isValid) {
+                this.applyGroundRippleSize(host, this.farm?.world?.scale.x ?? 1);
+            }
             this._rippleLoaded = true;
         });
     }
@@ -2834,8 +2854,9 @@ export class TutorialGuide extends Component {
         // Already looping — don't restart every lateUpdate frame.
         if (this._ripplePulsing) return;
         this._ripplePulsing = true;
+        // Size pulse unchanged; brighter floor so cream rings stay readable on water.
         n.setScale(0.85, 0.85, 1);
-        op.opacity = 235;
+        op.opacity = 255;
         tween(n)
             .repeatForever(
                 tween(n)
@@ -2846,8 +2867,8 @@ export class TutorialGuide extends Component {
         tween(op)
             .repeatForever(
                 tween(op)
-                    .to(1.1, { opacity: 55 }, { easing: 'sineOut' })
-                    .set({ opacity: 235 }),
+                    .to(1.1, { opacity: 140 }, { easing: 'sineOut' })
+                    .set({ opacity: 255 }),
             )
             .start();
     }

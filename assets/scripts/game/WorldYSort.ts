@@ -189,8 +189,6 @@ export class WorldYSort extends Component {
         if (name.startsWith('decor_rock_solid') && !name.includes('rockBig')) return true;
         // Floating lily pads — underfoot; reeds use actor Y-sort.
         if (name.startsWith('pond_deco_lily')) return true;
-        // Place-aim tap rings — must stay under player / porch props.
-        if (name === 'guide_ground_ripple') return true;
         return false;
     }
 

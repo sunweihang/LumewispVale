@@ -10,15 +10,11 @@ export class CommunityWorldLayout {
     /** South of bld_community foot (0, 740). */
     static readonly TOWN_RETURN = { x: 0, y: 660 };
     static readonly CARETAKER_SPAWN = { x: -1.4 * 64, y: 1.1 * 64 };
+    /** South doorway AABB (visual / guide only — travel is tap-driven). */
     static readonly EXIT_ZONE = { x: 0, y: -280, hw: 72, hh: 52 };
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__community_baked');
-    }
-
-    static inExitZone(x: number, y: number): boolean {
-        const z = this.EXIT_ZONE;
-        return Math.abs(x - z.x) <= z.hw && Math.abs(y - z.y) <= z.hh;
     }
 
     static mountExitFx(world: Node): void {
@@ -69,6 +65,7 @@ export class CommunityWorldLayout {
         wx: number,
         wy: number,
     ):
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
         | { kind: 'story'; storyKey: 'spring_desk' | 'spring_lamp'; node: Node }
         | { kind: 'info'; title: string; body: string; node: Node }
         | null {
@@ -97,6 +94,7 @@ export class CommunityWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
+        if (name === 'door_exit' || name === 'exit_floor_glow') return 'exit';
         if (name === 'prop_spring_desk') return 'spring_desk';
         if (name === 'prop_spring_lamp') return 'spring_lamp';
         if (name === 'prop_bookshelf_hall') return 'shelf';
@@ -107,9 +105,13 @@ export class CommunityWorldLayout {
     private static actionFor(
         key: string,
     ):
+        | { kind: 'travel'; dest: 'town'; title: string }
         | { kind: 'story'; storyKey: 'spring_desk' | 'spring_lamp' }
         | { kind: 'info'; title: string; body: string }
         | null {
+        if (key === 'exit') {
+            return { kind: 'travel', dest: 'town', title: '离开社区中心' };
+        }
         if (key === 'spring_desk') return { kind: 'story', storyKey: 'spring_desk' };
         if (key === 'spring_lamp') return { kind: 'story', storyKey: 'spring_lamp' };
         const info: Record<string, { title: string; body: string }> = {

@@ -197,6 +197,10 @@ export class StoryWorldHooks extends Component {
         if (target.name === 'portal_town') {
             return { x: p.x - 40, y: p.y };
         }
+        // Indoor south door — stand just inside (north of threshold) before leave.
+        if (target.name === 'door_exit' || target.name === 'exit_floor_glow') {
+            return { x: p.x, y: p.y + 36 };
+        }
         const biasX = target.name === 'bld_police' ? -40 : 0;
         return { x: p.x + biasX, y: p.y + 20 };
     }

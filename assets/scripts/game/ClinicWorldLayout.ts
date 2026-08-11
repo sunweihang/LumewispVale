@@ -10,15 +10,11 @@ export class ClinicWorldLayout {
     /** South of bld_clinic foot (384, 484). */
     static readonly TOWN_RETURN = { x: 384, y: 404 };
     static readonly DOCTOR_SPAWN = { x: 1.8 * 64, y: 1.2 * 64 };
+    /** South doorway AABB (visual / guide only — travel is tap-driven). */
     static readonly EXIT_ZONE = { x: 0, y: -280, hw: 72, hh: 52 };
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__clinic_baked');
-    }
-
-    static inExitZone(x: number, y: number): boolean {
-        const z = this.EXIT_ZONE;
-        return Math.abs(x - z.x) <= z.hw && Math.abs(y - z.y) <= z.hh;
     }
 
     static mountExitFx(world: Node): void {
@@ -68,7 +64,10 @@ export class ClinicWorldLayout {
         world: Node,
         wx: number,
         wy: number,
-    ): { kind: 'info'; title: string; body: string; node: Node } | null {
+    ):
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
+        | { kind: 'info'; title: string; body: string; node: Node }
+        | null {
         let best: { area: number; key: string; node: Node } | null = null;
         const pad = 8;
         for (const child of world.children) {
@@ -94,13 +93,22 @@ export class ClinicWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
+        if (name === 'door_exit' || name === 'exit_floor_glow') return 'exit';
         if (name === 'prop_desk_clinic') return 'desk';
         if (name === 'prop_shelf_meds') return 'shelf';
         if (name === 'prop_tea_clinic') return 'tea';
         return null;
     }
 
-    private static actionFor(key: string): { kind: 'info'; title: string; body: string } | null {
+    private static actionFor(
+        key: string,
+    ):
+        | { kind: 'travel'; dest: 'town'; title: string }
+        | { kind: 'info'; title: string; body: string }
+        | null {
+        if (key === 'exit') {
+            return { kind: 'travel', dest: 'town', title: '离开诊所' };
+        }
         const info: Record<string, { title: string; body: string }> = {
             desk: {
                 title: '诊桌',

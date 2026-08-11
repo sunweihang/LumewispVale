@@ -43,8 +43,12 @@ const GROW_TIMER_H = 28;
 const ARRIVE_PLOT = 20;
 /** Soft weeds — walk up to the foot (must look close). */
 const ARRIVE_NATURE_SOFT = 18;
-/** After arrive, refuse to act if still farther than this (safety). */
-const ACT_MAX_PLOT = 36;
+/**
+ * After arrive, refuse to act if still farther than this (safety).
+ * Adjacent-tile stands (~64) must still count — too-tight 36 made boost/water
+ * walk→stop→need a second tap.
+ */
+const ACT_MAX_PLOT = 56;
 const ACT_MAX_NATURE = 56;
 /** Soft pull: never act from farther than this (actFocus must stay ≤ this). */
 const ACT_MAX_SOFT_PULL = 40;
@@ -230,7 +234,10 @@ export class FarmSystem extends Component {
 
     setTool(tool: FarmTool) {
         this.tool = tool;
-        this.refreshHud();
+        // Do NOT call refreshHud() here — that re-syncs bag counts and pruneHotbar
+        // can wipe a just-bound consumable (boost) and bounce the tool back to hand.
+        this._hintSig = '';
+        this.refreshActionHint();
         this._onToolChange?.(tool);
     }
 
@@ -586,8 +593,13 @@ export class FarmSystem extends Component {
         const need = this.neededTool(plot);
         if (!need) return; // growing / nothing to do
         if (this.tool !== need) {
-            this.floatTip(`需选择：${this.toolName(need)}`);
-            return;
+            // Consumable boost: tapping the crop selects it — no extra hotbar tap.
+            if (need === 'boost' && this.boosts > 0) {
+                this.setTool('boost');
+            } else {
+                this.floatTip(`需选择：${this.toolName(need)}`);
+                return;
+            }
         }
         if (need === 'seeds' && this.seeds <= 0) return;
         if (need === 'boost' && this.boosts <= 0) return;
@@ -734,18 +746,20 @@ export class FarmSystem extends Component {
             job.nature?.isValid &&
             job.natureAct === 'pull' &&
             !job.nature.name.includes('_solid_');
-        // Soft weeds: act as soon as we're in pull range — don't walk around a trunk
-        // when already beside the bush (opposite side of a thin oak still counts).
+        // Soft weeds / plots / props: act as soon as we're in range — don't orbit
+        // a trunk or require a second tap after stopping one tile short.
         const readyDist = softNature
             ? ACT_MAX_SOFT_PULL
-            : job.kind === 'chest' ||
-                job.kind === 'craft' ||
-                (job.kind === 'nature' &&
-                    (job.natureAct === 'chop' ||
-                        job.natureAct === 'dig' ||
-                        job.nature?.name.includes('_solid_')))
-              ? ACT_MAX_NATURE
-              : actDist;
+            : job.kind === 'plot' || job.kind === 'fish'
+              ? ACT_MAX_PLOT
+              : job.kind === 'chest' ||
+                  job.kind === 'craft' ||
+                  (job.kind === 'nature' &&
+                      (job.natureAct === 'chop' ||
+                          job.natureAct === 'dig' ||
+                          job.nature?.name.includes('_solid_')))
+                ? ACT_MAX_NATURE
+                : actDist;
         const readyNow = Math.sqrt(adx * adx + ady * ady);
         if (readyNow <= readyDist) {
             console.log(
@@ -806,6 +820,10 @@ export class FarmSystem extends Component {
                 `[FarmJob] soft stand→weed=${standToWeed.toFixed(1)} budget=${standBudget} ` +
                     `(must be ≤ ${ACT_MAX_SOFT_PULL} after arrive)`,
             );
+        } else if (job.kind === 'plot' || job.kind === 'fish') {
+            // Early-arrive beside the tile (same pattern as props) so a short path
+            // that stops one cell away still fires boost / water / harvest.
+            actFocus = { x: job.targetX, y: job.targetY, dist: ACT_MAX_PLOT };
         }
 
         const softActMax = softNature ? ACT_MAX_SOFT_PULL : ACT_MAX_NATURE;

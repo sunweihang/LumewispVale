@@ -16,6 +16,7 @@ import {
     UITransform,
     Vec3,
     input,
+    sys,
     tween,
     view,
 } from 'cc';
@@ -27,7 +28,7 @@ import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
-import { portraitVisibleSize } from './PortraitFit';
+import { clientToUiLocation, portraitVisibleSize } from './PortraitFit';
 import { playFarmTool, playUiClick } from './UiAudio';
 import { mountPanelCloseButton } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
@@ -321,6 +322,11 @@ export class FarmHUD extends Component {
         this.node.on(Node.EventType.TOUCH_MOVE, this.onNodeTouchMove, this, true);
         this.node.on(Node.EventType.TOUCH_END, this.onNodeTouchEnd, this, true);
         this.node.on(Node.EventType.TOUCH_CANCEL, this.onNodeTouchEnd, this, true);
+        // Web-mobile often drops Cocos UP over UI — finish bag→hotbar drags via DOM.
+        if (sys.isBrowser) {
+            window.addEventListener('pointerup', this.onDomPointerUp, true);
+            window.addEventListener('pointercancel', this.onDomPointerUp, true);
+        }
     }
 
     onDestroy() {
@@ -330,6 +336,10 @@ export class FarmHUD extends Component {
         this.node.off(Node.EventType.TOUCH_MOVE, this.onNodeTouchMove, this, true);
         this.node.off(Node.EventType.TOUCH_END, this.onNodeTouchEnd, this, true);
         this.node.off(Node.EventType.TOUCH_CANCEL, this.onNodeTouchEnd, this, true);
+        if (sys.isBrowser) {
+            window.removeEventListener('pointerup', this.onDomPointerUp, true);
+            window.removeEventListener('pointercancel', this.onDomPointerUp, true);
+        }
     }
 
     update(dt: number) {
@@ -2788,12 +2798,16 @@ export class FarmHUD extends Component {
     private equipFromHotbar(idx: number) {
         const item = this.hotbarItem(idx);
         if (!item) return;
+        this.equipItem(item);
+    }
+
+    /** Select a tool/consumable — used after hotbar bind so drag→dock equips in one gesture. */
+    private equipItem(item: InvItemId) {
+        if (!isFarmTool(item)) return;
         this.hideTip();
-        if (isFarmTool(item)) {
-            playUiClick();
-            this.farm?.setTool(item);
-            this.refreshSelection();
-        }
+        playUiClick();
+        this.farm?.setTool(item);
+        this.refreshSelection();
     }
 
     // ── drag (Canvas node touch, capture phase) ───────────
@@ -2816,6 +2830,18 @@ export class FarmHUD extends Component {
         // Prefer live event pos; fall back to last move / ghost inside endPtr.
         this.endPtr(loc.x, loc.y);
     }
+
+    /** Finish an in-flight bag/chest drag when Cocos drops TOUCH_END (web-mobile). */
+    private onDomPointerUp = (ev: PointerEvent) => {
+        if (!this._ptrDown) return;
+        if (!this._bagOpen && !this._chestOpen) return;
+        const ui = clientToUiLocation(ev.clientX, ev.clientY, true);
+        if (!ui) {
+            this.endPtr(this._ptrX, this._ptrY);
+            return;
+        }
+        this.endPtr(ui.x, ui.y);
+    };
 
     private beginPtr(uiX: number, uiY: number) {
         if (!this._chestOpen && !this._bagOpen) return;
@@ -2978,23 +3004,7 @@ export class FarmHUD extends Component {
     private hitHotbarDropIndex(uiX: number, uiY: number): number {
         const hot = this.hitHotbarIndex(uiX, uiY);
         if (hot > 0) return hot;
-        if (!this._bar?.isValid || !(this._bagOpen || this._chestOpen)) return -1;
-        const { x, y } = this.toDesignLocal(uiX, uiY);
-        // Wide dock band: whole bottom chrome counts as a hotkey drop.
-        if (Math.abs(y - BAR_Y) > BAR_H * 0.85) return -1;
-        let best = -1;
-        let bestDist = Number.POSITIVE_INFINITY;
-        for (let i = 1; i < this._slots.length; i++) {
-            const s = this._slots[i]!;
-            const d = Math.abs(x - (this._bar.position.x + s.root.position.x));
-            if (d < bestDist) {
-                best = i;
-                bestDist = d;
-            }
-        }
-        // Accept anywhere across the dock width (not only near a slot center).
-        const halfDock = BAR_BG_W * 0.55;
-        return Math.abs(x - this._bar.position.x) <= halfDock ? best : -1;
+        return this.nearestHotbarInDockBand(uiX, uiY);
     }
 
     /** Bag open: rearrange storage, or assign / clear hotkeys. */
@@ -3005,12 +3015,13 @@ export class FarmHUD extends Component {
     ) {
         let hot = this.hitHotbarDropIndex(uiX, uiY);
         const inv = this.hitInvSlot(uiX, uiY, false);
+        let equipId: InvItemId | null = null;
         if (drag.from === 'bag') {
-            // Prefer dock; if release is in the dock band but missed a cell, snap.
+            // Prefer dock; bottom inv row sits flush above it — tools snap to hotkey.
             if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
             if (hot > 0) {
                 this.assignHotbar(hot, drag.item);
-                this.equipFromHotbar(hot);
+                if (isFarmTool(drag.item)) equipId = drag.item;
             } else if (inv >= 0 && inv !== drag.index) {
                 this.swapBag(drag.index, inv);
             }
@@ -3018,22 +3029,31 @@ export class FarmHUD extends Component {
             if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
             if (hot > 0) {
                 this.swapHotbar(drag.index, hot);
-                this.equipFromHotbar(hot);
+                if (isFarmTool(drag.item)) equipId = drag.item;
             } else if (inv >= 0) {
                 // Drop onto bag cell → remove hotkey binding (stack stays in bag).
                 this.clearHotbar(drag.index);
             }
         }
+        // Refresh icons/prune first, then equip — so prune can't bounce the tool away.
         this.refreshHotbarIcons();
         this.refreshInvIcons();
-        this.refreshSelection();
+        if (equipId) this.equipItem(equipId);
+        else this.refreshSelection();
     }
 
-    /** If release Y is on the bottom dock, snap to nearest assignable column. */
+    /**
+     * Snap release to nearest assignable hotkey column.
+     * When bag/chest is open, the band reaches up through the bottom storage row
+     * so "drag to dock" doesn't silently become a bag-cell swap.
+     */
     private nearestHotbarInDockBand(uiX: number, uiY: number): number {
         if (!this._bar?.isValid) return -1;
+        if (!(this._bagOpen || this._chestOpen)) return -1;
         const { x, y } = this.toDesignLocal(uiX, uiY);
-        if (Math.abs(y - BAR_Y) > BAR_H * 1.05) return -1;
+        const yMin = BAR_Y - BAR_H * 0.55;
+        const yMax = BAR_Y + BAR_H * 0.55 + INV_SLOT + INV_DOCK_GAP;
+        if (y < yMin || y > yMax) return -1;
         if (Math.abs(x - this._bar.position.x) > BAR_BG_W * 0.6) return -1;
         let best = -1;
         let bestDist = Number.POSITIVE_INFINITY;
@@ -3061,6 +3081,7 @@ export class FarmHUD extends Component {
             return;
         }
 
+        let equipId: InvItemId | null = null;
         if (drag.from === 'chest') {
             if (chestDest >= 0) {
                 const tmp = this._chest[drag.index];
@@ -3078,7 +3099,7 @@ export class FarmHUD extends Component {
                 if (moved) {
                     this.mergeOrPlaceInBag(moved);
                     this.assignHotbar(hot, moved.id);
-                    this.equipFromHotbar(hot);
+                    if (isFarmTool(moved.id)) equipId = moved.id;
                 }
                 this.syncFarmFromBag();
             }
@@ -3093,12 +3114,12 @@ export class FarmHUD extends Component {
                 this.swapBag(drag.index, bagDest);
             } else if (hot > 0) {
                 this.assignHotbar(hot, drag.item);
-                this.equipFromHotbar(hot);
+                if (isFarmTool(drag.item)) equipId = drag.item;
             }
         } else if (drag.from === 'hotbar') {
             if (hot > 0) {
                 this.swapHotbar(drag.index, hot);
-                this.equipFromHotbar(hot);
+                if (isFarmTool(drag.item)) equipId = drag.item;
             } else if (bagDest >= 0 || chestDest >= 0) {
                 // Unbind hotkey; moving into chest still uses the bag stack.
                 this.clearHotbar(drag.index);
@@ -3118,7 +3139,8 @@ export class FarmHUD extends Component {
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         this.refreshChestIcons();
-        this.refreshSelection();
+        if (equipId) this.equipItem(equipId);
+        else this.refreshSelection();
     }
 
     private cancelDrag() {

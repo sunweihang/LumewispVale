@@ -179,10 +179,11 @@ export class TouchJoystick extends Component {
             this.end(ui.x, ui.y);
             return;
         }
-        // Gesture already finished by Cocos end/drag — do not synth a second tap.
+        // Gesture already finished by Cocos end/drag/abort — never synth a tap
+        // after a completed gesture (drag mouse-up must not enter buildings).
         if (Date.now() - this._lastGestureAt < TAP_DEDUP_MS) return;
         if (Date.now() - this._lastTapAt < TAP_DEDUP_MS) return;
-        // Missed down entirely — still treat as a short tap.
+        // Missed down entirely — still treat as a short tap (no prior gesture).
         this.fireTap(ui.x, ui.y);
     };
 
@@ -230,6 +231,9 @@ export class TouchJoystick extends Component {
         this._dragging = false;
         this._uiSlid = false;
         this._id = -1;
+        // Stamp gesture time so a following DOM pointerup cannot synth a tap
+        // (e.g. mid-drag abort → mouse-up over a building must not enter).
+        this._lastGestureAt = Date.now();
         this.releaseCapture();
         InputBridge.clear();
         this.hideVisual();
@@ -360,6 +364,8 @@ export class TouchJoystick extends Component {
         const wasDrag = this._dragging;
         const uiSlid = this._uiSlid;
         const tracking = this._tracking;
+        const ox = this._ox;
+        const oy = this._oy;
         this._tracking = false;
         this._dragging = false;
         this._uiSlid = false;
@@ -369,8 +375,12 @@ export class TouchJoystick extends Component {
         this.hideVisual();
         this._lastGestureAt = Date.now();
         // True short tap only — UI slides / item drags must not fire onTap.
+        // Also reject when down→up displacement exceeds the drag threshold even
+        // if MOVE events were dropped (common on web-mobile): drag mouse-up
+        // over a building must never count as a click-to-enter.
         // moveLocked intro still needs onTap → StoryIntroPanel.handleTap.
-        if (tracking && !wasDrag && !uiSlid) {
+        const displaced = Math.hypot(x - ox, y - oy);
+        if (tracking && !wasDrag && !uiSlid && displaced < this.dragThreshold) {
             this.fireTap(x, y);
         }
     }

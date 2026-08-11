@@ -37,6 +37,38 @@ COLORS = 28
 MAP_KEY = "ui-fishing-ground-ripple"
 
 
+def warm_for_water(im: Image.Image) -> Image.Image:
+    """Remap cyan fills → cream so the cue reads on blue pond water."""
+    out = im.convert("RGBA")
+    px = out.load()
+    w, h = out.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a < 8:
+                continue
+            lum = (r + g + b) / 3.0
+            if lum < 70:
+                continue
+            blueish = b >= r - 8 and b >= g - 20 and b > 90
+            if blueish:
+                t = min(1.0, max(0.0, (lum - 90) / 140.0))
+                px[x, y] = (
+                    int(245 + 10 * t),
+                    int(228 + 20 * t),
+                    int(170 + 40 * t),
+                    min(255, int(a * 1.15 + 20)),
+                )
+            elif 70 <= lum < 150 and abs(r - g) < 40 and abs(g - b) < 40:
+                px[x, y] = (
+                    min(255, r + 30),
+                    min(255, g + 18),
+                    max(0, b - 10),
+                    min(255, a + 15),
+                )
+    return out
+
+
 def sync_frames(sf):
     data = {}
     if FF.exists():
@@ -84,6 +116,8 @@ def main():
     im = flood_corners(im)
 
     out = pixelize(im, LOGICAL, SIZE, COLORS)
+    # Cool cyan rings vanish on lake tiles — warm cream + keep dark outlines.
+    out = warm_for_water(out)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     out.save(OUT)
 

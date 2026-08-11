@@ -45,8 +45,9 @@ if (hit) {
 
 - UI / HUD / modal taps (`handleTap` on panels, quest dock claim, dialogue advance)
 - Empty-ground click-to-move (`ClickMoveMarker` / `finishWorldTap`)
-- Proximity auto zones that are not tap-driven (e.g. mayor-house exit walk-through)
 - Farm gather/chop/dig already walks via `FarmSystem` + `PlayerController.walkTo` — keep that path; do not double-wrap
+
+Indoor leave (`door_exit` / `exit_floor_glow`) is tap-driven like outdoor enter — never collision/`EXIT_ZONE` auto-travel.
 
 ## When adding a new map / POI / quest building
 

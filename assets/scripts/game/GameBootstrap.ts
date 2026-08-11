@@ -77,8 +77,6 @@ type TownIndoorApi = {
     isBaked(world: { getChildByName: (n: string) => unknown }): boolean;
     PLAYER_SPAWN: { x: number; y: number };
     TOWN_RETURN: { x: number; y: number };
-    EXIT_ZONE: { x: number; y: number; hw: number; hh: number };
-    inExitZone(x: number, y: number): boolean;
     mountExitFx(world: Node): void;
     spawnNpcs(world: Node): Node[];
     findInteract(
@@ -86,6 +84,7 @@ type TownIndoorApi = {
         wx: number,
         wy: number,
     ):
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
         | { kind: 'info'; title: string; body: string; node: Node }
         | { kind: 'story'; storyKey: 'spring_desk' | 'spring_lamp'; node: Node }
         | null;
@@ -350,20 +349,6 @@ export class GameBootstrap extends Component {
             shopPanel.quests = quests;
 
             indoor.api.mountExitFx(world);
-            let indoorExitArmed = true;
-            this.schedule(() => {
-                if (!indoorExitArmed || !player?.isValid) return;
-                const p = player.position;
-                if (!indoor.api.inExitZone(p.x, p.y)) return;
-                if (!canTravel('town')) return;
-                indoorExitArmed = false;
-                travelTo('town', {
-                    farm,
-                    quests,
-                    spawnX: indoor.api.TOWN_RETURN.x,
-                    spawnY: indoor.api.TOWN_RETURN.y,
-                });
-            }, 0.08);
 
             stick.onTap = (x, y) => {
                 guide.noteActivity();
@@ -396,6 +381,18 @@ export class GameBootstrap extends Component {
                         return;
                     }
                     const hit = indoor.api.findInteract(world, worldPt.x, worldPt.y);
+                    if (hit?.kind === 'travel') {
+                        story.approachInteractThen(hit.node, () => {
+                            if (!hit.node.isValid || !canTravel('town')) return;
+                            travelTo('town', {
+                                farm,
+                                quests,
+                                spawnX: indoor.api.TOWN_RETURN.x,
+                                spawnY: indoor.api.TOWN_RETURN.y,
+                            });
+                        });
+                        return;
+                    }
                     if (hit?.kind === 'story') {
                         story.approachInteractThen(hit.node, () => {
                             if (!hit.node.isValid) return;
