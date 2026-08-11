@@ -28,6 +28,16 @@ import { RewardPopup } from './RewardPopup';
 import { REWARD_FRAMES } from './RewardFrames';
 import { TOOL_FRAMES } from './ToolFrames';
 import { playUiClick } from './UiAudio';
+import {
+    UI_GOLD as GOLD,
+    UI_INK as INK,
+    UI_INK_MUTE as INK_MUTE,
+    UI_PARCHMENT_ROW as PARCHMENT,
+    UI_STROKE as STROKE,
+    UI_WOOD as WOOD,
+    UI_WOOD_DARK as WOOD_DARK,
+    drawWoodParchmentPanel,
+} from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const CLOSE_FRAME_UUID = TOOL_FRAMES.close;
@@ -42,14 +52,7 @@ const FONT_BODY = 30;
 const FONT_TITLE = 36;
 const FONT_DESC = 26;
 
-const INK = new Color(68, 40, 18, 255);
-const INK_MUTE = new Color(110, 78, 42, 255);
 const INK_DONE = new Color(48, 86, 40, 255);
-const WOOD = new Color(176, 110, 48, 255);
-const WOOD_DARK = new Color(120, 72, 32, 255);
-const PARCHMENT = new Color(236, 210, 158, 255);
-const GOLD = new Color(210, 150, 70, 255);
-const STROKE = new Color(60, 36, 18, 255);
 
 /**
  * Quest journal — FarmHUD bag/craft chrome (Graphics wood + parchment) + top-right X.
@@ -616,29 +619,7 @@ export class QuestPanel extends Component {
         const cut = chrome.getComponent(UITransform);
         if (cut) cut.setContentSize(L.panelW, L.panelH);
         const g = chrome.getComponent(Graphics) ?? chrome.addComponent(Graphics);
-        const w = L.panelW;
-        const h = L.panelH;
-        const x0 = -w * 0.5;
-        const y0 = -h * 0.5;
-        const r = 27;
-        g.clear();
-        g.fillColor = WOOD;
-        g.roundRect(x0, y0, w, h, r);
-        g.fill();
-        g.fillColor = WOOD_DARK;
-        g.roundRect(x0 + 6, y0 + 6, w - 12, h - 12, r - 4);
-        g.fill();
-        g.fillColor = new Color(232, 198, 140, 255);
-        g.roundRect(x0 + 14, y0 + 14, w - 28, h - 28, r - 8);
-        g.fill();
-        g.strokeColor = STROKE;
-        g.lineWidth = 4;
-        g.roundRect(x0, y0, w, h, r);
-        g.stroke();
-        g.strokeColor = GOLD;
-        g.lineWidth = 3;
-        g.roundRect(x0 + 8, y0 + 8, w - 16, h - 16, r - 5);
-        g.stroke();
+        drawWoodParchmentPanel(g, L.panelW, L.panelH, { radius: 27, lightInset: false });
     }
 
     /** Top-right X — same asset / corner placement as bag & craft. */

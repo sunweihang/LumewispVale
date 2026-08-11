@@ -22,6 +22,13 @@ import { QuestSystem } from './QuestSystem';
 import { StoryDialogue } from './StoryDialogue';
 import { TownWorldLayout } from './TownWorldLayout';
 import { TutorialGuide } from './TutorialGuide';
+import {
+    UI_CREAM,
+    UI_INK,
+    UI_STROKE,
+    drawWoodButton,
+    drawWoodParchmentPanel,
+} from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -461,37 +468,27 @@ export class GmPanel extends Component {
         if (!ut || !g) return;
         const w = ut.contentSize.width;
         const h = ut.contentSize.height;
-        let fill: Color;
-        let inner: Color;
         if (kind === 'danger') {
-            fill = new Color(160, 72, 48, 255);
-            inner = new Color(210, 120, 80, 255);
-        } else if (kind === 'tabOn') {
-            fill = new Color(120, 72, 32, 255);
-            inner = new Color(210, 150, 72, 255);
-        } else if (kind === 'tabOff') {
-            fill = new Color(176, 110, 48, 255);
-            inner = new Color(236, 214, 170, 255);
+            g.clear();
+            g.fillColor = new Color(160, 72, 48, 255);
+            g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
+            g.fill();
+            g.fillColor = new Color(210, 120, 80, 255);
+            g.roundRect(-w * 0.5 + 4, -h * 0.5 + 4, w - 8, h - 8, 9);
+            g.fill();
+            g.strokeColor = UI_STROKE;
+            g.lineWidth = 3;
+            g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
+            g.stroke();
         } else {
-            fill = new Color(176, 110, 48, 255);
-            inner = new Color(232, 198, 140, 255);
+            const map =
+                kind === 'tabOn' ? 'on' : kind === 'tabOff' ? 'off' : 'primary';
+            drawWoodButton(g, w, h, map);
         }
-        g.clear();
-        g.fillColor = fill;
-        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
-        g.fill();
-        g.fillColor = inner;
-        g.roundRect(-w * 0.5 + 4, -h * 0.5 + 4, w - 8, h - 8, 9);
-        g.fill();
-        g.strokeColor = new Color(54, 30, 14, 255);
-        g.lineWidth = 3;
-        g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
-        g.stroke();
 
         const lab = btn.getChildByName('Label')?.getComponent(Label);
         if (lab) {
-            lab.color =
-                kind === 'tabOn' ? new Color(255, 244, 214, 255) : new Color(48, 32, 18, 255);
+            lab.color = kind === 'tabOn' || kind === 'danger' ? UI_CREAM : UI_INK;
         }
     }
 
@@ -586,20 +583,7 @@ export class GmPanel extends Component {
     }
 
     private drawChrome(g: Graphics, w: number, h: number) {
-        const x0 = -w * 0.5;
-        const y0 = -h * 0.5;
-        g.fillColor = new Color(176, 110, 48, 255);
-        g.roundRect(x0, y0, w, h, 18);
-        g.fill();
-        g.fillColor = new Color(120, 72, 32, 255);
-        g.roundRect(x0 + 6, y0 + 6, w - 12, h - 12, 14);
-        g.fill();
-        g.fillColor = new Color(232, 198, 140, 255);
-        g.roundRect(x0 + 14, y0 + 14, w - 28, h - 28, 10);
-        g.fill();
-        g.fillColor = new Color(246, 226, 180, 255);
-        g.roundRect(x0 + 20, y0 + 20, w - 40, h - 40, 8);
-        g.fill();
+        drawWoodParchmentPanel(g, w, h, { radius: 18, lightInset: true });
     }
 
     private refreshLabels() {

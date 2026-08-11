@@ -21,6 +21,7 @@ import {
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { InputBridge } from './InputBridge';
 import { playUiClick } from './UiAudio';
+import { UI_CREAM, UI_GOLD, UI_WOOD, UI_WOOD_DARK, drawDialogueChrome } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -539,19 +540,10 @@ export class DialoguePanel extends Component {
         this._rootOp.opacity = 0;
 
         const g = root.addComponent(Graphics);
+        drawDialogueChrome(g, BOX_W, BOX_H);
+        this._root = root;
         const x0 = -BOX_W * 0.5;
         const y0 = -BOX_H * 0.5;
-        g.fillColor = new Color(36, 28, 20, 250);
-        g.roundRect(x0, y0, BOX_W, BOX_H, 22);
-        g.fill();
-        g.fillColor = new Color(52, 40, 28, 255);
-        g.roundRect(x0 + 10, y0 + 10, BOX_W - 20, BOX_H - 20, 14);
-        g.fill();
-        g.strokeColor = new Color(214, 176, 104, 255);
-        g.lineWidth = 4;
-        g.roundRect(x0, y0, BOX_W, BOX_H, 22);
-        g.stroke();
-        this._root = root;
 
         // Headshot above the name plate (not a full-body left column).
         const portraitRoot = new Node('Portrait');
@@ -566,13 +558,13 @@ export class DialoguePanel extends Component {
         portraitRoot.addComponent(UITransform).setContentSize(AVATAR_FRAME, AVATAR_FRAME);
         const pg = portraitRoot.addComponent(Graphics);
         const fw = AVATAR_FRAME;
-        pg.fillColor = new Color(48, 36, 24, 255);
+        pg.fillColor = UI_WOOD;
         pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
         pg.fill();
-        pg.fillColor = new Color(72, 52, 34, 255);
+        pg.fillColor = UI_WOOD_DARK;
         pg.roundRect(-AVATAR * 0.5 - 2, -AVATAR * 0.5 - 2, AVATAR + 4, AVATAR + 4, 12);
         pg.fill();
-        pg.strokeColor = new Color(214, 176, 104, 255);
+        pg.strokeColor = UI_GOLD;
         pg.lineWidth = 3;
         pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
         pg.stroke();
@@ -596,10 +588,19 @@ export class DialoguePanel extends Component {
         namePlate.setPosition(NAME_STACK_X, nameY, 0);
         namePlate.addComponent(UITransform).setContentSize(NAME_PLATE_W, NAME_PLATE_H);
         const ng = namePlate.addComponent(Graphics);
-        ng.fillColor = new Color(132, 86, 46, 255);
+        ng.fillColor = UI_WOOD;
         ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
         ng.fill();
-        ng.strokeColor = new Color(240, 214, 150, 255);
+        ng.fillColor = new Color(196, 132, 64, 255);
+        ng.roundRect(
+            -NAME_PLATE_W * 0.5 + 3,
+            -NAME_PLATE_H * 0.5 + 3,
+            NAME_PLATE_W - 6,
+            NAME_PLATE_H - 6,
+            8,
+        );
+        ng.fill();
+        ng.strokeColor = UI_GOLD;
         ng.lineWidth = 2;
         ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
         ng.stroke();
@@ -612,7 +613,7 @@ export class DialoguePanel extends Component {
         const nameLab = nameN.addComponent(Label);
         styleUiLabel(nameLab, {
             size: 28,
-            color: new Color(255, 244, 214, 255),
+            color: UI_CREAM,
             outline: true,
             outlineWidth: 2,
         });

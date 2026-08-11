@@ -23,6 +23,7 @@ import { InputBridge } from './InputBridge';
 import { StoryIntroAudio } from './StoryIntroAudio';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
 import { playUiClick } from './UiAudio';
+import { UI_CREAM, UI_STROKE, drawDialogueChrome, drawWoodButton } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -683,7 +684,7 @@ export class StoryIntroPanel extends Component {
         this._artOp = artN.addComponent(UIOpacity);
         this._artOp.opacity = 255;
 
-        // Caption chrome — same metrics / colors / hint as DialoguePanel.
+        // Caption chrome — same farm wood band as DialoguePanel.
         const box = new Node('Caption');
         box.layer = root.layer;
         box.setParent(root);
@@ -692,16 +693,7 @@ export class StoryIntroPanel extends Component {
         const g = box.addComponent(Graphics);
         const x0 = -BOX_W * 0.5;
         const y0 = -BOX_H * 0.5;
-        g.fillColor = new Color(36, 28, 20, 250);
-        g.roundRect(x0, y0, BOX_W, BOX_H, 22);
-        g.fill();
-        g.fillColor = new Color(52, 40, 28, 255);
-        g.roundRect(x0 + 10, y0 + 10, BOX_W - 20, BOX_H - 20, 14);
-        g.fill();
-        g.strokeColor = new Color(214, 176, 104, 255);
-        g.lineWidth = 4;
-        g.roundRect(x0, y0, BOX_W, BOX_H, 22);
-        g.stroke();
+        drawDialogueChrome(g, BOX_W, BOX_H);
 
         const bodyN = new Node('Body');
         bodyN.layer = root.layer;
@@ -779,7 +771,7 @@ export class StoryIntroPanel extends Component {
         this._hintLab = hint;
         hintRoot.active = false;
 
-        // Top-right skip — same wood/gold family as the caption chrome.
+        // Top-right skip — wood button matching farm chrome.
         const skipW = 148;
         const skipH = 56;
         const skip = new Node('SkipBtn');
@@ -788,16 +780,7 @@ export class StoryIntroPanel extends Component {
         skip.setSiblingIndex(root.children.length - 1);
         skip.addComponent(UITransform).setContentSize(skipW, skipH);
         const sg = skip.addComponent(Graphics);
-        sg.fillColor = new Color(36, 28, 20, 230);
-        sg.roundRect(-skipW * 0.5, -skipH * 0.5, skipW, skipH, 14);
-        sg.fill();
-        sg.fillColor = new Color(52, 40, 28, 255);
-        sg.roundRect(-skipW * 0.5 + 5, -skipH * 0.5 + 5, skipW - 10, skipH - 10, 10);
-        sg.fill();
-        sg.strokeColor = new Color(214, 176, 104, 255);
-        sg.lineWidth = 3;
-        sg.roundRect(-skipW * 0.5, -skipH * 0.5, skipW, skipH, 14);
-        sg.stroke();
+        drawWoodButton(sg, skipW, skipH, 'on');
 
         const skipLabN = new Node('Label');
         skipLabN.layer = root.layer;
@@ -809,10 +792,10 @@ export class StoryIntroPanel extends Component {
         skipLab.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(skipLab, {
             size: 28,
-            color: new Color(255, 236, 190, 255),
+            color: UI_CREAM,
             outline: true,
             outlineWidth: 2,
-            outlineColor: new Color(60, 36, 12, 255),
+            outlineColor: UI_STROKE,
         });
         this._skipLab = skipLab;
         this._skipBtn = skip;

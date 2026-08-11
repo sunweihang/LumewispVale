@@ -21,7 +21,17 @@ import {
     TOWN_SHOPS,
 } from './TownCatalog';
 import { playUiClick } from './UiAudio';
-import { applyUiFont } from './UiFont';
+import {
+    UI_CREAM,
+    UI_INK,
+    UI_INK_MUTE,
+    UI_PRICE,
+    drawParchmentRow,
+    drawWoodButton,
+    drawWoodClose,
+    drawWoodParchmentPanel,
+} from './UiChrome';
+import { styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
 
@@ -40,8 +50,11 @@ const ACTION_Y = -PANEL_H * 0.35;
 const ACTION_W = 320;
 const ACTION_H = 72;
 
+const CLOSE_BTN = 56;
+const CLOSE_PAD = 22;
+
 /**
- * Town shop / board UI — Graphics chrome, gold spend → FarmSystem inventory.
+ * Town shop / board UI — FarmHUD wood + parchment chrome, gold → FarmSystem.
  */
 @ccclass('TownShopPanel')
 export class TownShopPanel extends Component {
@@ -188,7 +201,13 @@ export class TownShopPanel extends Component {
         const local = { x: canvas.x - this._root.position.x, y: canvas.y - this._root.position.y };
         const guide = this.tradeGuideTarget();
         // Close chip top-right — blocked while buy/sell tutorial needs a click.
-        if (local.x > PANEL_W * 0.5 - 70 && local.y > PANEL_H * 0.5 - 70) {
+        const closeHalf = CLOSE_BTN * 0.7;
+        const closeX = PANEL_W * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5;
+        const closeY = PANEL_H * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5;
+        if (
+            Math.abs(local.x - closeX) <= closeHalf &&
+            Math.abs(local.y - closeY) <= closeHalf
+        ) {
             if (guide) return true;
             playUiClick();
             this.close();
@@ -571,35 +590,17 @@ export class TownShopPanel extends Component {
     private paintAction(primary: boolean) {
         const gfx = this._actionBtn?.getComponent(Graphics);
         if (!gfx) return;
-        gfx.clear();
-        gfx.fillColor = primary ? new Color(196, 163, 90, 255) : new Color(70, 88, 74, 255);
-        gfx.roundRect(-ACTION_W * 0.5, -ACTION_H * 0.5, ACTION_W, ACTION_H, 14);
-        gfx.fill();
-        gfx.strokeColor = new Color(242, 220, 160, 255);
-        gfx.lineWidth = 3;
-        gfx.roundRect(-ACTION_W * 0.5, -ACTION_H * 0.5, ACTION_W, ACTION_H, 14);
-        gfx.stroke();
+        drawWoodButton(gfx, ACTION_W, ACTION_H, primary ? 'primary' : 'muted');
         if (this._actionLab) {
-            this._actionLab.color = primary
-                ? new Color(40, 32, 24, 255)
-                : new Color(242, 237, 224, 255);
+            this._actionLab.color = primary ? UI_INK : UI_CREAM;
         }
     }
 
     private paintTab(node: Node | null, lab: Label | null, on: boolean) {
         if (!node) return;
         const gfx = node.getComponent(Graphics);
-        if (gfx) {
-            gfx.clear();
-            gfx.fillColor = on ? new Color(196, 163, 90, 255) : new Color(46, 58, 50, 240);
-            gfx.roundRect(-90, -24, 180, 48, 10);
-            gfx.fill();
-            gfx.strokeColor = new Color(196, 163, 90, 220);
-            gfx.lineWidth = 2;
-            gfx.roundRect(-90, -24, 180, 48, 10);
-            gfx.stroke();
-        }
-        if (lab) lab.color = on ? new Color(40, 32, 24, 255) : new Color(220, 210, 190, 255);
+        if (gfx) drawWoodButton(gfx, 180, TAB_H, on ? 'on' : 'off');
+        if (lab) lab.color = on ? UI_CREAM : UI_INK;
     }
 
     private refreshGold() {
@@ -651,16 +652,11 @@ export class TownShopPanel extends Component {
         row.layer = this.node.layer;
         row.setParent(this._root!);
         row.setPosition(0, y, 0);
+        const rowW = PANEL_W - 80;
         const ut = row.addComponent(UITransform);
-        ut.setContentSize(PANEL_W - 80, ROW_H);
+        ut.setContentSize(rowW, ROW_H);
         const gfx = row.addComponent(Graphics);
-        gfx.fillColor = new Color(46, 58, 50, 240);
-        gfx.rect(-(PANEL_W - 80) * 0.5, -ROW_H * 0.5, PANEL_W - 80, ROW_H);
-        gfx.fill();
-        gfx.strokeColor = new Color(196, 163, 90, 220);
-        gfx.lineWidth = 2;
-        gfx.rect(-(PANEL_W - 80) * 0.5, -ROW_H * 0.5, PANEL_W - 80, ROW_H);
-        gfx.stroke();
+        drawParchmentRow(gfx, rowW, ROW_H, 12);
 
         const labN = new Node('lab');
         labN.layer = row.layer;
@@ -668,11 +664,9 @@ export class TownShopPanel extends Component {
         labN.setPosition(-20, 8, 0);
         labN.addComponent(UITransform).setContentSize(480, 40);
         const lab = labN.addComponent(Label);
-        applyUiFont(lab);
-        lab.fontSize = 28;
-        lab.horizontalAlign = Label.HorizontalAlign.LEFT;
-        lab.color = new Color(242, 237, 224, 255);
         lab.string = title;
+        lab.horizontalAlign = Label.HorizontalAlign.LEFT;
+        styleUiLabel(lab, { size: 28, color: UI_INK, outline: false });
 
         const descN = new Node('desc');
         descN.layer = row.layer;
@@ -680,10 +674,9 @@ export class TownShopPanel extends Component {
         descN.setPosition(-20, -22, 0);
         descN.addComponent(UITransform).setContentSize(480, 28);
         const descLab = descN.addComponent(Label);
-        applyUiFont(descLab);
-        descLab.fontSize = 20;
-        descLab.color = new Color(168, 160, 144, 255);
         descLab.string = desc;
+        descLab.horizontalAlign = Label.HorizontalAlign.LEFT;
+        styleUiLabel(descLab, { size: 20, color: UI_INK_MUTE, outline: false });
 
         const priceN = new Node('price');
         priceN.layer = row.layer;
@@ -691,11 +684,9 @@ export class TownShopPanel extends Component {
         priceN.setPosition(260, 0, 0);
         priceN.addComponent(UITransform).setContentSize(120, 40);
         const price = priceN.addComponent(Label);
-        applyUiFont(price);
-        price.fontSize = 28;
-        price.horizontalAlign = Label.HorizontalAlign.RIGHT;
-        price.color = new Color(240, 210, 100, 255);
         price.string = priceText;
+        price.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        styleUiLabel(price, { size: 28, color: UI_PRICE, outline: false });
         return row;
     }
 
@@ -716,15 +707,14 @@ export class TownShopPanel extends Component {
         root.setParent(canvas);
         root.setPosition(0, 40, 0);
         root.addComponent(UITransform).setContentSize(PANEL_W, PANEL_H);
-        const g = root.addComponent(Graphics);
-        g.fillColor = new Color(30, 40, 34, 250);
-        g.roundRect(-PANEL_W * 0.5, -PANEL_H * 0.5, PANEL_W, PANEL_H, 20);
-        g.fill();
-        g.strokeColor = new Color(196, 163, 90, 255);
-        g.lineWidth = 4;
-        g.roundRect(-PANEL_W * 0.5, -PANEL_H * 0.5, PANEL_W, PANEL_H, 20);
-        g.stroke();
         this._root = root;
+
+        const chrome = new Node('Chrome');
+        chrome.layer = root.layer;
+        chrome.setParent(root);
+        chrome.addComponent(UITransform).setContentSize(PANEL_W, PANEL_H);
+        const g = chrome.addComponent(Graphics);
+        drawWoodParchmentPanel(g, PANEL_W, PANEL_H, { radius: 22, lightInset: true });
 
         const titleN = new Node('Title');
         titleN.layer = root.layer;
@@ -732,10 +722,8 @@ export class TownShopPanel extends Component {
         titleN.setPosition(0, TITLE_Y, 0);
         titleN.addComponent(UITransform).setContentSize(600, 48);
         const title = titleN.addComponent(Label);
-        applyUiFont(title);
-        title.fontSize = 36;
         title.horizontalAlign = Label.HorizontalAlign.CENTER;
-        title.color = new Color(242, 237, 224, 255);
+        styleUiLabel(title, { size: 36, color: UI_INK, outline: false });
         this._title = title;
 
         const goldN = new Node('Gold');
@@ -744,10 +732,8 @@ export class TownShopPanel extends Component {
         goldN.setPosition(0, GOLD_Y, 0);
         goldN.addComponent(UITransform).setContentSize(400, 36);
         const gold = goldN.addComponent(Label);
-        applyUiFont(gold);
-        gold.fontSize = 26;
         gold.horizontalAlign = Label.HorizontalAlign.CENTER;
-        gold.color = new Color(240, 210, 100, 255);
+        styleUiLabel(gold, { size: 26, color: UI_PRICE, outline: false });
         this._goldLab = gold;
 
         const buyTab = new Node('BuyTab');
@@ -761,11 +747,10 @@ export class TownShopPanel extends Component {
         buyLabN.setParent(buyTab);
         buyLabN.addComponent(UITransform).setContentSize(160, 40);
         const buyLab = buyLabN.addComponent(Label);
-        applyUiFont(buyLab);
-        buyLab.fontSize = 26;
+        buyLab.string = '购买';
         buyLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         buyLab.verticalAlign = Label.VerticalAlign.CENTER;
-        buyLab.string = '购买';
+        styleUiLabel(buyLab, { size: 26, color: UI_INK, outline: false });
         this._buyTab = buyTab;
         this._buyTabLab = buyLab;
 
@@ -780,11 +765,10 @@ export class TownShopPanel extends Component {
         sellLabN.setParent(sellTab);
         sellLabN.addComponent(UITransform).setContentSize(160, 40);
         const sellLab = sellLabN.addComponent(Label);
-        applyUiFont(sellLab);
-        sellLab.fontSize = 26;
+        sellLab.string = '出售';
         sellLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         sellLab.verticalAlign = Label.VerticalAlign.CENTER;
-        sellLab.string = '出售';
+        styleUiLabel(sellLab, { size: 26, color: UI_INK, outline: false });
         this._sellTab = sellTab;
         this._sellTabLab = sellLab;
 
@@ -793,15 +777,11 @@ export class TownShopPanel extends Component {
         bodyCard.layer = root.layer;
         bodyCard.setParent(root);
         bodyCard.setPosition(0, 40, 0);
-        bodyCard.addComponent(UITransform).setContentSize(PANEL_W - 100, 420);
+        const bodyW = PANEL_W - 100;
+        const bodyH = 420;
+        bodyCard.addComponent(UITransform).setContentSize(bodyW, bodyH);
         const bcG = bodyCard.addComponent(Graphics);
-        bcG.fillColor = new Color(46, 58, 50, 240);
-        bcG.roundRect(-(PANEL_W - 100) * 0.5, -210, PANEL_W - 100, 420, 16);
-        bcG.fill();
-        bcG.strokeColor = new Color(196, 163, 90, 180);
-        bcG.lineWidth = 2;
-        bcG.roundRect(-(PANEL_W - 100) * 0.5, -210, PANEL_W - 100, 420, 16);
-        bcG.stroke();
+        drawParchmentRow(bcG, bodyW, bodyH, 16);
         this._bodyCard = bodyCard;
 
         const bodyN = new Node('Body');
@@ -810,16 +790,14 @@ export class TownShopPanel extends Component {
         bodyN.setPosition(0, 0, 0);
         const bodyUt = bodyN.addComponent(UITransform);
         const body = bodyN.addComponent(Label);
-        applyUiFont(body);
-        body.fontSize = 28;
-        body.lineHeight = 40;
         // Overflow BEFORE size: Label(NONE) shrinks the node to the empty string,
         // and RESIZE_HEIGHT would then wrap on that ~2-glyph width.
         body.overflow = Label.Overflow.RESIZE_HEIGHT;
         body.enableWrapText = true;
         body.horizontalAlign = Label.HorizontalAlign.CENTER;
         body.verticalAlign = Label.VerticalAlign.CENTER;
-        body.color = new Color(242, 237, 224, 255);
+        styleUiLabel(body, { size: 28, color: UI_INK, outline: false });
+        body.lineHeight = 40;
         bodyUt.setContentSize(PANEL_W - 140, 380);
         this._body = body;
 
@@ -829,13 +807,11 @@ export class TownShopPanel extends Component {
         hintN.setPosition(0, -PANEL_H * 0.5 + 168, 0);
         const hintUt = hintN.addComponent(UITransform);
         const hint = hintN.addComponent(Label);
-        applyUiFont(hint);
-        hint.fontSize = 22;
         hint.overflow = Label.Overflow.CLAMP;
         hint.enableWrapText = true;
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         hint.verticalAlign = Label.VerticalAlign.CENTER;
-        hint.color = new Color(200, 195, 180, 255);
+        styleUiLabel(hint, { size: 22, color: UI_INK_MUTE, outline: false });
         hintUt.setContentSize(640, 72);
         this._hint = hint;
 
@@ -850,30 +826,23 @@ export class TownShopPanel extends Component {
         actionLabN.setParent(action);
         actionLabN.addComponent(UITransform).setContentSize(ACTION_W - 20, ACTION_H - 8);
         const actionLab = actionLabN.addComponent(Label);
-        applyUiFont(actionLab);
-        actionLab.fontSize = 30;
+        actionLab.string = '接受委托';
         actionLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         actionLab.verticalAlign = Label.VerticalAlign.CENTER;
-        actionLab.color = new Color(40, 32, 24, 255);
-        actionLab.string = '接受委托';
+        styleUiLabel(actionLab, { size: 30, color: UI_INK, outline: false });
         this._actionBtn = action;
         this._actionLab = actionLab;
 
         const closeN = new Node('Close');
         closeN.layer = root.layer;
         closeN.setParent(root);
-        closeN.setPosition(PANEL_W * 0.5 - 28, PANEL_H * 0.5 - 28, 0);
-        closeN.addComponent(UITransform).setContentSize(56, 56);
+        closeN.setPosition(
+            PANEL_W * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5,
+            PANEL_H * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5,
+            0,
+        );
+        closeN.addComponent(UITransform).setContentSize(Math.round(CLOSE_BTN * 1.35), Math.round(CLOSE_BTN * 1.35));
         const cg = closeN.addComponent(Graphics);
-        cg.fillColor = new Color(140, 60, 50, 255);
-        cg.circle(0, 0, 26);
-        cg.fill();
-        cg.strokeColor = new Color(242, 237, 224, 255);
-        cg.lineWidth = 3;
-        cg.moveTo(-10, -10);
-        cg.lineTo(10, 10);
-        cg.moveTo(10, -10);
-        cg.lineTo(-10, 10);
-        cg.stroke();
+        drawWoodClose(cg, CLOSE_BTN);
     }
 }

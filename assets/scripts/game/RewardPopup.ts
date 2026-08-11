@@ -22,6 +22,12 @@ import { QuestSystem } from './QuestSystem';
 import { REWARD_FRAMES } from './RewardFrames';
 import { TOOL_FRAMES } from './ToolFrames';
 import { playUiGold } from './UiAudio';
+import {
+    UI_INK as INK,
+    UI_INK_MUTE as INK_MUTE,
+    UI_PRICE as COUNT_INK,
+    drawWoodParchmentPanel,
+} from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -40,15 +46,6 @@ const GAP_Y = 20;
 /** Single reward gets a bigger icon; multi shrinks slightly. */
 const ICON_ONE = 96;
 const ICON_MULTI = 80;
-
-const WOOD = new Color(176, 110, 48, 255);
-const WOOD_DARK = new Color(120, 72, 32, 255);
-const PARCHMENT = new Color(236, 210, 158, 255);
-const GOLD = new Color(210, 150, 70, 255);
-const STROKE = new Color(60, 36, 18, 255);
-const INK = new Color(68, 40, 18, 255);
-const INK_MUTE = new Color(110, 78, 42, 255);
-const COUNT_INK = new Color(140, 84, 24, 255);
 
 type RewardChip = {
     uuid: string | null;
@@ -483,25 +480,7 @@ export class RewardPopup extends Component {
         chrome.setParent(root);
         chrome.addComponent(UITransform).setContentSize(PANEL_W, PANEL_H);
         const g = chrome.addComponent(Graphics);
-        const x0 = -PANEL_W * 0.5;
-        const y0 = -PANEL_H * 0.5;
-        g.fillColor = WOOD_DARK;
-        g.roundRect(x0, y0, PANEL_W, PANEL_H, 28);
-        g.fill();
-        g.fillColor = WOOD;
-        g.roundRect(x0 + 6, y0 + 6, PANEL_W - 12, PANEL_H - 12, 24);
-        g.fill();
-        g.fillColor = PARCHMENT;
-        g.roundRect(x0 + 16, y0 + 16, PANEL_W - 32, PANEL_H - 32, 20);
-        g.fill();
-        g.strokeColor = GOLD;
-        g.lineWidth = 3;
-        g.roundRect(x0 + 12, y0 + 12, PANEL_W - 24, PANEL_H - 24, 22);
-        g.stroke();
-        g.strokeColor = STROKE;
-        g.lineWidth = 3;
-        g.roundRect(x0, y0, PANEL_W, PANEL_H, 28);
-        g.stroke();
+        drawWoodParchmentPanel(g, PANEL_W, PANEL_H, { radius: 28, lightInset: false });
         this._root = root;
 
         const titleN = new Node('Title');

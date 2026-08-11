@@ -33,6 +33,25 @@ LAYOUT_JSON = Path(__file__).resolve().parent / "info-board-layout.json"
 TEX_SUFFIX = "6c48a"
 SF_SUFFIX = "f9941"
 SCRIPT_UUID = "9bec3781-fb7c-4055-9747-89fa0bb1e2b1"
+# Prefab/scene __type__ must be the Cocos compressed form (5-hex head + base64),
+# matching scene refs like GameBootstrap — full UUID → Missing class at build.
+_BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+
+
+def compress_uuid(uuid_str: str) -> str:
+    clean = uuid_str.replace("-", "")
+    head, rem = clean[:5], clean[5:]
+    while len(rem) % 3:
+        rem += "0"
+    out = [head]
+    for i in range(0, len(rem), 3):
+        a, b, c = (int(rem[i], 16), int(rem[i + 1], 16), int(rem[i + 2], 16))
+        out.append(_BASE64[(a << 2) | (b >> 2)])
+        out.append(_BASE64[((b & 3) << 4) | c])
+    return "".join(out)
+
+
+SCRIPT_TYPE = compress_uuid(SCRIPT_UUID)  # 9bec3eB+3xAVZdHifoLseKx
 UI_LAYER = 33554432  # UI_2D
 
 # ---- layout (display px, 1080 design) ----
@@ -771,7 +790,7 @@ def build_prefab(frames: dict, prefab_uuid: str):
     script_pi = root_pi  # reuse
     script_id = b.add(
         {
-            "__type__": SCRIPT_UUID,
+            "__type__": SCRIPT_TYPE,
             "_name": "",
             "_objFlags": 0,
             "__editorExtras__": {},
@@ -884,7 +903,7 @@ def attach_comp_prefab_infos(objs):
         "cc.Sprite",
         "cc.Label",
         "cc.Widget",
-        SCRIPT_UUID,
+        SCRIPT_TYPE,
     }
     out = list(objs)
     for o in list(objs):

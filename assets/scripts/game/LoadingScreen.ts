@@ -68,7 +68,6 @@ export class LoadingScreen extends Component {
     private _splash: Sprite | null = null;
     private _barFillGfx: Graphics | null = null;
     private _tipLab: Label | null = null;
-    private _pctLab: Label | null = null;
     private _titleLab: Label | null = null;
     private _subLab: Label | null = null;
     private _startHint: Node | null = null;
@@ -111,7 +110,6 @@ export class LoadingScreen extends Component {
     setProgress(p: number, tip?: string) {
         this._progress = Math.max(0, Math.min(1, p));
         this.paintBar();
-        if (this._pctLab) this._pctLab.string = `${Math.round(this._progress * 100)}%`;
         if (tip !== undefined && this._tipLab) this._tipLab.string = tip;
         this.layoutToVisible();
         this.bringToFront();
@@ -303,22 +301,6 @@ export class LoadingScreen extends Component {
         tip.string = '正在唤醒溪谷…';
         this._tipLab = tip;
 
-        const pctN = new Node('Pct');
-        pctN.layer = root.layer;
-        pctN.setParent(dock);
-        pctN.setPosition(0, -70, 0);
-        pctN.addComponent(UITransform).setContentSize(200, 36);
-        const pct = pctN.addComponent(Label);
-        styleUiLabel(pct, {
-            size: 24,
-            color: new Color(230, 210, 160, 255),
-            outline: true,
-            outlineWidth: 2,
-        });
-        pct.horizontalAlign = Label.HorizontalAlign.CENTER;
-        pct.string = '0%';
-        this._pctLab = pct;
-
         this.buildStartHint(dock);
 
         this.paintBar();
@@ -332,7 +314,6 @@ export class LoadingScreen extends Component {
             if (this._titleLab) applyUiFont(this._titleLab);
             if (this._subLab) applyUiFont(this._subLab);
             if (this._tipLab) applyUiFont(this._tipLab);
-            if (this._pctLab) applyUiFont(this._pctLab);
             if (this._startHintLab) applyUiFont(this._startHintLab);
         });
     }
@@ -380,7 +361,6 @@ export class LoadingScreen extends Component {
         }
         this._readyForStart = true;
         if (this._tipLab) this._tipLab.node.active = false;
-        if (this._pctLab) this._pctLab.node.active = false;
         if (this._barTrack) this._barTrack.active = false;
         if (this._startHint?.isValid) {
             this._startHint.active = true;
