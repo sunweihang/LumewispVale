@@ -95,7 +95,7 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
     quest_1007: [
         {
             speaker: GIRL,
-            text: '桌上该添点鲜味啦。先点下方鱼竿，再跟着箭头走到西边湖边码头，点水面抛竿——我等你带回第一条鱼～',
+            text: '桌上该添点鲜味啦。先点下方鱼竿，再跟着地上的星光走到西边湖边码头，点水面抛竿——我等你带回第一条鱼～',
         },
     ],
     quest_1009: [

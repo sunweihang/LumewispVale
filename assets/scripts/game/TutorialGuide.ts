@@ -11,11 +11,13 @@ import {
     UIOpacity,
     UITransform,
     Vec3,
+    gfx,
     tween,
     Tween,
     view,
 } from 'cc';
 import { GotoAction } from '../cfg/schema';
+import { ClickMoveMarker } from './ClickMoveMarker';
 import { DialoguePanel } from './DialoguePanel';
 import { FarmHUD } from './FarmHUD';
 import { FarmSystem } from './FarmSystem';
@@ -24,12 +26,14 @@ import { FISHING_FRAMES } from './FishingFrames';
 import { FishingMinigame } from './FishingMinigame';
 import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
+import { PlayerController } from './PlayerController';
 import { QUEST_FRAMES } from './QuestFrames';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TOOL_FRAMES } from './ToolFrames';
+import { TownShopPanel } from './TownShopPanel';
 import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -81,6 +85,16 @@ const STICKY_SWITCH_SQ = 160 * 160;
 const EDGE_HYSTERESIS = 96;
 /** Hold the last good idle aim briefly when HUD/world holes flicker on farm boot. */
 const LAST_GUIDE_HOLD_MS = 450;
+/** World spacing between starlight path dots (denser trail, still pooled). */
+const PATH_DOT_STEP = 16;
+/** Recompute A* at most this often while the player walks. */
+const PATH_REPATH_MS = 320;
+/** Cap path samples (world polyline); only on-screen dots are activated. */
+const PATH_DOT_MAX = 80;
+/** Hard cap on live Sprite nodes — performance budget. */
+const PATH_VISIBLE_MAX = 36;
+/** Canvas size of each ground mote. */
+const PATH_DOT_SIZE = 28;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
@@ -100,11 +114,15 @@ type IdleGuide = {
     /** Item frame for the drag ghost (e.g. boost). */
     dragItem?: string;
     /**
-     * Finger Z euler degrees. Sprite defaults to pointing down (0).
+     * Finger Z euler degrees when on-screen. Sprite defaults to pointing down (0).
+     * Non-zero = off-screen edge cue:
      * 90 = walk east / right edge; -90 = walk west / left edge;
      * 180 = walk north / top edge (target above the playfield).
+     * South edge uses arrowDeg 0 + edgeWalk.
      */
     arrowDeg?: number;
+    /** Off-screen “往×走” — ground starlight path (no floating firefly). */
+    edgeWalk?: boolean;
     /**
      * Place-only cue (door / gate / pier…). Never for NPCs or props —
      * those keep the chevron alone.
@@ -112,6 +130,8 @@ type IdleGuide = {
     groundRipple?: boolean;
     /** Optional world lock for the ripple (e.g. pier tip / door feet). */
     rippleWorld?: WorldPos;
+    /** World feet goal for the ground starlight path (player → here). */
+    pathWorld?: WorldPos;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -128,9 +148,8 @@ const TOOL_LABEL: Record<string, string> = {
  * 1) show quest tracker → 2) select hand → 3) pull weeds until quest 1001 is done.
  * Spotlight is forced: InputBridge.uiBlocking stays on (no walk / no other taps).
  *
- * Also: while a quest is active, keep guiding — wrong tool → arrow on hotbar,
- * then arrow on the objective (no dim mask). Off-screen world aims become a
- * left/right edge chevron until the target re-enters the playfield.
+ * Also: while a quest is active, keep guiding — wrong tool → yellow click arrow
+ * on hotbar; walk-to world aims use a ground starlight path (edge when off-screen).
  *
  * lateUpdate after CameraFollow so world→UI holes match the snapped World pose.
  */
@@ -148,6 +167,23 @@ export class TutorialGuide extends Component {
     private _tipRoot: Node | null = null;
     private _tipLab: Label | null = null;
     private _finger: Node | null = null;
+    private _fingerSp: Sprite | null = null;
+    /** Yellow chevron — click prompts (UI dock / tutorial hollow / click-move). */
+    private _arrowFrame: SpriteFrame | null = null;
+    /** Legacy firefly (kept loaded; walk cues now use ground path dots). */
+    private _wispFrame: SpriteFrame | null = null;
+    private _guideMode: 'arrow' | 'wisp' = 'arrow';
+    /** Dark halo under the edge trail so it pops on bright grass / dirt. */
+    private _edgeHaloN: Node | null = null;
+    private _edgeHaloG: Graphics | null = null;
+    /** Ground starlight path (player → world aim). */
+    private _pathRoot: Node | null = null;
+    private _pathDots: Node[] = [];
+    private _pathDotFrames: SpriteFrame[] = [];
+    private _pathFramesLoaded = false;
+    private _pathRepathAt = 0;
+    private _pathPts: WorldPos[] = [];
+    private _pathGoal: WorldPos | null = null;
     private _dragGhost: Node | null = null;
     private _dragGhostSp: Sprite | null = null;
     private _dragGhostOp: UIOpacity | null = null;
@@ -170,8 +206,11 @@ export class TutorialGuide extends Component {
     private _idleDragItem = '';
     /** Idle chevron Z euler; 0 = down, 90 = right. */
     private _idleArrowDeg = 0;
+    /** True only for off-screen walk-direction cues (ground path). */
+    private _idleEdgeWalk = false;
     private _idleGroundRipple = false;
     private _idleRippleWorld: WorldPos | null = null;
+    private _idlePathWorld: WorldPos | null = null;
     private _step: GuideStep = 'quest';
     private _inputReady = false;
     private _prevBlocking = false;
@@ -234,6 +273,9 @@ export class TutorialGuide extends Component {
         if (!this.quests?.activeQuest) return null;
         if (this.node.getComponent(DialoguePanel)?.isOpen) return null;
         if (this.node.getComponent(RewardPopup)?.isOpen) return null;
+        const shop = this.node.getComponent(TownShopPanel);
+        // Board accept handoff keeps the caption; other shop/info modals mute it.
+        if (shop?.isOpen && !shop.isBoardOpen) return null;
         const hud = this.node.getComponent(FarmHUD);
         // Craft / bag modals normally hide the cue — keep guided craft / boost steps.
         if (
@@ -436,8 +478,10 @@ export class TutorialGuide extends Component {
         this._idleDragTo = null;
         this._idleDragItem = '';
         this._idleArrowDeg = 0;
+        this._idleEdgeWalk = false;
         this._idleGroundRipple = false;
         this._idleRippleWorld = null;
+        this._idlePathWorld = null;
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         this._lastIdleGuide = null;
         this._lastIdleUntil = 0;
@@ -445,6 +489,7 @@ export class TutorialGuide extends Component {
         this.clearStickyTarget();
         this.clearDragDemoChrome();
         this.hideGroundRipple();
+        this.hideGroundPath();
     }
 
     private canShowIdleArrow(): boolean {
@@ -456,6 +501,9 @@ export class TutorialGuide extends Component {
         if (this.node.getComponent(RewardPopup)?.isOpen) return false;
         // Quest journal open → still show arrow (points at close so guide never dies).
         if (this.node.getComponent(FishingMinigame)?.isOpen) return false;
+        const shop = this.node.getComponent(TownShopPanel);
+        // Police / post board: keep arrow on「接受委托」. Shop / info: hide.
+        if (shop?.isOpen && !shop.isBoardOpen) return false;
         const hud = this.node.getComponent(FarmHUD);
         // Allow arrow over craft (first seed) and bag (drag boost to hotbar).
         if (
@@ -499,13 +547,17 @@ export class TutorialGuide extends Component {
         this._idleDragTo = null;
         this._idleDragItem = '';
         this._idleArrowDeg = 0;
+        this._idleEdgeWalk = false;
         this._idleGroundRipple = false;
         this._idleRippleWorld = null;
+        this._idlePathWorld = null;
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         // Keep sticky aim across brief dialogue / modal hides so the arrow
         // doesn't re-pick a different weed/plot when it comes back.
         this.clearDragDemoChrome();
         this.hideGroundRipple();
+        this.hideGroundPath();
+        this.syncEdgeHalo(false, 0, 0);
         if (!this._open && this._root) this._root.active = false;
     }
 
@@ -553,11 +605,14 @@ export class TutorialGuide extends Component {
         this._idleDragTo = guide.dragTo ?? null;
         this._idleDragItem = guide.dragItem ?? '';
         this._idleArrowDeg = guide.arrowDeg ?? 0;
+        this._idleEdgeWalk = !!guide.edgeWalk;
         this._idleGroundRipple = !!guide.groundRipple;
         this._idleRippleWorld = guide.rippleWorld ?? null;
+        this._idlePathWorld = guide.pathWorld ?? guide.rippleWorld ?? null;
         if (this._tipLab) this._tipLab.string = guide.tip;
         if (this._idleDragItem) this.ensureDragGhostFrame(this._idleDragItem);
         this.syncGroundRipple();
+        this.syncGroundPath();
     }
 
     /**
@@ -565,9 +620,19 @@ export class TutorialGuide extends Component {
      * NPCs and props must not call this — chevron only.
      */
     private withPlaceRipple(guide: IdleGuide | null, world?: WorldPos | null): IdleGuide | null {
-        if (!guide || guide.uiDock || (guide.arrowDeg ?? 0) !== 0) return guide;
+        if (!guide || guide.uiDock) return guide;
+        if (world) guide.pathWorld = world;
+        // Ripple only when the aim is on-target (arrowDeg 0). Edge walks keep path.
+        if ((guide.arrowDeg ?? 0) !== 0) return guide;
         guide.groundRipple = true;
         if (world) guide.rippleWorld = world;
+        return guide;
+    }
+
+    /** Attach a world feet goal so the starlight path can A* even on edge cues. */
+    private withPathWorld(guide: IdleGuide | null, world?: WorldPos | null): IdleGuide | null {
+        if (!guide || !world) return guide;
+        guide.pathWorld = world;
         return guide;
     }
 
@@ -627,12 +692,14 @@ export class TutorialGuide extends Component {
 
     /** World node → directed hole (on-sprite or screen-edge pointer). */
     private worldNodeGuide(node: Node | null, tip: string, fallbackTip?: string): IdleGuide | null {
-        return this.worldOrQuest(this.worldNodeHole(node), tip, fallbackTip);
+        const guide = this.worldOrQuest(this.worldNodeHole(node), tip, fallbackTip);
+        if (!guide || !node?.isValid) return guide;
+        return this.withPathWorld(guide, { x: node.position.x, y: node.position.y });
     }
 
     /** World pos → directed hole. */
     private worldPosGuide(pos: WorldPos | null, tip: string, fallbackTip?: string): IdleGuide | null {
-        return this.worldOrQuest(this.worldPosHole(pos), tip, fallbackTip);
+        return this.withPathWorld(this.worldOrQuest(this.worldPosHole(pos), tip, fallbackTip), pos);
     }
 
     /**
@@ -651,6 +718,10 @@ export class TutorialGuide extends Component {
             this.clearStickyTarget();
             return { hole, tip: '露穗：关掉这个，继续任务呀', uiDock: true };
         }
+
+        // Police / post board open — hand off to Accept (quest 1011 used to die here).
+        const boardGuide = this.resolveTownBoardGuide();
+        if (boardGuide) return boardGuide;
 
         // Before yard spotlight — free roam (no lock); soft arrow on 露穗 only.
         if (quests.activeQuest.id === 1001 && !GameState.hasSeenDialogue(GUIDE_ID)) {
@@ -848,6 +919,19 @@ export class TutorialGuide extends Component {
                 return { hole: q, tip: '查看当前任务目标', uiDock: true };
             }
         }
+    }
+
+    /**
+     * While the police / post panel is open, point at「接受委托」instead of the
+     * building under the modal (chevron used to sit on top and kill the step).
+     */
+    private resolveTownBoardGuide(): IdleGuide | null {
+        const shop = this.node.getComponent(TownShopPanel);
+        if (!shop?.isBoardOpen) return null;
+        const hole = this.uiNodeHole(shop.acceptBtnNode());
+        if (!hole) return null;
+        this.clearStickyTarget();
+        return { hole, tip: '露穗：点「接受委托」接任务呀', uiDock: true };
     }
 
     /**
@@ -1087,7 +1171,7 @@ export class TutorialGuide extends Component {
             );
         }
         return this.withPlaceRipple(
-            this.worldPosGuide(target.pos, '露穗：跟着箭头走到湖边码头', '露穗：往西边码头走，再点湖面～'),
+            this.worldPosGuide(target.pos, '露穗：跟着星光走到湖边码头', '露穗：往西边码头走，再点湖面～'),
             target.pos,
         );
     }
@@ -1215,6 +1299,7 @@ export class TutorialGuide extends Component {
                 tip: this.edgeWalkTip(tip, 180),
                 uiDock: false,
                 arrowDeg: 180,
+                edgeWalk: true,
             };
         }
         if (deg === 0) {
@@ -1223,6 +1308,7 @@ export class TutorialGuide extends Component {
                 tip: this.edgeWalkTip(tip, 0),
                 uiDock: false,
                 arrowDeg: 0,
+                edgeWalk: true,
             };
         }
         if (deg === 90) {
@@ -1231,6 +1317,7 @@ export class TutorialGuide extends Component {
                 tip: this.edgeWalkTip(tip, 90),
                 uiDock: false,
                 arrowDeg: 90,
+                edgeWalk: true,
             };
         }
         return {
@@ -1238,6 +1325,7 @@ export class TutorialGuide extends Component {
             tip: this.edgeWalkTip(tip, -90),
             uiDock: false,
             arrowDeg: -90,
+            edgeWalk: true,
         };
     }
 
@@ -1251,10 +1339,10 @@ export class TutorialGuide extends Component {
         if (deg === 0 && (south || (!north && !east && !west && tip.includes('走')))) return tip;
         if (deg === 90 && (east || (!west && !north && !south && tip.includes('走')))) return tip;
         if (deg === -90 && (west || (!east && !north && !south && tip.includes('走')))) return tip;
-        if (deg === 180) return '跟着箭头往北走，靠近了再动手';
-        if (deg === 0) return '跟着箭头往南走，靠近了再动手';
-        if (deg === 90) return '跟着箭头往右走，靠近了再动手';
-        return '跟着箭头往左走，靠近了再动手';
+        if (deg === 180) return '往北走，靠近了再动手';
+        if (deg === 0) return '往南走，靠近了再动手';
+        if (deg === 90) return '往右走，靠近了再动手';
+        return '往左走，靠近了再动手';
     }
 
     /**
@@ -1278,6 +1366,8 @@ export class TutorialGuide extends Component {
                 const held = this.edgeGuideForDeg(prevDeg, guide.hole, guide.tip);
                 held.groundRipple = guide.groundRipple;
                 held.rippleWorld = guide.rippleWorld;
+                held.pathWorld = guide.pathWorld;
+                held.edgeWalk = true;
                 this._edgeGuide = held;
                 return held;
             }
@@ -1610,7 +1700,8 @@ export class TutorialGuide extends Component {
         }
         this.clearDragDemoChrome();
 
-        // Big chevron sits centered above the target and bobs into it.
+        // Off-screen “往×走” → ground starlight path (hide floating finger).
+        // On-screen click aims / UI → yellow arrow.
         // Bob AFTER clamp — claim / dock targets pin to the playfield floor and
         // would otherwise eat the sine offset every frame.
         const arrowDeg = this._idleOn ? this._idleArrowDeg : 0;
@@ -1619,43 +1710,53 @@ export class TutorialGuide extends Component {
         const uiDock =
             (this._open && (this._step === 'quest' || this._step === 'hand')) ||
             (!this._open && this._idleOn && this._idleUiDock);
-        const bob = Math.sin(Date.now() * 0.01) * 12;
+        // Screen-edge walk cues use the ground path (incl. south, deg 0).
+        const walkGuide = !this._open && this._idleOn && this._idleEdgeWalk;
+        this.syncGroundPath();
         let fx = this._hole.x;
-        let fy: number;
-        if (arrowDeg === 90) {
-            // Point east: sit left of the aim and bob into +X.
-            fx = this._hole.x - 48;
-            fy = this._hole.y;
-        } else if (arrowDeg === -90) {
-            // Point west: sit right of the aim and bob into -X.
-            fx = this._hole.x + 48;
-            fy = this._hole.y;
-        } else if (arrowDeg === 180) {
-            // Point north: sit below the aim and bob into +Y.
-            fy = this._hole.y - 48;
+        let fy = this._idleSilent ? top + 40 : top + 56;
+        if (walkGuide) {
+            finger.active = false;
+            this.syncEdgeHalo(false, 0, 0);
         } else {
-            // Point south / UI dock: sit above the aim.
-            fy = this._idleSilent ? top + 40 : top + 56;
+            finger.active = true;
+            const bob = Math.sin(Date.now() * 0.01) * 12;
+            if (arrowDeg === 90) {
+                fx = this._hole.x - 56;
+                fy = this._hole.y;
+            } else if (arrowDeg === -90) {
+                fx = this._hole.x + 56;
+                fy = this._hole.y;
+            } else if (arrowDeg === 180) {
+                fy = this._hole.y - 56;
+            } else {
+                fy = this._idleSilent ? top + 40 : top + 56;
+            }
+            if (uiDock) {
+                fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
+                fy = Math.max(-halfH + 80, Math.min(halfH - 50, fy));
+            } else {
+                fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
+                fy = Math.max(band.y0 + 50, Math.min(band.y1 - 20, fy));
+            }
+            if (arrowDeg === 90) {
+                finger.setPosition(fx + bob, fy, 0);
+            } else if (arrowDeg === -90) {
+                finger.setPosition(fx - bob, fy, 0);
+            } else if (arrowDeg === 180) {
+                finger.setPosition(fx, fy + bob, 0);
+            } else {
+                finger.setPosition(fx, fy + bob, 0);
+            }
+            finger.setRotationFromEuler(0, 0, arrowDeg);
+            finger.setScale(1, 1, 1);
+            const fingerUi = finger.getComponent(UITransform);
+            if (fingerUi) fingerUi.setContentSize(96, 96);
+            this.syncGuideSprite(false);
+            this.syncEdgeHalo(false, 0, 0);
         }
-        if (uiDock) {
-            fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
-            fy = Math.max(-halfH + 80, Math.min(halfH - 50, fy));
-        } else {
-            fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
-            fy = Math.max(band.y0 + 50, Math.min(band.y1 - 20, fy));
-        }
-        if (arrowDeg === 90) {
-            finger.setPosition(fx + bob, fy, 0);
-        } else if (arrowDeg === -90) {
-            finger.setPosition(fx - bob, fy, 0);
-        } else if (arrowDeg === 180) {
-            finger.setPosition(fx, fy + bob, 0);
-        } else {
-            finger.setPosition(fx, fy + bob, 0);
-        }
-        finger.setRotationFromEuler(0, 0, arrowDeg);
 
-        if (withTip && tip) {
+        if (withTip && tip && !walkGuide) {
             const tipHalfW = TIP_W * 0.5;
             const tipHalfH = TIP_H * 0.5;
             const minX = -halfW + SCREEN_INSET + tipHalfW;
@@ -1665,7 +1766,7 @@ export class TutorialGuide extends Component {
 
             let tipY: number;
             if (arrowDeg === 180) {
-                // Up-chevron at screen top — banner sits under the stem.
+                // North edge cue at screen top — banner sits under it.
                 const arrowBot = fy - ARROW_EXTENT_UP - 12;
                 tipY = arrowBot - tipHalfH - TIP_ARROW_GAP;
             } else {
@@ -1682,6 +1783,66 @@ export class TutorialGuide extends Component {
             // Tip after Finger so text never sits under the arrow.
             tip.setSiblingIndex(Math.max(finger.getSiblingIndex() + 1, tip.getSiblingIndex()));
         }
+    }
+
+    /**
+     * Click aim / UI → yellow chevron. Walk cues use ground path (finger hidden).
+     */
+    private syncGuideSprite(walkGuide: boolean) {
+        const sp = this._fingerSp;
+        if (!sp?.isValid) return;
+        const mode: 'arrow' | 'wisp' = walkGuide ? 'wisp' : 'arrow';
+        const want = mode === 'wisp' ? this._wispFrame : this._arrowFrame;
+        if (mode === this._guideMode && sp.spriteFrame && want && sp.spriteFrame === want) {
+            return;
+        }
+        this._guideMode = mode;
+        if (want) sp.spriteFrame = want;
+    }
+
+    /** Warm disc behind the edge trail — reads even on bright dirt / flowers. */
+    private syncEdgeHalo(edge: boolean, x: number, y: number) {
+        if (!edge) {
+            if (this._edgeHaloN?.isValid) this._edgeHaloN.active = false;
+            return;
+        }
+        const n = this.ensureEdgeHalo();
+        if (!n) return;
+        n.active = true;
+        n.setPosition(x, y, 0);
+        const pulse = 0.92 + Math.sin(Date.now() * 0.008) * 0.1;
+        n.setScale(pulse, pulse, 1);
+        // Keep halo under the trail sprite.
+        const finger = this._finger;
+        if (finger?.isValid) n.setSiblingIndex(Math.max(0, finger.getSiblingIndex() - 1));
+    }
+
+    private ensureEdgeHalo(): Node | null {
+        const root = this._root;
+        if (!root?.isValid) return null;
+        let n = this._edgeHaloN;
+        if (n?.isValid && n.parent === root) return n;
+        if (n?.isValid) n.destroy();
+
+        n = new Node('EdgeHalo');
+        n.layer = root.layer;
+        n.setParent(root);
+        n.active = false;
+        n.addComponent(UITransform).setContentSize(160, 160);
+        const g = n.addComponent(Graphics);
+        // Soft stacked discs — dark rim + warm gold core (Graphics can't blur).
+        g.fillColor = new Color(40, 28, 12, 110);
+        g.circle(0, 0, 54);
+        g.fill();
+        g.fillColor = new Color(255, 200, 70, 90);
+        g.circle(0, 0, 38);
+        g.fill();
+        g.fillColor = new Color(255, 240, 160, 70);
+        g.circle(0, 0, 22);
+        g.fill();
+        this._edgeHaloN = n;
+        this._edgeHaloG = g;
+        return n;
     }
 
     /**
@@ -1720,7 +1881,12 @@ export class TutorialGuide extends Component {
 
         // Chevron rides just above the dragged icon (points into the drop slot).
         finger.setPosition(clampX(px), clampY(py) + 52, 0);
+        finger.setRotationFromEuler(0, 0, 0);
         finger.setScale(1, 1, 1);
+        const fingerUi = finger.getComponent(UITransform);
+        if (fingerUi) fingerUi.setContentSize(96, 96);
+        this.syncGuideSprite(false);
+        this.syncEdgeHalo(false, 0, 0);
     }
 
     /** 0 = grab on bag, 1 = drop on hotbar. Holds at ends; snaps back after drop. */
@@ -2005,7 +2171,8 @@ export class TutorialGuide extends Component {
         const fg = finger.addComponent(Graphics);
         this.paintFingerFallback(fg);
         this._finger = finger;
-        this.loadQuestArrow(sp, fg);
+        this._fingerSp = sp;
+        this.loadGuideSprites(sp, fg);
 
         // Tip after Finger so the caption always draws above the chevron.
         const tip = new Node('Tip');
@@ -2042,15 +2209,277 @@ export class TutorialGuide extends Component {
         this._tipLab = tipLab;
     }
 
-    private loadQuestArrow(sp: Sprite, fallback: Graphics) {
-        const uuid = QUEST_FRAMES.questArrow;
-        if (!uuid) return;
-        assetManager.loadAny({ uuid }, (err, asset) => {
-            if (err || !asset || !sp.isValid) return;
-            sp.spriteFrame = asset as SpriteFrame;
+    private loadGuideSprites(sp: Sprite, fallback: Graphics) {
+        const clearFallback = () => {
+            if (!fallback.isValid) return;
             fallback.clear();
             fallback.enabled = false;
-        });
+        };
+        const applyIf = (mode: 'arrow' | 'wisp', frame: SpriteFrame) => {
+            if (this._guideMode !== mode || !sp.isValid) return;
+            sp.spriteFrame = frame;
+            clearFallback();
+        };
+        const arrowUuid = QUEST_FRAMES.questArrow;
+        if (arrowUuid) {
+            assetManager.loadAny({ uuid: arrowUuid }, (err, asset) => {
+                if (err || !asset) return;
+                this._arrowFrame = asset as SpriteFrame;
+                applyIf('arrow', this._arrowFrame);
+            });
+        }
+        const wispUuid = QUEST_FRAMES.questWisp;
+        if (wispUuid) {
+            assetManager.loadAny({ uuid: wispUuid }, (err, asset) => {
+                if (err || !asset) return;
+                this._wispFrame = asset as SpriteFrame;
+                applyIf('wisp', this._wispFrame);
+            });
+        }
+    }
+
+    /**
+     * Ground starlight trail: player feet → quest world aim (A*).
+     * Only while the aim is off-screen (`edgeWalk`); on-screen aims keep the yellow arrow.
+     */
+    private syncGroundPath() {
+        // Only when the quest aim is off the playfield — on-screen keeps the yellow arrow.
+        const want =
+            this._idleOn &&
+            !this._open &&
+            this._idleEdgeWalk &&
+            !this._idleUiDock &&
+            !this._idleDragTo &&
+            !this._idleSilent;
+        const goal = this._idlePathWorld ?? this._idleRippleWorld ?? this._stickyPos;
+        const player = this.farm?.player;
+        if (!want || !goal || !player?.isValid) {
+            this.hideGroundPath();
+            return;
+        }
+
+        const now = Date.now();
+        const goalMoved =
+            !this._pathGoal ||
+            Math.hypot(this._pathGoal.x - goal.x, this._pathGoal.y - goal.y) > 18;
+        if (goalMoved || now >= this._pathRepathAt || !this._pathPts.length) {
+            const ctrl = player.getComponent(PlayerController);
+            if (!ctrl) {
+                this.hideGroundPath();
+                return;
+            }
+            // Solids may lag a frame after world rebuild — refresh cheaply.
+            if (!ctrl.pathSolids.length) ctrl.rebuildSolids();
+            const path = ctrl.previewPath(goal.x, goal.y);
+            this._pathPts = this.densifyPath(
+                [{ x: player.position.x, y: player.position.y }, ...path],
+                PATH_DOT_STEP,
+                PATH_DOT_MAX,
+            );
+            this._pathGoal = { x: goal.x, y: goal.y };
+            this._pathRepathAt = now + PATH_REPATH_MS;
+        }
+
+        const root = this.ensurePathRoot();
+        if (!root) return;
+        root.active = true;
+        this.loadPathDotFrames();
+
+        const frames = this._pathDotFrames;
+        const fallback = this._pathDotFrames[0] ?? null;
+        // Slow traveling shimmer along the trail (not a harsh per-dot blink).
+        const t = now * 0.0042;
+        const wave = now * 0.0031;
+        const band = this.playfieldBand();
+        const px = player.position.x;
+        const py = player.position.y;
+        let shown = 0;
+        for (let i = 0; i < this._pathPts.length; i++) {
+            if (shown >= PATH_VISIBLE_MAX) break;
+            const pt = this._pathPts[i]!;
+            // Skip motes under / just ahead of the player's feet.
+            if (Math.hypot(pt.x - px, pt.y - py) < 36) continue;
+            const hole = this.worldPosHole(pt);
+            if (!hole) continue;
+            // Only paint dots inside the playfield (path continues off-screen as walk).
+            if (
+                hole.x < band.x0 + 20 ||
+                hole.x > band.x1 - 20 ||
+                hole.y < band.y0 + 24 ||
+                hole.y > band.y1 - 24
+            ) {
+                continue;
+            }
+            const dot = this.ensurePathDot(shown);
+            if (!dot) break;
+            dot.active = true;
+            // Soft float — tiny bob, no sideways jitter (that looked like dirt flecks).
+            const bob = Math.sin(t + i * 0.55) * 1.4;
+            dot.setPosition(hole.x, hole.y - 4 + bob, 0);
+            const breath = 0.96 + Math.sin(t * 1.1 + i * 0.4) * 0.08;
+            dot.setScale(breath, breath, 1);
+            // Flowing bright crest — keep a high floor so dirt paths still read.
+            const crest = 0.5 + 0.5 * Math.sin(wave * 2.2 - shown * 0.4);
+            const op = dot.getComponent(UIOpacity);
+            if (op) op.opacity = Math.round(210 + crest * 45);
+            const sp = dot.getComponent(Sprite);
+            if (sp && frames.length) {
+                // Soft / spark only — never the dim frame (vanishes on sand).
+                const fi = crest > 0.65 ? 2 : shown % 2 === 0 ? 0 : 3;
+                const frame = frames[fi] ?? fallback;
+                if (frame && sp.spriteFrame !== frame) sp.spriteFrame = frame;
+            }
+            shown++;
+        }
+        for (let i = shown; i < this._pathDots.length; i++) {
+            const n = this._pathDots[i];
+            if (n?.isValid) n.active = false;
+        }
+        if (shown === 0) {
+            // Aim off-screen and no visible segment yet — keep root for next frame.
+            return;
+        }
+    }
+
+    private densifyPath(pts: WorldPos[], step: number, maxDots: number): WorldPos[] {
+        if (pts.length < 2) return pts.slice(0, maxDots);
+        const out: WorldPos[] = [{ x: pts[0]!.x, y: pts[0]!.y }];
+        let carry = 0;
+        for (let i = 1; i < pts.length && out.length < maxDots; i++) {
+            const a = pts[i - 1]!;
+            const b = pts[i]!;
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let len = Math.hypot(dx, dy);
+            if (len < 1e-3) continue;
+            dx /= len;
+            dy /= len;
+            let d = step - carry;
+            while (d < len && out.length < maxDots) {
+                out.push({ x: a.x + dx * d, y: a.y + dy * d });
+                d += step;
+            }
+            carry = len - (d - step);
+            if (carry < 0) carry = 0;
+        }
+        const last = pts[pts.length - 1]!;
+        const tip = out[out.length - 1]!;
+        if (Math.hypot(tip.x - last.x, tip.y - last.y) > step * 0.35 && out.length < maxDots) {
+            out.push({ x: last.x, y: last.y });
+        }
+        return out;
+    }
+
+    private hideGroundPath() {
+        this._pathPts.length = 0;
+        this._pathGoal = null;
+        this._pathRepathAt = 0;
+        const root = this._pathRoot;
+        if (root?.isValid) root.active = false;
+        for (let i = 0; i < this._pathDots.length; i++) {
+            const n = this._pathDots[i];
+            if (n?.isValid) n.active = false;
+        }
+    }
+
+    private ensurePathRoot(): Node | null {
+        const root = this._root;
+        if (!root?.isValid) return null;
+        let n = this._pathRoot;
+        if (n?.isValid && n.parent === root) return n;
+        if (n?.isValid) n.destroy();
+        n = new Node('GuidePath');
+        n.layer = root.layer;
+        n.setParent(root);
+        // Under Finger / Tip / ripple destination; above dim.
+        n.setSiblingIndex(1);
+        n.addComponent(UITransform).setContentSize(10, 10);
+        n.active = false;
+        this._pathRoot = n;
+        this._pathDots = [];
+        return n;
+    }
+
+    private ensurePathDot(index: number): Node | null {
+        const root = this.ensurePathRoot();
+        if (!root) return null;
+        let n = this._pathDots[index];
+        if (n?.isValid && n.parent === root) {
+            this.stylePathDot(n);
+            return n;
+        }
+        n = new Node(`PathDot_${index}`);
+        n.layer = root.layer;
+        n.setParent(root);
+        n.addComponent(UITransform).setContentSize(PATH_DOT_SIZE, PATH_DOT_SIZE);
+        const sp = n.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = false;
+        if (this._pathDotFrames[0]) sp.spriteFrame = this._pathDotFrames[0];
+        n.addComponent(UIOpacity).opacity = 210;
+        this._pathDots[index] = n;
+        this.stylePathDot(n);
+        return n;
+    }
+
+    /** Soft additive mote — bright on grass, no muddy dark fringe. */
+    private stylePathDot(n: Node) {
+        const ui = n.getComponent(UITransform);
+        if (ui) ui.setContentSize(PATH_DOT_SIZE, PATH_DOT_SIZE);
+        const sp = n.getComponent(Sprite);
+        if (!sp) return;
+        sp.srcBlendFactor = gfx.BlendFactor.SRC_ALPHA;
+        sp.dstBlendFactor = gfx.BlendFactor.ONE;
+        sp.color = new Color(255, 246, 210, 255);
+    }
+
+    private loadPathDotFrames() {
+        if (this._pathFramesLoaded) return;
+        this._pathFramesLoaded = true;
+        const keys = [
+            QUEST_FRAMES.questPathDot0,
+            QUEST_FRAMES.questPathDot1,
+            QUEST_FRAMES.questPathDot2,
+            QUEST_FRAMES.questPathDot3,
+            QUEST_FRAMES.questPathDot,
+        ];
+        const frames: SpriteFrame[] = [];
+        let pending = 0;
+        for (let i = 0; i < keys.length; i++) {
+            const uuid = keys[i];
+            if (!uuid) continue;
+            pending++;
+            const slot = i;
+            assetManager.loadAny({ uuid }, (err, asset) => {
+                pending--;
+                if (!err && asset) frames[slot] = asset as SpriteFrame;
+                if (pending <= 0) {
+                    this._pathDotFrames = frames.filter(Boolean);
+                    // Apply first frame to any already-spawned dots.
+                    const first = this._pathDotFrames[0];
+                    if (first) {
+                        for (const n of this._pathDots) {
+                            const sp = n?.getComponent(Sprite);
+                            if (sp && !sp.spriteFrame) sp.spriteFrame = first;
+                        }
+                    }
+                }
+            });
+        }
+        if (pending === 0) this._pathFramesLoaded = false;
+    }
+
+    /**
+     * If a world tap lands on the place-aim ripple, snap walk-to to that feet
+     * goal so click-move and the guide share one destination (no double ring).
+     */
+    snapPlaceAim(wx: number, wy: number, radius = 96): { x: number; y: number } | null {
+        if (!this._idleOn || !this._idleGroundRipple || this._idleUiDock) return null;
+        const aim = this._idleRippleWorld;
+        if (!aim) return null;
+        if ((this._idleArrowDeg ?? 0) !== 0) return null;
+        if (Math.hypot(wx - aim.x, wy - aim.y) > radius) return null;
+        return { x: aim.x, y: aim.y };
     }
 
     /**
@@ -2058,6 +2487,11 @@ export class TutorialGuide extends Component {
      * chevron alone. Edge / UI-dock / drag-demo also skip the ripple.
      */
     private syncGroundRipple() {
+        // Click-move owns destination chrome while auto-walking — never stack rings.
+        if (this.node.getComponent(ClickMoveMarker)?.isActive) {
+            this.hideGroundRipple();
+            return;
+        }
         const want =
             this._idleOn &&
             this._idleGroundRipple &&

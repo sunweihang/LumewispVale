@@ -8,6 +8,7 @@ import {
     UITransform,
 } from 'cc';
 import { FarmSystem } from './FarmSystem';
+import { InputBridge } from './InputBridge';
 import { QuestSystem } from './QuestSystem';
 import {
     TownBoardQuest,
@@ -27,7 +28,17 @@ const { ccclass } = _decorator;
 const PANEL_W = 720;
 const PANEL_H = 980;
 const ROW_H = 96;
-const LIST_TOP_SHOP = PANEL_H * 0.5 - 200;
+/** Header Y (panel-local) — airy top stack so title / gold / tabs aren't crammed. */
+const TITLE_Y = PANEL_H * 0.5 - 72;
+const GOLD_Y = PANEL_H * 0.5 - 132;
+const TAB_Y = PANEL_H * 0.5 - 200;
+const TAB_H = 48;
+/** Top edge of first shop row (panel-local). */
+const LIST_TOP_SHOP = PANEL_H * 0.5 - 280;
+/** Accept / OK button center Y (panel-local). */
+const ACTION_Y = -PANEL_H * 0.35;
+const ACTION_W = 320;
+const ACTION_H = 72;
 
 /**
  * Town shop / board UI — Graphics chrome, gold spend → FarmSystem inventory.
@@ -42,6 +53,10 @@ export class TownShopPanel extends Component {
     private _title: Label | null = null;
     private _goldLab: Label | null = null;
     private _hint: Label | null = null;
+    private _body: Label | null = null;
+    private _bodyCard: Node | null = null;
+    private _actionBtn: Node | null = null;
+    private _actionLab: Label | null = null;
     private _buyTab: Node | null = null;
     private _sellTab: Node | null = null;
     private _buyTabLab: Label | null = null;
@@ -55,14 +70,33 @@ export class TownShopPanel extends Component {
     private _shopSide: 'buy' | 'sell' = 'buy';
     private _infoTitle = '';
     private _infoBody = '';
+    private _prevBlocking = false;
 
     get isOpen() {
         return !!this._root?.active;
     }
 
+    get isBoardOpen() {
+        return this.isOpen && this._mode === 'board';
+    }
+
+    get isShopOpen() {
+        return this.isOpen && this._mode === 'shop';
+    }
+
+    /** Accept / OK chrome — TutorialGuide points here while the board is open. */
+    acceptBtnNode(): Node | null {
+        if (!this.isOpen || !this._actionBtn?.active) return null;
+        return this._actionBtn;
+    }
+
     onLoad() {
         this.build();
         this.close();
+    }
+
+    onDestroy() {
+        if (this.isOpen) this.releaseInputLock();
     }
 
     openShop(shopId: string) {
@@ -101,8 +135,10 @@ export class TownShopPanel extends Component {
     }
 
     close() {
+        const wasOpen = this.isOpen;
         if (this._root) this._root.active = false;
         if (this._dimmer) this._dimmer.active = false;
+        if (wasOpen) this.releaseInputLock();
     }
 
     /** Screen-space tap (UI bottom-left). Returns true if consumed. */
@@ -119,7 +155,7 @@ export class TownShopPanel extends Component {
         }
         if (this._mode === 'shop' && this._shop) {
             // Buy / Sell tabs
-            if (local.y > PANEL_H * 0.5 - 170 && local.y < PANEL_H * 0.5 - 110) {
+            if (local.y > TAB_Y - TAB_H * 0.5 - 6 && local.y < TAB_Y + TAB_H * 0.5 + 6) {
                 if (local.x > -220 && local.x < -20) {
                     playUiClick();
                     this._shopSide = 'buy';
@@ -155,20 +191,24 @@ export class TownShopPanel extends Component {
             }
         }
         if (this._mode === 'board' && this._quest) {
-            if (local.y < -PANEL_H * 0.28 && local.y > -PANEL_H * 0.42 && Math.abs(local.x) < 160) {
+            if (this.hitAction(local.x, local.y)) {
                 playUiClick();
                 this.acceptQuest();
                 return true;
             }
         }
         if (this._mode === 'info') {
-            if (local.y < -PANEL_H * 0.28 && Math.abs(local.x) < 160) {
+            if (this.hitAction(local.x, local.y)) {
                 playUiClick();
                 this.close();
                 return true;
             }
         }
         return true;
+    }
+
+    private hitAction(lx: number, ly: number): boolean {
+        return Math.abs(lx) < ACTION_W * 0.5 && Math.abs(ly - ACTION_Y) < ACTION_H * 0.5 + 8;
     }
 
     private uiToCanvasLocal(uiX: number, uiY: number): { x: number; y: number } {
@@ -179,8 +219,33 @@ export class TownShopPanel extends Component {
     }
 
     private show() {
+        if (!this._root?.active) {
+            this._prevBlocking = InputBridge.uiBlocking;
+            InputBridge.uiBlocking = true;
+            InputBridge.clear();
+        }
         if (this._dimmer) this._dimmer.active = true;
-        if (this._root) this._root.active = true;
+        if (this._root) {
+            this._root.active = true;
+            this._root.setSiblingIndex(this.node.children.length - 1);
+        }
+        if (this._dimmer) this._dimmer.setSiblingIndex(Math.max(0, this.node.children.length - 2));
+    }
+
+    private releaseInputLock() {
+        const rewardOpen = !!(this.node.getComponent('RewardPopup') as { isOpen?: boolean } | null)
+            ?.isOpen;
+        const questOpen = !!(this.node.getComponent('QuestPanel') as { isOpen?: boolean } | null)
+            ?.isOpen;
+        const dlgOpen = !!(this.node.getComponent('DialoguePanel') as { isOpen?: boolean } | null)
+            ?.isOpen;
+        const hud = this.node.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
+        if (rewardOpen || questOpen || dlgOpen || hud?.isModalOpen) {
+            InputBridge.uiBlocking = true;
+        } else {
+            InputBridge.uiBlocking = this._prevBlocking;
+        }
+        InputBridge.clear();
     }
 
     private buy(g: TownGoods) {
@@ -322,10 +387,18 @@ export class TownShopPanel extends Component {
         const tabsOn = this._mode === 'shop' && !!this._shop;
         if (this._buyTab) this._buyTab.active = tabsOn;
         if (this._sellTab) this._sellTab.active = tabsOn;
+        const boardOrInfo = this._mode === 'board' || this._mode === 'info';
+        if (this._bodyCard) this._bodyCard.active = boardOrInfo;
+        if (this._actionBtn) this._actionBtn.active = boardOrInfo;
+        if (this._goldLab) {
+            // Board / info still show purse — reward text references gold.
+            this._goldLab.node.active = this._mode !== 'info';
+        }
         if (this._mode === 'shop' && this._shop) {
             this._title.string = this._shop.title;
             this.paintTab(this._buyTab, this._buyTabLab, this._shopSide === 'buy');
             this.paintTab(this._sellTab, this._sellTabLab, this._shopSide === 'sell');
+            if (this._body) this._body.string = '';
             if (this._shopSide === 'buy') {
                 this._hint.string = '点击商品行购买';
                 this.buildShopRows(this._shop.goods, LIST_TOP_SHOP);
@@ -341,10 +414,76 @@ export class TownShopPanel extends Component {
         } else if (this._mode === 'board' && this._quest) {
             const head = this._board === 'police' ? '警察局任务板' : '邮局急件';
             this._title.string = head;
-            this._hint.string = `${this._quest.title}\n${this._quest.desc}\n报酬 ${this._quest.rewardGold}G\n（点下方接受）`;
+            if (this._body) {
+                this._body.string =
+                    `「${this._quest.title}」\n\n` +
+                    `${this._quest.desc}\n\n` +
+                    `报酬  ${this._quest.rewardGold}G`;
+            }
+            this._hint.string = '接取后立刻结算报酬';
+            this.setActionLabel('接受委托');
+            this.paintAction(true);
+            this.ensureBodyLayout();
+            this.ensureHintLayout();
         } else if (this._mode === 'info') {
             this._title.string = this._infoTitle;
-            this._hint.string = this._infoBody;
+            if (this._body) this._body.string = this._infoBody;
+            this._hint.string = '';
+            this.setActionLabel('知道了');
+            this.paintAction(false);
+            this.ensureBodyLayout();
+            this.ensureHintLayout();
+        }
+    }
+
+    /** Keep wrap width after string updates (Label can shrink the node to ~2 glyphs). */
+    private ensureBodyLayout() {
+        const n = this._body?.node;
+        if (!n?.isValid) return;
+        const ut = n.getComponent(UITransform);
+        if (!ut) return;
+        const w = PANEL_W - 140;
+        const h = 380;
+        if (ut.contentSize.width < w - 1 || ut.contentSize.width > w + 1) {
+            ut.setContentSize(w, Math.max(ut.contentSize.height, h));
+        } else if (ut.contentSize.height < h) {
+            ut.setContentSize(w, h);
+        }
+    }
+
+    private ensureHintLayout() {
+        const n = this._hint?.node;
+        if (!n?.isValid) return;
+        const ut = n.getComponent(UITransform);
+        if (!ut) return;
+        const w = 640;
+        const h = 72;
+        if (ut.contentSize.width < w - 1 || ut.contentSize.width > w + 1) {
+            ut.setContentSize(w, Math.max(ut.contentSize.height, h));
+        } else if (ut.contentSize.height < h) {
+            ut.setContentSize(w, h);
+        }
+    }
+
+    private setActionLabel(s: string) {
+        if (this._actionLab) this._actionLab.string = s;
+    }
+
+    private paintAction(primary: boolean) {
+        const gfx = this._actionBtn?.getComponent(Graphics);
+        if (!gfx) return;
+        gfx.clear();
+        gfx.fillColor = primary ? new Color(196, 163, 90, 255) : new Color(70, 88, 74, 255);
+        gfx.roundRect(-ACTION_W * 0.5, -ACTION_H * 0.5, ACTION_W, ACTION_H, 14);
+        gfx.fill();
+        gfx.strokeColor = new Color(242, 220, 160, 255);
+        gfx.lineWidth = 3;
+        gfx.roundRect(-ACTION_W * 0.5, -ACTION_H * 0.5, ACTION_W, ACTION_H, 14);
+        gfx.stroke();
+        if (this._actionLab) {
+            this._actionLab.color = primary
+                ? new Color(40, 32, 24, 255)
+                : new Color(242, 237, 224, 255);
         }
     }
 
@@ -491,7 +630,7 @@ export class TownShopPanel extends Component {
         const titleN = new Node('Title');
         titleN.layer = root.layer;
         titleN.setParent(root);
-        titleN.setPosition(0, PANEL_H * 0.5 - 56, 0);
+        titleN.setPosition(0, TITLE_Y, 0);
         titleN.addComponent(UITransform).setContentSize(600, 48);
         const title = titleN.addComponent(Label);
         applyUiFont(title);
@@ -503,7 +642,7 @@ export class TownShopPanel extends Component {
         const goldN = new Node('Gold');
         goldN.layer = root.layer;
         goldN.setParent(root);
-        goldN.setPosition(0, PANEL_H * 0.5 - 100, 0);
+        goldN.setPosition(0, GOLD_Y, 0);
         goldN.addComponent(UITransform).setContentSize(400, 36);
         const gold = goldN.addComponent(Label);
         applyUiFont(gold);
@@ -515,8 +654,8 @@ export class TownShopPanel extends Component {
         const buyTab = new Node('BuyTab');
         buyTab.layer = root.layer;
         buyTab.setParent(root);
-        buyTab.setPosition(-120, PANEL_H * 0.5 - 140, 0);
-        buyTab.addComponent(UITransform).setContentSize(180, 48);
+        buyTab.setPosition(-120, TAB_Y, 0);
+        buyTab.addComponent(UITransform).setContentSize(180, TAB_H);
         buyTab.addComponent(Graphics);
         const buyLabN = new Node('Label');
         buyLabN.layer = buyTab.layer;
@@ -534,8 +673,8 @@ export class TownShopPanel extends Component {
         const sellTab = new Node('SellTab');
         sellTab.layer = root.layer;
         sellTab.setParent(root);
-        sellTab.setPosition(120, PANEL_H * 0.5 - 140, 0);
-        sellTab.addComponent(UITransform).setContentSize(180, 48);
+        sellTab.setPosition(120, TAB_Y, 0);
+        sellTab.addComponent(UITransform).setContentSize(180, TAB_H);
         sellTab.addComponent(Graphics);
         const sellLabN = new Node('Label');
         sellLabN.layer = sellTab.layer;
@@ -550,19 +689,76 @@ export class TownShopPanel extends Component {
         this._sellTab = sellTab;
         this._sellTabLab = sellLab;
 
+        // Board / info card — centered body so quest text isn't crammed into the footer.
+        const bodyCard = new Node('BodyCard');
+        bodyCard.layer = root.layer;
+        bodyCard.setParent(root);
+        bodyCard.setPosition(0, 40, 0);
+        bodyCard.addComponent(UITransform).setContentSize(PANEL_W - 100, 420);
+        const bcG = bodyCard.addComponent(Graphics);
+        bcG.fillColor = new Color(46, 58, 50, 240);
+        bcG.roundRect(-(PANEL_W - 100) * 0.5, -210, PANEL_W - 100, 420, 16);
+        bcG.fill();
+        bcG.strokeColor = new Color(196, 163, 90, 180);
+        bcG.lineWidth = 2;
+        bcG.roundRect(-(PANEL_W - 100) * 0.5, -210, PANEL_W - 100, 420, 16);
+        bcG.stroke();
+        this._bodyCard = bodyCard;
+
+        const bodyN = new Node('Body');
+        bodyN.layer = bodyCard.layer;
+        bodyN.setParent(bodyCard);
+        bodyN.setPosition(0, 0, 0);
+        const bodyUt = bodyN.addComponent(UITransform);
+        const body = bodyN.addComponent(Label);
+        applyUiFont(body);
+        body.fontSize = 28;
+        body.lineHeight = 40;
+        // Overflow BEFORE size: Label(NONE) shrinks the node to the empty string,
+        // and RESIZE_HEIGHT would then wrap on that ~2-glyph width.
+        body.overflow = Label.Overflow.RESIZE_HEIGHT;
+        body.enableWrapText = true;
+        body.horizontalAlign = Label.HorizontalAlign.CENTER;
+        body.verticalAlign = Label.VerticalAlign.CENTER;
+        body.color = new Color(242, 237, 224, 255);
+        bodyUt.setContentSize(PANEL_W - 140, 380);
+        this._body = body;
+
         const hintN = new Node('Hint');
         hintN.layer = root.layer;
         hintN.setParent(root);
-        hintN.setPosition(0, -PANEL_H * 0.5 + 120, 0);
-        hintN.addComponent(UITransform).setContentSize(640, 160);
+        hintN.setPosition(0, -PANEL_H * 0.5 + 168, 0);
+        const hintUt = hintN.addComponent(UITransform);
         const hint = hintN.addComponent(Label);
         applyUiFont(hint);
-        hint.fontSize = 24;
-        hint.overflow = Label.Overflow.RESIZE_HEIGHT;
+        hint.fontSize = 22;
+        hint.overflow = Label.Overflow.CLAMP;
+        hint.enableWrapText = true;
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         hint.verticalAlign = Label.VerticalAlign.CENTER;
         hint.color = new Color(200, 195, 180, 255);
+        hintUt.setContentSize(640, 72);
         this._hint = hint;
+
+        const action = new Node('ActionBtn');
+        action.layer = root.layer;
+        action.setParent(root);
+        action.setPosition(0, ACTION_Y, 0);
+        action.addComponent(UITransform).setContentSize(ACTION_W, ACTION_H);
+        action.addComponent(Graphics);
+        const actionLabN = new Node('Label');
+        actionLabN.layer = action.layer;
+        actionLabN.setParent(action);
+        actionLabN.addComponent(UITransform).setContentSize(ACTION_W - 20, ACTION_H - 8);
+        const actionLab = actionLabN.addComponent(Label);
+        applyUiFont(actionLab);
+        actionLab.fontSize = 30;
+        actionLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        actionLab.verticalAlign = Label.VerticalAlign.CENTER;
+        actionLab.color = new Color(40, 32, 24, 255);
+        actionLab.string = '接受委托';
+        this._actionBtn = action;
+        this._actionLab = actionLab;
 
         const closeN = new Node('Close');
         closeN.layer = root.layer;
@@ -573,5 +769,12 @@ export class TownShopPanel extends Component {
         cg.fillColor = new Color(140, 60, 50, 255);
         cg.circle(0, 0, 26);
         cg.fill();
+        cg.strokeColor = new Color(242, 237, 224, 255);
+        cg.lineWidth = 3;
+        cg.moveTo(-10, -10);
+        cg.lineTo(10, 10);
+        cg.moveTo(10, -10);
+        cg.lineTo(-10, 10);
+        cg.stroke();
     }
 }

@@ -510,7 +510,7 @@ export class FishingMinigame extends Component {
         const holdLabN = new Node('HoldLab');
         holdLabN.layer = root.layer;
         holdLabN.setParent(hold);
-        holdLabN.setPosition(0, 8, 0);
+        holdLabN.setPosition(0, 0, 0);
         holdLabN.addComponent(UITransform).setContentSize(180, 48);
         const holdLab = holdLabN.addComponent(Label);
         holdLab.string = '按住抬竿';
@@ -525,22 +525,6 @@ export class FishingMinigame extends Component {
         });
         this._holdLabel = holdLab;
 
-        const holdSubN = new Node('HoldSub');
-        holdSubN.layer = root.layer;
-        holdSubN.setParent(hold);
-        holdSubN.setPosition(0, -28, 0);
-        holdSubN.addComponent(UITransform).setContentSize(200, 32);
-        const holdSub = holdSubN.addComponent(Label);
-        holdSub.string = '松开下落';
-        holdSub.horizontalAlign = Label.HorizontalAlign.CENTER;
-        styleUiLabel(holdSub, {
-            size: 22,
-            color: new Color(220, 235, 190, 255),
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: new Color(24, 32, 14, 220),
-        });
-
         const finger = new Node('FingerHint');
         finger.layer = root.layer;
         finger.setParent(hold);
@@ -554,7 +538,6 @@ export class FishingMinigame extends Component {
             if (!font) return;
             if (bannerN.isValid) applyUiFont(banner);
             if (holdLabN.isValid) applyUiFont(holdLab);
-            if (holdSubN.isValid) applyUiFont(holdSub);
         });
     }
 

@@ -1717,5 +1717,49 @@
     "h": 86,
     "foot_from_bottom": 2,
     "cx_delta": -0.5
+  },
+  "ui-quest-wisp": {
+    "texture": "9742fbd4-15c2-459a-a4ea-379925f3d460",
+    "spriteFrame": "9742fbd4-15c2-459a-a4ea-379925f3d460@f9941"
+  },
+  "ui-quest-wisp-0": {
+    "texture": "e0d96bc4-6bfa-4602-8a24-250b83d53fe9",
+    "spriteFrame": "e0d96bc4-6bfa-4602-8a24-250b83d53fe9@f9941"
+  },
+  "ui-quest-wisp-1": {
+    "texture": "63126b83-c8e1-434c-9331-b99b8b612396",
+    "spriteFrame": "63126b83-c8e1-434c-9331-b99b8b612396@f9941"
+  },
+  "ui-quest-wisp-2": {
+    "texture": "dea538d9-2bca-441e-b2c8-9b009141c681",
+    "spriteFrame": "dea538d9-2bca-441e-b2c8-9b009141c681@f9941"
+  },
+  "ui-quest-wisp-3": {
+    "texture": "4e2d8a7e-5917-427b-b8d4-6bb9cc235291",
+    "spriteFrame": "4e2d8a7e-5917-427b-b8d4-6bb9cc235291@f9941"
+  },
+  "ui-quest-wisp-trail": {
+    "texture": "4fbc2b65-0408-44c7-b78e-0230073c476a",
+    "spriteFrame": "4fbc2b65-0408-44c7-b78e-0230073c476a@f9941"
+  },
+  "ui-quest-path-dot": {
+    "texture": "af8bfa7c-336a-411d-b30a-b67f210b3b86",
+    "spriteFrame": "af8bfa7c-336a-411d-b30a-b67f210b3b86@f9941"
+  },
+  "ui-quest-path-dot-0": {
+    "texture": "3a75d111-d874-414e-bbc2-d163f5c54e4d",
+    "spriteFrame": "3a75d111-d874-414e-bbc2-d163f5c54e4d@f9941"
+  },
+  "ui-quest-path-dot-1": {
+    "texture": "521a15cb-57d9-4d21-ae37-9ddb418e8fc4",
+    "spriteFrame": "521a15cb-57d9-4d21-ae37-9ddb418e8fc4@f9941"
+  },
+  "ui-quest-path-dot-2": {
+    "texture": "923752f1-b353-4670-9273-8046753f02b4",
+    "spriteFrame": "923752f1-b353-4670-9273-8046753f02b4@f9941"
+  },
+  "ui-quest-path-dot-3": {
+    "texture": "49f66278-703f-47a4-bb05-aeab17951511",
+    "spriteFrame": "49f66278-703f-47a4-bb05-aeab17951511@f9941"
   }
 }

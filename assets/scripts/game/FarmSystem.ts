@@ -21,6 +21,7 @@ import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
 import { ActionAnim, PlayerAnimator } from './PlayerAnimator';
 import { footSolidFor } from './GridPath';
+import { ClickMoveMarker } from './ClickMoveMarker';
 import { PlayerController } from './PlayerController';
 import { TOOL_FRAMES } from './ToolFrames';
 import { playFarmGather, playFarmTool } from './UiAudio';
@@ -365,35 +366,36 @@ export class FarmSystem extends Component {
     /**
      * Tap a screen point (UI coords, origin bottom-left) → walk over, play action, then apply.
      * Tap must land on the plot or sprite. Nature sprites win over the plot grid underfoot.
+     * @returns true when the tap was consumed (job / tip / modal); false = empty ground.
      */
-    tryActAtUi(uiX: number, uiY: number) {
-        if (!this._ready || !this.player || !this.world) return;
-        if (this.node.getComponent(FishingMinigame)?.isOpen) return;
+    tryActAtUi(uiX: number, uiY: number): boolean {
+        if (!this._ready || !this.player || !this.world) return true;
+        if (this.node.getComponent(FishingMinigame)?.isOpen) return true;
         const worldPt = this.uiToWorld(uiX, uiY);
-        if (!worldPt) return;
+        if (!worldPt) return true;
         // Grow-boost ad chip wins over plot / nature under the same tap.
         const adKey = this.hitGrowAdKey(worldPt.x, worldPt.y);
         if (adKey) {
-            if (this.rejectTutorialAct('grow')) return;
+            if (this.rejectTutorialAct('grow')) return true;
             this.requestGrowBoost(adKey);
-            return;
+            return true;
         }
         const chest = this.findDecorHit(worldPt.x, worldPt.y, CHEST_NAME_RE);
         if (chest) {
-            if (this.rejectTutorialAct('chest')) return;
+            if (this.rejectTutorialAct('chest')) return true;
             this.queueChestJob(chest.node);
-            return;
+            return true;
         }
         const craft = this.findDecorHit(worldPt.x, worldPt.y, CRAFT_NAME_RE);
         if (craft) {
-            if (this.rejectTutorialAct('craft')) return;
+            if (this.rejectTutorialAct('craft')) return true;
             this.queueCraftJob(craft.node);
-            return;
+            return true;
         }
         // Tree / rock / weed first — canopy often overlaps a farm tile.
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
-            if (this.rejectTutorialAct('nature')) return;
+            if (this.rejectTutorialAct('nature')) return true;
             const ok = this.toolMatchesNature(nature.act);
             console.log(
                 `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
@@ -404,30 +406,31 @@ export class FarmSystem extends Component {
                 const tip = this.wrongToolTipFor(nature.act);
                 console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
                 this.floatTip(tip);
-                return;
+                return true;
             }
             this.queueNatureJob(nature);
-            return;
+            return true;
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
         if (fish) {
-            if (this.rejectTutorialAct('fish')) return;
+            if (this.rejectTutorialAct('fish')) return true;
             console.log('[FarmTap] → fish stand', fish);
             this.tryFishAt(fish);
-            return;
+            return true;
         }
         const key = `${Math.round(worldPt.x / TILE)},${Math.round(worldPt.y / TILE)}`;
         const plot = this._plots.get(key);
         if (plot) {
-            if (this.rejectTutorialAct('plot')) return;
+            if (this.rejectTutorialAct('plot')) return true;
             console.log(`[FarmTap] → plot ${key} phase=${plot.phase}`);
             this.tryPlotWithTool(key, plot);
-            return;
+            return true;
         }
         console.log(
             `[FarmTap] MISS ui=(${uiX.toFixed(0)},${uiY.toFixed(0)}) ` +
                 `world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)}) tool=${this.tool}`,
         );
+        return false;
     }
 
     /**
@@ -460,30 +463,30 @@ export class FarmSystem extends Component {
         switch (action) {
             case GotoAction.HintMeteor:
             case GotoAction.HintTownGate:
-                return '跟着箭头往右走，点东侧路牌';
+                return '跟着星光往右走，点东侧路牌';
             case GotoAction.HintMayor:
-                return '跟着箭头前往镇长府进屋';
+                return '跟着星光前往镇长府进屋';
             case GotoAction.SelectRod:
             case GotoAction.HintFish:
                 if (kind === 'fish') return null;
-                return '先跟着箭头去钓鱼';
+                return '先跟着星光去钓鱼';
             case GotoAction.SelectHoe:
                 if (kind === 'plot') return null;
-                return '先跟着箭头开垦田地';
+                return '先跟着星光开垦田地';
             case GotoAction.SelectSeeds:
                 if (kind === 'plot') return null;
-                return '先跟着箭头播种';
+                return '先跟着星光播种';
             case GotoAction.SelectCan:
                 if (kind === 'plot') return null;
-                return '先跟着箭头浇水';
+                return '先跟着星光浇水';
             case GotoAction.SelectHand:
                 // Item boost on the plot — not the world ad chip.
                 if (kind === 'plot') return null;
                 if (kind === 'grow') return '请使用催熟剂催熟作物';
-                return '先跟着箭头催熟并收获作物';
+                return '先跟着星光催熟并收获作物';
             case GotoAction.HintGrass:
                 if (kind === 'nature') return null;
-                return '先跟着箭头拔除杂草';
+                return '先跟着星光拔除杂草';
             case GotoAction.HintCraft:
             case GotoAction.OpenCraft:
                 if (kind === 'craft') return null;
@@ -492,7 +495,7 @@ export class FarmSystem extends Component {
                 return '先打开背包查看物品';
             case GotoAction.HintFarm:
                 if (kind === 'plot') return null;
-                return '先跟着箭头操作农田';
+                return '先跟着星光操作农田';
             default:
                 return null;
         }
@@ -751,6 +754,7 @@ export class FarmSystem extends Component {
                 `stand=(${walkX.toFixed(1)},${walkY.toFixed(1)}) arrive=${walkArrive} ` +
                 `kind=${job.kind} soft=${softNature} distNow=${readyNow.toFixed(1)}`,
         );
+        this.node.getComponent(ClickMoveMarker)?.hide();
         ctrl.walkTo(
             walkX,
             walkY,

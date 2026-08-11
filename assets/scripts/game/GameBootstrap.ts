@@ -17,6 +17,7 @@ import {
     view,
 } from 'cc';
 import { CameraFollow } from './CameraFollow';
+import { ClickMoveMarker } from './ClickMoveMarker';
 import { loadConfigTables } from './ConfigService';
 import { applyCraftTables } from './CraftRecipes';
 import { FARMER_FRAMES } from './FarmerFrames';
@@ -177,6 +178,7 @@ export class GameBootstrap extends Component {
         else if (isMayorHouse) MayorHouseWorldLayout.spawnNpcs(world);
         else if (!isMine) FarmWorldLayout.spawnNpcs(world);
         const stick = this.spawnTouchControls(canvas);
+        const clickMove = ClickMoveMarker.mount(canvas);
 
         let follow = canvas.getComponent(CameraFollow);
         if (!follow) follow = canvas.addComponent(CameraFollow);
@@ -309,6 +311,7 @@ export class GameBootstrap extends Component {
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
+                this.clearAutoWalk(clickMove, player, farm);
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
@@ -335,11 +338,12 @@ export class GameBootstrap extends Component {
                         return;
                     }
                 }
-                hud!.handleTap(x, y);
+                this.finishWorldTap(hud!, clickMove, player, world, farm, x, y, worldPt);
             };
             stick.onDragStart = () => {
                 guide.noteActivity();
                 farm!.cancelPending();
+                clickMove.cancel();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
@@ -399,6 +403,7 @@ export class GameBootstrap extends Component {
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
+                this.clearAutoWalk(clickMove, player, farm);
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     const hit = MineWorldLayout.findInteract(world, worldPt.x, worldPt.y);
@@ -418,11 +423,12 @@ export class GameBootstrap extends Component {
                         return;
                     }
                 }
-                hud!.handleTap(x, y);
+                this.finishWorldTap(hud!, clickMove, player, world, farm, x, y, worldPt);
             };
             stick.onDragStart = () => {
                 guide.noteActivity();
                 farm!.cancelPending();
+                clickMove.cancel();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
@@ -480,6 +486,7 @@ export class GameBootstrap extends Component {
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
+                this.clearAutoWalk(clickMove, player, farm);
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     // Prefer npc_* actors when the tap lands near them.
@@ -523,11 +530,14 @@ export class GameBootstrap extends Component {
                                 return;
                             }
                             if (hit.dest === 'mayorHouse') {
-                                travelTo('mayorHouse', {
-                                    farm,
-                                    quests,
-                                    spawnX: MayorHouseWorldLayout.PLAYER_SPAWN.x,
-                                    spawnY: MayorHouseWorldLayout.PLAYER_SPAWN.y,
+                                // Walk to the door first — far taps must not warp indoors.
+                                story.approachMayorHouseThen(() => {
+                                    travelTo('mayorHouse', {
+                                        farm,
+                                        quests,
+                                        spawnX: MayorHouseWorldLayout.PLAYER_SPAWN.x,
+                                        spawnY: MayorHouseWorldLayout.PLAYER_SPAWN.y,
+                                    });
                                 });
                                 return;
                             }
@@ -551,10 +561,11 @@ export class GameBootstrap extends Component {
                         return;
                     }
                 }
-                hud!.handleTap(x, y);
+                this.finishWorldTap(hud!, clickMove, player, world, farm, x, y, worldPt);
             };
             stick.onDragStart = () => {
                 guide.noteActivity();
+                clickMove.cancel();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
@@ -636,6 +647,7 @@ export class GameBootstrap extends Component {
                 if (gm.handleTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
+                this.clearAutoWalk(clickMove, player, farm);
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     const npcHit = FarmWorldLayout.findNpc(world, worldPt.x, worldPt.y);
@@ -656,7 +668,7 @@ export class GameBootstrap extends Component {
                     }
                     if (story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;
                 }
-                hud!.handleTap(x, y);
+                this.finishWorldTap(hud!, clickMove, player, world, farm, x, y, worldPt);
             };
             const infoReady = this.mountInfoBoard(canvas, farm, (info) => {
                 infoBoard = info;
@@ -667,6 +679,7 @@ export class GameBootstrap extends Component {
             stick.onDragStart = () => {
                 guide.noteActivity();
                 farm!.cancelPending();
+                clickMove.cancel();
                 player.getComponent(PlayerController)?.onManualMoveStart();
             };
 
@@ -1146,6 +1159,34 @@ export class GameBootstrap extends Component {
         g.fillColor = new Color(58, 118, 52, 255);
         g.rect(-w * 0.5, -h * 0.5, w, h);
         g.fill();
+    }
+
+    /** Drop click-move chrome + any in-flight auto-walk before a new world tap. */
+    private clearAutoWalk(clickMove: ClickMoveMarker, player: Node, farm: FarmSystem | null) {
+        clickMove.cancel();
+        farm?.cancelPending();
+        player.getComponent(PlayerController)?.cancelWalk(false);
+    }
+
+    /**
+     * Hotbar / bag / farm job first; empty ground → click-to-move with marker.
+     */
+    private finishWorldTap(
+        hud: FarmHUD,
+        clickMove: ClickMoveMarker,
+        player: Node,
+        world: Node,
+        farm: FarmSystem,
+        uiX: number,
+        uiY: number,
+        worldPt: { x: number; y: number } | null,
+    ) {
+        if (hud.handleTap(uiX, uiY)) return;
+        if (!worldPt) return;
+        // Taps on the quest place-aim ring walk to that feet goal (one marker).
+        const snapped =
+            this.node.getComponent(TutorialGuide)?.snapPlaceAim(worldPt.x, worldPt.y) ?? worldPt;
+        clickMove.go(player, world, farm, snapped.x, snapped.y);
     }
 
     /** UI coords (origin bottom-left) → world-local point under CameraFollow. */

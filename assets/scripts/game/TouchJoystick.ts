@@ -140,6 +140,7 @@ export class TouchJoystick extends Component {
             const quest = canvas.getComponent('QuestPanel') as { isOpen?: boolean } | null;
             const hud = canvas.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
             const intro = canvas.getComponent('StoryIntroPanel') as { isOpen?: boolean } | null;
+            const shop = canvas.getComponent('TownShopPanel') as { isOpen?: boolean } | null;
             // Forced spotlight owns uiBlocking — must not clear or the player walks
             // and the hollow drifts off the weed.
             const guide = canvas.getComponent('TutorialGuide') as { isOpen?: boolean } | null;
@@ -149,6 +150,7 @@ export class TouchJoystick extends Component {
                 !quest?.isOpen &&
                 !hud?.isModalOpen &&
                 !intro?.isOpen &&
+                !shop?.isOpen &&
                 !guide?.isOpen
             ) {
                 InputBridge.uiBlocking = false;

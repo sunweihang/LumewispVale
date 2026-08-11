@@ -9,6 +9,17 @@ export const QUEST_FRAMES = {
     btnPrimary: '6f6c303c-496d-4ac5-9afb-ac4842fdb889@f9941',
     questBtn: 'e639ab24-7c1a-46ba-93a4-688ca1c1ab08@f9941',
     questArrow: '74358256-5fdf-4193-a127-53998d13c454@f9941',
+    questWisp: '9742fbd4-15c2-459a-a4ea-379925f3d460@f9941',
+    questWisp0: 'e0d96bc4-6bfa-4602-8a24-250b83d53fe9@f9941',
+    questWisp1: '63126b83-c8e1-434c-9331-b99b8b612396@f9941',
+    questWisp2: 'dea538d9-2bca-441e-b2c8-9b009141c681@f9941',
+    questWisp3: '4e2d8a7e-5917-427b-b8d4-6bb9cc235291@f9941',
+    questWispTrail: '4fbc2b65-0408-44c7-b78e-0230073c476a@f9941',
+    questPathDot: 'af8bfa7c-336a-411d-b30a-b67f210b3b86@f9941',
+    questPathDot0: '3a75d111-d874-414e-bbc2-d163f5c54e4d@f9941',
+    questPathDot1: '521a15cb-57d9-4d21-ae37-9ddb418e8fc4@f9941',
+    questPathDot2: '923752f1-b353-4670-9273-8046753f02b4@f9941',
+    questPathDot3: '49f66278-703f-47a4-bb05-aeab17951511@f9941',
 } as const;
 
 /** Prefab asset uuid — layout source of truth. */

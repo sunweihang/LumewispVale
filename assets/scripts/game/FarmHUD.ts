@@ -338,44 +338,47 @@ export class FarmHUD extends Component {
         this.tickCraftJobs(dt);
     }
 
-    /** Wired from TouchJoystick: short tap (not drag). */
-    handleTap(uiX: number, uiY: number) {
-        if (this.node.getComponent(FishingMinigame)?.isOpen) return;
+    /**
+     * Wired from TouchJoystick: short tap (not drag).
+     * @returns true when UI / farm action consumed the tap; false = empty ground.
+     */
+    handleTap(uiX: number, uiY: number): boolean {
+        if (this.node.getComponent(FishingMinigame)?.isOpen) return true;
         if (this._suppressTap) {
             this._suppressTap = false;
-            return;
+            return true;
         }
-        if (this._drag?.active) return;
+        if (this._drag?.active) return true;
         if (this.hitTip(uiX, uiY)) {
             this.hideTip();
-            return;
+            return true;
         }
         if (this._chestOpen) {
             if (this.hitChestClose(uiX, uiY) || this.hitTakeAll(uiX, uiY)) {
                 playUiClick();
-                return;
+                return true;
             }
             if (this.hitChestSlot(uiX, uiY, true) >= 0) {
                 playUiClick();
-                return;
+                return true;
             }
             if (this.hitChestBagSlot(uiX, uiY, true) >= 0) {
                 playUiClick();
-                return;
+                return true;
             }
             if (this.hitHotbar(uiX, uiY, true)) {
                 playUiClick();
-                return;
+                return true;
             }
-            if (this.hitChestPanel(uiX, uiY)) return;
+            if (this.hitChestPanel(uiX, uiY)) return true;
             playUiClick();
             this.setChestOpen(false);
-            return;
+            return true;
         }
         if (this._craftOpen) {
             if (this._tutorialCraftLock) {
                 // First-seed guide: swallow all taps while the 5s craft runs.
-                return;
+                return true;
             }
             if (
                 this.hitCraftClose(uiX, uiY) ||
@@ -383,50 +386,51 @@ export class FarmHUD extends Component {
                 this.hitCraftRow(uiX, uiY)
             ) {
                 playUiClick();
-                return;
+                return true;
             }
             if (this.hitHotbar(uiX, uiY, true)) {
                 playUiClick();
-                return;
+                return true;
             }
-            if (this.hitCraftPanel(uiX, uiY)) return;
+            if (this.hitCraftPanel(uiX, uiY)) return true;
             // Outside tap closes — unless tutorial still needs an explicit close.
-            if (this._tutorialCraftAwaitClose) return;
+            if (this._tutorialCraftAwaitClose) return true;
             playUiClick();
             this.setCraftOpen(false);
-            return;
+            return true;
         }
         if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
             playUiClick();
             this.setBagOpen(false);
-            return;
+            return true;
         }
         if (!this._bagOpen && this.hitBagBtn(uiX, uiY)) {
             playUiClick();
             this.toggleBag();
-            return;
+            return true;
         }
         if (this._bagOpen) {
             if (this.hitHotbar(uiX, uiY, true)) {
                 playUiClick();
-                return;
+                return true;
             }
             if (this.hitInvSlot(uiX, uiY, true) >= 0) {
                 playUiClick();
-                return;
+                return true;
             }
-            if (this.hitPanel(uiX, uiY)) return;
+            if (this.hitPanel(uiX, uiY)) return true;
             // Dimmer / outside → close
             playUiClick();
             this.setBagOpen(false);
-            return;
+            return true;
         }
         if (this.hitHotbar(uiX, uiY, false)) {
             playUiClick();
-            return;
+            return true;
         }
         this.hideTip();
-        this.farm?.tryActAtUi(uiX, uiY);
+        // true = farm job / tip consumed the tap; false = empty ground (click-to-move).
+        return !!this.farm?.tryActAtUi(uiX, uiY);
     }
 
     private initBackpack() {

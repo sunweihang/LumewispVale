@@ -378,8 +378,10 @@ export class DialoguePanel extends Component {
             ?.isOpen;
         const questOpen = !!(this.node.getComponent('QuestPanel') as { isOpen?: boolean } | null)
             ?.isOpen;
+        const shopOpen = !!(this.node.getComponent('TownShopPanel') as { isOpen?: boolean } | null)
+            ?.isOpen;
         const hud = this.node.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
-        return rewardOpen || questOpen || !!hud?.isModalOpen;
+        return rewardOpen || questOpen || shopOpen || !!hud?.isModalOpen;
     }
 
     private anyMoveLockOwner(): boolean {

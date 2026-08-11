@@ -91,8 +91,71 @@ export class PlayerController extends Component {
         return this._walkingTo;
     }
 
+    /** Last / current auto-walk goal (world local). */
+    get walkGoalX(): number {
+        return this._goalX;
+    }
+
+    get walkGoalY(): number {
+        return this._goalY;
+    }
+
     get locked(): boolean {
         return this._locked;
+    }
+
+    /** Collision solids for guide path preview (read-only snapshot). */
+    get pathSolids(): readonly PathSolid[] {
+        return this._solids;
+    }
+
+    getMapBounds() {
+        return {
+            minX: this._minX,
+            maxX: this._maxX,
+            minY: this._minY,
+            maxY: this._maxY,
+        };
+    }
+
+    /**
+     * A* walk path preview without starting auto-walk.
+     * Same cell / body / bounds rules as `walkTo` → `buildPath`.
+     */
+    previewPath(gx: number, gy: number): { x: number; y: number }[] {
+        const p = this.node.position;
+        const safe = this.ensureFreeGoal(gx, gy, p.x, p.y);
+        const hw = this.bodyWidth * 0.5;
+        const hh = this.bodyHeight * 0.5;
+        const solids = this._solids;
+        if (
+            lineClear(
+                p.x,
+                p.y,
+                safe.x,
+                safe.y,
+                solids,
+                hw,
+                hh,
+                this._minX,
+                this._maxX,
+                this._minY,
+                this._maxY,
+            )
+        ) {
+            return [{ x: safe.x, y: safe.y }];
+        }
+        return findPath(p.x, p.y, safe.x, safe.y, solids, {
+            cell: 32,
+            bodyHw: hw,
+            bodyHh: hh,
+            minX: this._minX,
+            maxX: this._maxX,
+            minY: this._minY,
+            maxY: this._maxY,
+            maxNodes: 5000,
+            goalRadius: this.arriveRadius,
+        });
     }
 
     setLocked(locked: boolean) {

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""AI quest guide arrow → ui-quest-arrow.png (+ sync quest-marker).
+"""AI click-cue arrow → ui-quest-arrow.png.
+
+Walk-direction cues use the wisp (process_quest_wisp_ai.py); this arrow is for
+click prompts (TutorialGuide UI dock + ClickMoveMarker). Does not touch quest-marker.
 
   C:/Users/elex/scoop/apps/python310/current/python.exe tools/ui/process_quest_arrow_ai.py
 
@@ -24,19 +27,13 @@ from process_bag_ai import (
 ROOT = Path(__file__).resolve().parents[2]
 SRC = Path(__file__).resolve().parent / "ai-source" / "quest-arrow-ai-ref.png"
 OUT = ROOT / "assets/textures/ui/ui-quest-arrow.png"
-MARKER = ROOT / "assets/textures/ui/quest-marker.png"
 UUID_MAP = Path(__file__).resolve().parent / "uuid-map.json"
 QUEST_FRAMES = Path(__file__).resolve().parent / "quest-frames.json"
-FARMER_FRAMES = Path(__file__).resolve().parent / "farmer-frames.json"
 OUT_TS = ROOT / "assets/scripts/game/QuestFrames.ts"
-OUT_FARMER_TS = ROOT / "assets/scripts/game/FarmerFrames.ts"
 
 SIZE = 96
 LOGICAL = 48
 COLORS = 36
-
-MARKER_SIZE = 48
-MARKER_LOGICAL = 24
 
 
 def patch_quest_frames(sf):
@@ -81,24 +78,6 @@ def patch_quest_frames(sf):
     OUT_TS.write_text("\n".join(lines), encoding="utf-8")
 
 
-def patch_farmer_quest_marker(sf):
-    if not FARMER_FRAMES.exists():
-        return
-    data = json.loads(FARMER_FRAMES.read_text(encoding="utf-8"))
-    data["questMarker"] = sf
-    FARMER_FRAMES.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    if OUT_FARMER_TS.exists():
-        text = OUT_FARMER_TS.read_text(encoding="utf-8")
-        old = None
-        for line in text.splitlines():
-            if "questMarker:" in line:
-                old = line
-                break
-        if old:
-            new = "    questMarker: '{}',".format(sf)
-            OUT_FARMER_TS.write_text(text.replace(old, new), encoding="utf-8")
-
-
 def main():
     if not SRC.exists():
         raise SystemExit("missing {}".format(SRC))
@@ -122,27 +101,11 @@ def main():
     )
     sf = "{}@{}".format(image_uuid, SF_SUFFIX)
     umap["ui-quest-arrow"] = {"texture": image_uuid, "spriteFrame": sf}
-
-    # Keep world quest-marker in sync (smaller, same art; preserve UUID).
-    marker = pixelize(im, MARKER_LOGICAL, MARKER_SIZE, COLORS)
-    marker.save(MARKER)
-    marker_uuid = write_meta(
-        MARKER,
-        umap.get("quest-marker", {}).get("texture")
-        or "bf6dc369-932d-4921-bb95-ab64ac4a5362",
-        MARKER_SIZE,
-        MARKER_SIZE,
-        "quest-marker",
-    )
-    marker_sf = "{}@{}".format(marker_uuid, SF_SUFFIX)
-    umap["quest-marker"] = {"texture": marker_uuid, "spriteFrame": marker_sf}
     UUID_MAP.write_text(json.dumps(umap, indent=2) + "\n", encoding="utf-8")
 
     patch_quest_frames(sf)
-    patch_farmer_quest_marker(marker_sf)
 
     print("OK", OUT.relative_to(ROOT), sf)
-    print("OK", MARKER.relative_to(ROOT), marker_sf)
 
 
 if __name__ == "__main__":

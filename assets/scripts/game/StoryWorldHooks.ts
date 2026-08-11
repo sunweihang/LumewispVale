@@ -9,6 +9,7 @@ import {
     UITransform,
     assetManager,
 } from 'cc';
+import { ClickMoveMarker } from './ClickMoveMarker';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
 import { GameState, StoryMapId } from './GameState';
@@ -30,6 +31,8 @@ const PORTAL_TAP_RADIUS = 90;
 const PORTAL_USE_RANGE = 72;
 /** Player must be this close before NPC dialogue fires — farther taps walk over first. */
 const NPC_TALK_RANGE = 72;
+/** Town: stand at mayor door feet before entering MayorHouse.scene. */
+const MAYOR_DOOR_USE_RANGE = 80;
 
 /**
  * Story props + proximity / portal hooks for the mainline.
@@ -115,6 +118,7 @@ export class StoryWorldHooks extends Component {
         const stand = ctrl.freeStandNear(prefer.x, prefer.y, pp.x, pp.y, 48);
         const gen = (this._npcWalkGen += 1);
         const npcRef = npc;
+        this.node.getComponent(ClickMoveMarker)?.hide();
         ctrl.walkTo(
             stand.x,
             stand.y,
@@ -160,6 +164,7 @@ export class StoryWorldHooks extends Component {
         const standX = p.x - 40;
         const standY = p.y;
         const gen = (this._portalWalkGen += 1);
+        this.node.getComponent(ClickMoveMarker)?.hide();
         ctrl.walkTo(
             standX,
             standY,
@@ -181,6 +186,61 @@ export class StoryWorldHooks extends Component {
     tryTownFarmSignTap(): boolean {
         if (!this.isTown) return false;
         this.useFarmPortal();
+        return true;
+    }
+
+    /**
+     * Town: enter mayor house — walk to the door first (same as farm portal),
+     * never instant-travel from across the square.
+     */
+    approachMayorHouseThen(onArrive: () => void): boolean {
+        if (!this.isTown || !this.world || !this.player?.isValid) {
+            onArrive();
+            return true;
+        }
+        const door =
+            this.world.getChildByName('bld_mayor') ?? this.world.getChildByName('bld_mayor_yard');
+        if (!door?.isValid) {
+            onArrive();
+            return true;
+        }
+        // Door feet — keep in sync with TutorialGuide.resolveMayorGuide.
+        const standX = door.position.x;
+        const standY = door.position.y + 20;
+        const pp = this.player.position;
+        if (Math.hypot(pp.x - standX, pp.y - standY) <= MAYOR_DOOR_USE_RANGE) {
+            onArrive();
+            return true;
+        }
+
+        this.farm?.cancelPending();
+        const ctrl = this.player.getComponent(PlayerController);
+        if (!ctrl) {
+            onArrive();
+            return true;
+        }
+        const gen = (this._portalWalkGen += 1);
+        const marker = this.node.getComponent(ClickMoveMarker);
+        ctrl.walkTo(
+            standX,
+            standY,
+            () => {
+                if (!this.isValid || gen !== this._portalWalkGen) return;
+                marker?.hide();
+                onArrive();
+            },
+            () => {
+                marker?.hide();
+            },
+            18,
+            null,
+            { x: standX, y: standY, dist: MAYOR_DOOR_USE_RANGE },
+        );
+        // Already-in-range / locked paths fire onArrive inside walkTo; only show
+        // chrome while a real auto-walk is in flight (never warp on abort).
+        if (ctrl.isAutoWalking && this.world.isValid) {
+            marker?.show(this.world, ctrl.walkGoalX, ctrl.walkGoalY);
+        }
         return true;
     }
 
