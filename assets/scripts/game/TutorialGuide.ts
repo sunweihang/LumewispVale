@@ -205,7 +205,7 @@ export class TutorialGuide extends Component {
     private _trailN: Node | null = null;
     private _trailG: Graphics | null = null;
     private _rootOp: UIOpacity | null = null;
-    /** Canvas-space ground ripple under place aims (doors / gates / pier). */
+    /** World-space ground ripple under place aims (doors / gates / pier). */
     private _rippleN: Node | null = null;
     private _rippleOp: UIOpacity | null = null;
     private _rippleSp: Sprite | null = null;
@@ -2599,7 +2599,7 @@ export class TutorialGuide extends Component {
         n = new Node('GuidePath');
         n.layer = root.layer;
         n.setParent(root);
-        // Under Finger / Tip / ripple destination; above dim.
+        // Under Finger / Tip; above dim. Ground ripple lives in World.
         n.setSiblingIndex(1);
         n.addComponent(UITransform).setContentSize(10, 10);
         n.active = false;
@@ -2724,6 +2724,7 @@ export class TutorialGuide extends Component {
     /**
      * Place aims only (door / gate / pier / sign). NPCs, props, crops, weeds —
      * chevron alone. Edge / UI-dock / drag-demo also skip the ripple.
+     * Lives in World ground band so the ring never paints over the player.
      */
     private syncGroundRipple() {
         // Click-move owns destination chrome while auto-walking — never stack rings.
@@ -2731,23 +2732,27 @@ export class TutorialGuide extends Component {
             this.hideGroundRipple();
             return;
         }
+        const aim = this._idleRippleWorld;
         const want =
             this._idleOn &&
             this._idleGroundRipple &&
             !this._idleUiDock &&
             !this._idleDragTo &&
-            (this._idleArrowDeg ?? 0) === 0;
-        if (!want) {
+            (this._idleArrowDeg ?? 0) === 0 &&
+            !!aim;
+        if (!want || !aim) {
             this.hideGroundRipple();
             return;
         }
-        const hole = (this._idleRippleWorld
-            ? this.worldPosHole(this._idleRippleWorld)
-            : null) ?? this._hole;
-        const n = this.ensureGroundRipple();
+        const world = this.farm?.world;
+        if (!world?.isValid) {
+            this.hideGroundRipple();
+            return;
+        }
+        const n = this.ensureGroundRipple(world);
         if (!n) return;
         n.active = true;
-        n.setPosition(hole.x, hole.y, 0);
+        n.setPosition(aim.x, aim.y, 0);
         this.pulseGroundRipple();
     }
 
@@ -2762,19 +2767,16 @@ export class TutorialGuide extends Component {
         if (this._rippleOp) this._rippleOp.opacity = 0;
     }
 
-    private ensureGroundRipple(): Node | null {
-        const root = this._root;
-        if (!root?.isValid) return null;
+    private ensureGroundRipple(world: Node): Node | null {
         let n = this._rippleN;
-        if (n?.isValid && n.parent === root) return n;
+        if (n?.isValid && n.parent === world) return n;
         if (n?.isValid) n.destroy();
         this._ripplePulsing = false;
 
-        n = new Node('GuideGroundRipple');
-        n.layer = root.layer;
-        // Under Finger / Tip so the chevron stays readable.
-        n.setParent(root);
-        n.setSiblingIndex(0);
+        // World child named for WorldYSort ground litter — under player / porch.
+        n = new Node('guide_ground_ripple');
+        n.layer = world.layer;
+        n.setParent(world);
         n.active = false;
         const ui = n.addComponent(UITransform);
         ui.setContentSize(160, 160);
