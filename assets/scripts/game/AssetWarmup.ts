@@ -51,7 +51,8 @@ function collectCriticalSpriteUuids(): string[] {
     flattenUuids(QUEST_FRAMES, set);
     flattenUuids(INFO_BOARD_FRAMES, set);
     for (const u of STORY_UUIDS) set.add(u);
-    return [...set];
+    // Array.from — web-mobile downlevel turns [...set] into [].concat(set).
+    return Array.from(set);
 }
 
 /** Tools / town NPCs / fishing — warm after the gate so first paint stays light. */
@@ -61,9 +62,11 @@ function collectDeferredSpriteUuids(): string[] {
     flattenUuids(NPC_FRAMES.mayor, set);
     flattenUuids(NPC_FRAMES.carpenter, set);
     flattenUuids(NPC_FRAMES.passerby, set);
+    flattenUuids(NPC_FRAMES.doctor, set);
+    flattenUuids(NPC_FRAMES.caretaker, set);
     flattenUuids(FISHING_FRAMES, set);
     const critical = new Set(collectCriticalSpriteUuids());
-    return [...set].filter((u) => !critical.has(u));
+    return Array.from(set).filter((u) => !critical.has(u));
 }
 
 function loadUuid(uuid: string): Promise<void> {

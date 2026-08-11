@@ -52,21 +52,78 @@ import { StoryDialogue } from './StoryDialogue';
 import { StoryIntroPanel } from './StoryIntroPanel';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TutorialGuide } from './TutorialGuide';
+import { CarpenterShopWorldLayout } from './CarpenterShopWorldLayout';
+import { ClinicWorldLayout } from './ClinicWorldLayout';
+import { CommunityWorldLayout } from './CommunityWorldLayout';
 import { MayorHouseWorldLayout } from './MayorHouseWorldLayout';
 import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
-import { TownWorldLayout } from './TownWorldLayout';
+import { TownWorldLayout, TownNpcId } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
 import { ensureUiAudio } from './UiAudio';
 import { loadUiFont } from './UiFont';
 import { WorldYSort } from './WorldYSort';
-import { canTravel, travelTo } from './MapTravel';
+import { canTravel, travelTo, TravelMapId } from './MapTravel';
 import type { Tables } from '../cfg/schema';
 
 const { ccclass } = _decorator;
 
 /** Clear inside the 1080 portrait frame (under grass fill). */
 const STAGE_CLEAR = new Color(58, 118, 52, 255);
+
+type TownIndoorId = 'mayorHouse' | 'clinic' | 'community' | 'carpenterShop';
+
+type TownIndoorApi = {
+    isBaked(world: { getChildByName: (n: string) => unknown }): boolean;
+    PLAYER_SPAWN: { x: number; y: number };
+    TOWN_RETURN: { x: number; y: number };
+    EXIT_ZONE: { x: number; y: number; hw: number; hh: number };
+    inExitZone(x: number, y: number): boolean;
+    mountExitFx(world: Node): void;
+    spawnNpcs(world: Node): Node[];
+    findInteract(
+        world: Node,
+        wx: number,
+        wy: number,
+    ):
+        | { kind: 'info'; title: string; body: string; node: Node }
+        | { kind: 'story'; storyKey: 'spring_desk' | 'spring_lamp'; node: Node }
+        | null;
+};
+
+const TOWN_INDOOR: Record<
+    TownIndoorId,
+    { api: TownIndoorApi; npcId: TownNpcId; storyKey: string }
+> = {
+    mayorHouse: {
+        api: MayorHouseWorldLayout as unknown as TownIndoorApi,
+        npcId: 'mayor',
+        storyKey: 'mayor',
+    },
+    clinic: {
+        api: ClinicWorldLayout as unknown as TownIndoorApi,
+        npcId: 'doctor',
+        storyKey: 'clinic',
+    },
+    community: {
+        api: CommunityWorldLayout as unknown as TownIndoorApi,
+        npcId: 'caretaker',
+        storyKey: 'community',
+    },
+    carpenterShop: {
+        api: CarpenterShopWorldLayout as unknown as TownIndoorApi,
+        npcId: 'carpenter',
+        storyKey: 'carpenter',
+    },
+};
+
+function detectTownIndoor(world: Node): TownIndoorId | null {
+    if (MayorHouseWorldLayout.isBaked(world)) return 'mayorHouse';
+    if (ClinicWorldLayout.isBaked(world)) return 'clinic';
+    if (CommunityWorldLayout.isBaked(world)) return 'community';
+    if (CarpenterShopWorldLayout.isBaked(world)) return 'carpenterShop';
+    return null;
+}
 
 @ccclass('GameBootstrap')
 export class GameBootstrap extends Component {
@@ -155,9 +212,9 @@ export class GameBootstrap extends Component {
         this.fixPropAnchors(world);
         const isTown = TownWorldLayout.isBaked(world);
         const isMine = MineWorldLayout.isBaked(world);
-        const isMayorHouse = MayorHouseWorldLayout.isBaked(world);
+        const townIndoor = detectTownIndoor(world);
         const isFarmBaked = FarmWorldLayout.isBaked(world);
-        const authored = isTown || isMine || isMayorHouse || isFarmBaked;
+        const authored = isTown || isMine || !!townIndoor || isFarmBaked;
         // Match reference: map fills 1080 width; ground covers the portrait frame.
         // Authored scenes already have full terrain — don't expand/repaint tiles.
         const frame = this.fitWorldToDesign(canvas, world, authored);
@@ -166,16 +223,16 @@ export class GameBootstrap extends Component {
             world.addComponent(WorldYSort);
         }
 
-        const bootMap = isTown
+        const bootMap: TravelMapId = isTown
             ? 'town'
             : isMine
               ? 'mine'
-              : isMayorHouse
-                ? 'mayorHouse'
+              : townIndoor
+                ? townIndoor
                 : 'farm';
         const player = this.spawnPlayer(world, bootMap);
         if (isTown) TownWorldLayout.spawnNpcs(world);
-        else if (isMayorHouse) MayorHouseWorldLayout.spawnNpcs(world);
+        else if (townIndoor) TOWN_INDOOR[townIndoor].api.spawnNpcs(world);
         else if (!isMine) FarmWorldLayout.spawnNpcs(world);
         const stick = this.spawnTouchControls(canvas);
         const clickMove = ClickMoveMarker.mount(canvas);
@@ -250,20 +307,26 @@ export class GameBootstrap extends Component {
         questPanel.ensureMounted();
         rewardPopup.bind(quests);
         const mapId = bootMap;
-        storyIntro.syncMapBgm(mapId === 'mayorHouse' ? 'town' : mapId);
+        const indoorTownBgm =
+            mapId === 'mayorHouse' ||
+            mapId === 'clinic' ||
+            mapId === 'community' ||
+            mapId === 'carpenterShop';
+        storyIntro.syncMapBgm(indoorTownBgm ? 'town' : mapId);
         storyDlg.bind({
             dialogue,
             intro: storyIntro,
             quests,
-            map: mapId === 'mayorHouse' ? 'mayorHouse' : mapId,
-            guide: isTown || isMine || isMayorHouse ? null : guide,
+            map: mapId,
+            guide: isTown || isMine || townIndoor ? null : guide,
         });
 
         const oldInfoComp = canvas.getComponent(FarmInfoBoard);
         if (oldInfoComp) canvas.removeComponent(oldInfoComp);
         let infoBoard: FarmInfoBoard | null = null;
 
-        if (isMayorHouse) {
+        if (townIndoor) {
+            const indoor = TOWN_INDOOR[townIndoor];
             let hud = canvas.getComponent(FarmHUD);
             if (!hud) hud = canvas.addComponent(FarmHUD);
             hud.farm = farm;
@@ -286,19 +349,19 @@ export class GameBootstrap extends Component {
             shopPanel.farm = farm;
             shopPanel.quests = quests;
 
-            MayorHouseWorldLayout.mountExitFx(world);
-            let mayorExitArmed = true;
+            indoor.api.mountExitFx(world);
+            let indoorExitArmed = true;
             this.schedule(() => {
-                if (!mayorExitArmed || !player?.isValid) return;
+                if (!indoorExitArmed || !player?.isValid) return;
                 const p = player.position;
-                if (!MayorHouseWorldLayout.inExitZone(p.x, p.y)) return;
+                if (!indoor.api.inExitZone(p.x, p.y)) return;
                 if (!canTravel('town')) return;
-                mayorExitArmed = false;
+                indoorExitArmed = false;
                 travelTo('town', {
                     farm,
                     quests,
-                    spawnX: MayorHouseWorldLayout.TOWN_RETURN.x,
-                    spawnY: MayorHouseWorldLayout.TOWN_RETURN.y,
+                    spawnX: indoor.api.TOWN_RETURN.x,
+                    spawnY: indoor.api.TOWN_RETURN.y,
                 });
             }, 0.08);
 
@@ -315,7 +378,7 @@ export class GameBootstrap extends Component {
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     const npcHit = TownWorldLayout.findNpc(world, worldPt.x, worldPt.y);
-                    if (npcHit?.id === 'mayor') {
+                    if (npcHit?.id === indoor.npcId) {
                         // Walk into talk range first — far taps must not open dialogue.
                         story.approachNpcThen(npcHit.node, () => {
                             if (!npcHit.node.isValid || !player.isValid) return;
@@ -323,8 +386,8 @@ export class GameBootstrap extends Component {
                                 player.position.x,
                                 player.position.y,
                             );
-                            if (storyDlg.tryBuilding('mayor')) return;
-                            const chat = TownWorldLayout.npcInfo('mayor');
+                            if (storyDlg.tryBuilding(indoor.storyKey)) return;
+                            const chat = TownWorldLayout.npcInfo(indoor.npcId);
                             if (chat) {
                                 if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
                                 shopPanel.openInfo(chat.title, chat.body);
@@ -332,9 +395,25 @@ export class GameBootstrap extends Component {
                         });
                         return;
                     }
-                    const hit = MayorHouseWorldLayout.findInteract(world, worldPt.x, worldPt.y);
+                    const hit = indoor.api.findInteract(world, worldPt.x, worldPt.y);
+                    if (hit?.kind === 'story') {
+                        story.approachInteractThen(hit.node, () => {
+                            if (!hit.node.isValid) return;
+                            if (storyDlg.tryCommunityProp(hit.storyKey)) return;
+                            shopPanel.openInfo(
+                                hit.storyKey === 'spring_desk' ? '春厅名册桌' : '春厅旧灯',
+                                hit.storyKey === 'spring_desk'
+                                    ? '木桌上摊着「春厅收集包」名册。市集买卖熟了再来签字。'
+                                    : '钟楼角落的旧灯还灭着。铜够了再点亮。',
+                            );
+                        });
+                        return;
+                    }
                     if (hit?.kind === 'info') {
-                        shopPanel.openInfo(hit.title, hit.body);
+                        story.approachInteractThen(hit.node, () => {
+                            if (!hit.node.isValid) return;
+                            shopPanel.openInfo(hit.title, hit.body);
+                        });
                         return;
                     }
                 }
@@ -407,19 +486,22 @@ export class GameBootstrap extends Component {
                 const worldPt = this.screenToWorld(follow, world, x, y);
                 if (worldPt) {
                     const hit = MineWorldLayout.findInteract(world, worldPt.x, worldPt.y);
-                    if (hit?.kind === 'travel') {
-                        if (!canTravel('town')) return;
-                        travelTo('town', {
-                            farm,
-                            quests,
-                            spawnX: MineWorldLayout.TOWN_RETURN.x,
-                            spawnY: MineWorldLayout.TOWN_RETURN.y,
+                    if (hit) {
+                        story.approachInteractThen(hit.node, () => {
+                            if (!hit.node.isValid) return;
+                            if (hit.kind === 'travel') {
+                                if (!canTravel('town')) return;
+                                travelTo('town', {
+                                    farm,
+                                    quests,
+                                    spawnX: MineWorldLayout.TOWN_RETURN.x,
+                                    spawnY: MineWorldLayout.TOWN_RETURN.y,
+                                });
+                                return;
+                            }
+                            if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
+                            shopPanel.openInfo(hit.title, hit.body);
                         });
-                        return;
-                    }
-                    if (hit?.kind === 'info') {
-                        if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
-                        shopPanel.openInfo(hit.title, hit.body);
                         return;
                     }
                 }
@@ -498,9 +580,7 @@ export class GameBootstrap extends Component {
                                 player.position.x,
                                 player.position.y,
                             );
-                            if (npcHit.id === 'mayor' || npcHit.id === 'carpenter') {
-                                if (storyDlg.tryBuilding(npcHit.key)) return;
-                            }
+                            // Outdoor story NPCs moved indoors — passerby is info-only.
                             const chat = TownWorldLayout.npcInfo(npcHit.id);
                             if (chat) {
                                 if (chat.storyFlag) quests.noteFlag(chat.storyFlag);
@@ -511,53 +591,59 @@ export class GameBootstrap extends Component {
                     }
                     const hit = TownWorldLayout.findInteract(world, worldPt.x, worldPt.y);
                     if (hit) {
-                        if (hit.kind === 'travel') {
-                            if (hit.dest === 'mine') {
-                                if (!canTravel('mine')) {
-                                    shopPanel.openInfo(
-                                        '矿洞路牌',
-                                        '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
-                                    );
-                                    return;
-                                }
-                                shopPanel.openInfo('前往浅层矿洞', '路牌指向北山矿洞…');
-                                travelTo('mine', {
-                                    farm,
-                                    quests,
-                                    spawnX: MineWorldLayout.PLAYER_SPAWN.x,
-                                    spawnY: MineWorldLayout.PLAYER_SPAWN.y,
-                                });
-                                return;
-                            }
-                            if (hit.dest === 'mayorHouse') {
-                                // Walk to the door first — far taps must not warp indoors.
-                                story.approachMayorHouseThen(() => {
-                                    travelTo('mayorHouse', {
+                        // Walk-then-interact law: see StoryWorldHooks.approachInteractThen.
+                        story.approachInteractThen(hit.node, () => {
+                            if (!hit.node.isValid) return;
+                            if (hit.kind === 'travel') {
+                                if (hit.dest === 'mine') {
+                                    if (!canTravel('mine')) {
+                                        shopPanel.openInfo(
+                                            '矿洞路牌',
+                                            '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
+                                        );
+                                        return;
+                                    }
+                                    shopPanel.openInfo('前往浅层矿洞', '路牌指向北山矿洞…');
+                                    travelTo('mine', {
                                         farm,
                                         quests,
-                                        spawnX: MayorHouseWorldLayout.PLAYER_SPAWN.x,
-                                        spawnY: MayorHouseWorldLayout.PLAYER_SPAWN.y,
+                                        spawnX: MineWorldLayout.PLAYER_SPAWN.x,
+                                        spawnY: MineWorldLayout.PLAYER_SPAWN.y,
                                     });
-                                });
+                                    return;
+                                }
+                                if (
+                                    hit.dest === 'mayorHouse' ||
+                                    hit.dest === 'clinic' ||
+                                    hit.dest === 'community' ||
+                                    hit.dest === 'carpenterShop'
+                                ) {
+                                    const indoor = TOWN_INDOOR[hit.dest];
+                                    travelTo(hit.dest, {
+                                        farm,
+                                        quests,
+                                        spawnX: indoor.api.PLAYER_SPAWN.x,
+                                        spawnY: indoor.api.PLAYER_SPAWN.y,
+                                    });
+                                    return;
+                                }
+                                story.tryTownFarmSignTap();
                                 return;
                             }
-                            story.tryTownFarmSignTap();
-                            return;
-                        }
-                        if (hit.kind === 'shop') {
-                            shopPanel.openShop(hit.shopId);
-                            // 矿脉商会放行浅层矿洞（Ch.2 钩子）
-                            if (hit.shopId === 'ore') {
-                                quests.noteFlag('visit_oreshop');
-                                GameState.unlock('mine');
+                            if (hit.kind === 'shop') {
+                                shopPanel.openShop(hit.shopId);
+                                // 矿脉商会放行浅层矿洞（Ch.2 钩子）
+                                if (hit.shopId === 'ore') {
+                                    quests.noteFlag('visit_oreshop');
+                                    GameState.unlock('mine');
+                                }
+                            } else if (hit.kind === 'board') {
+                                shopPanel.openBoard(hit.board);
+                            } else {
+                                if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
+                                shopPanel.openInfo(hit.title, hit.body);
                             }
-                        } else if (hit.kind === 'board') shopPanel.openBoard(hit.board);
-                        else if (storyDlg.tryBuilding(hit.key)) {
-                            // Story dialogue owns carpenter / community / clinic beats.
-                        } else {
-                            if (hit.storyFlag) quests.noteFlag(hit.storyFlag);
-                            shopPanel.openInfo(hit.title, hit.body);
-                        }
+                        });
                         return;
                     }
                 }
@@ -645,6 +731,9 @@ export class GameBootstrap extends Component {
                 if (rewardPopup.handleTap(x, y)) return;
                 if (guide.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
+                // Bag / chest / craft must beat info-board & quest dock hitboxes
+                // (craft close sits under the top-right board on tall panels).
+                if (hud?.isModalOpen && hud.handleTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
                 this.clearAutoWalk(clickMove, player, farm);
@@ -1283,20 +1372,18 @@ export class GameBootstrap extends Component {
         return touch;
     }
 
-    private spawnPlayer(
-        world: Node,
-        map: 'farm' | 'town' | 'mine' | 'mayorHouse' = 'farm',
-    ): Node {
+    private spawnPlayer(world: Node, map: TravelMapId = 'farm'): Node {
         const player = new Node('Player');
         player.layer = world.layer;
         player.setParent(world);
+        const indoor = TOWN_INDOOR[map as TownIndoorId];
         const spawn =
             map === 'town'
                 ? TownWorldLayout.PLAYER_SPAWN
                 : map === 'mine'
                   ? MineWorldLayout.PLAYER_SPAWN
-                  : map === 'mayorHouse'
-                    ? MayorHouseWorldLayout.PLAYER_SPAWN
+                  : indoor
+                    ? indoor.api.PLAYER_SPAWN
                     : FarmWorldLayout.PLAYER_SPAWN;
         player.setPosition(new Vec3(spawn.x, spawn.y, 0));
 

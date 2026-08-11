@@ -8,14 +8,19 @@ const SCENE_FOR: Partial<Record<StoryMapId, string>> = {
     town: 'Town',
     mine: 'Mine',
     mayorHouse: 'MayorHouse',
+    clinic: 'Clinic',
+    community: 'Community',
+    carpenterShop: 'CarpenterShop',
 };
+
+export type TravelMapId = 'farm' | 'town' | 'mine' | 'mayorHouse' | 'clinic' | 'community' | 'carpenterShop';
 
 /**
  * Persist bag + load destination scene.
  * Call only after unlock checks.
  */
 export function travelTo(
-    map: 'farm' | 'town' | 'mine' | 'mayorHouse',
+    map: TravelMapId,
     opts: {
         farm?: FarmSystem | null;
         quests?: QuestSystem | null;

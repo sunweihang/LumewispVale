@@ -302,15 +302,9 @@ export class FarmSystem extends Component {
 
     /** Cancel walk-to / in-flight action (manual stick drag). */
     cancelPending() {
-        const mini = this.node.getComponent(FishingMinigame);
-        if (mini?.isOpen) {
-            mini.close(false);
-            this._jobGen += 1;
-            this._pending = null;
-            this._acting = false;
-            this.player?.getComponent(PlayerController)?.setLocked(false);
-            return;
-        }
+        // Active fishing owns the pointer (hold = lift bar). Stick drag must not
+        // tear the minigame down and unlock the farmer mid-cast.
+        if (this.node.getComponent(FishingMinigame)?.isOpen) return;
         if (!this._pending && !this._acting) return;
         this._jobGen += 1;
         this._pending = null;
@@ -414,38 +408,34 @@ export class FarmSystem extends Component {
         const plotOk =
             !!plotKey && !!plot && !this.tutorialBlocks('plot') && this.canActOnPlot(plot);
 
-        // Tree / rock / weed — but soft cover on a farmable tile must not block till/plant/water.
+        // Tree / rock / weed — never steal a tap the current tool can farm with.
+        // (Old: only weeds yielded; canopy AABB + "需选择：斧头" made boost feel broken.)
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
-            const softOverPlot = plotOk && nature.act === 'pull';
-            if (!softOverPlot) {
+            if (plotOk) {
+                console.log(
+                    `[FarmTap] ${nature.node.name} on actable plot ${plotKey} → prefer plot`,
+                );
+            } else {
                 const natureBlock = this.tutorialBlocks('nature');
                 if (natureBlock) {
-                    // SelectHoe etc. forbid nature; if this tap can farm, do that instead of a tip.
-                    if (!plotOk) {
-                        this.floatTip(natureBlock);
-                        return true;
-                    }
-                } else {
-                    const ok = this.toolMatchesNature(nature.act);
-                    console.log(
-                        `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
-                            `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
-                            `toolOk=${ok}`,
-                    );
-                    if (!ok) {
-                        const tip = this.wrongToolTipFor(nature.act);
-                        console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
-                        this.floatTip(tip);
-                        return true;
-                    }
-                    this.queueNatureJob(nature);
+                    this.floatTip(natureBlock);
                     return true;
                 }
-            } else {
+                const ok = this.toolMatchesNature(nature.act);
                 console.log(
-                    `[FarmTap] soft ${nature.node.name} on plot ${plotKey} → prefer plot`,
+                    `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
+                        `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
+                        `toolOk=${ok}`,
                 );
+                if (!ok) {
+                    const tip = this.wrongToolTipFor(nature.act);
+                    console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
+                    this.floatTip(tip);
+                    return true;
+                }
+                this.queueNatureJob(nature);
+                return true;
             }
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
@@ -470,17 +460,19 @@ export class FarmSystem extends Component {
 
     /**
      * Exact tile under the tap, or a nearby actable plot.
-     * Quest chevrons sit above the soil center — a raw round() often lands on the neighbor.
+     * Quest chevrons / grow timers sit above the soil center — a raw round()
+     * often lands on the northern neighbor. Prefer a plot the current tool can
+     * act on so boost / water / plant taps don't keep hitting idle soil.
      */
     private plotKeyNear(wx: number, wy: number): string | null {
         const direct = `${Math.round(wx / TILE)},${Math.round(wy / TILE)}`;
-        if (this._plots.has(direct)) return direct;
-        // Chevron tip sits ~1.5–2 tiles above soil center — keep near-miss farming.
-        const maxSq = (TILE * 1.8) * (TILE * 1.8);
-        let best: string | null = null;
-        let bestSq = maxSq;
+        // Chevron + "N秒" stack sit ~1.5–2.5 tiles above the sprout.
+        const maxSq = (TILE * 2.5) * (TILE * 2.5);
+        let bestAct: string | null = null;
+        let bestActSq = maxSq;
+        let bestAny: string | null = null;
+        let bestAnySq = maxSq;
         for (const [key, p] of this._plots) {
-            if (!this.canActOnPlot(p)) continue;
             const parts = key.split(',');
             const ix = Number(parts[0]);
             const iy = Number(parts[1]);
@@ -488,12 +480,18 @@ export class FarmSystem extends Component {
             const dx = ix * TILE - wx;
             const dy = iy * TILE - wy;
             const dSq = dx * dx + dy * dy;
-            if (dSq < bestSq) {
-                bestSq = dSq;
-                best = key;
+            if (dSq < bestAnySq) {
+                bestAnySq = dSq;
+                bestAny = key;
+            }
+            if (this.canActOnPlot(p) && dSq < bestActSq) {
+                bestActSq = dSq;
+                bestAct = key;
             }
         }
-        return best;
+        if (bestAct) return bestAct;
+        if (this._plots.has(direct)) return direct;
+        return bestAny;
     }
 
     /**
@@ -842,7 +840,9 @@ export class FarmSystem extends Component {
                             ? softActMax
                             : job.kind === 'craft' || job.kind === 'chest'
                               ? ACT_MAX_NATURE
-                              : 0;
+                              : job.kind === 'plot' || job.kind === 'fish'
+                                ? ACT_MAX_PLOT
+                                : 0;
                     console.log(
                         `[FarmJob] walk ABORT at=(${pp.x.toFixed(1)},${pp.y.toFixed(1)}) ` +
                             `targetDist=${d.toFixed(1)} retryMax=${retryMax} kind=${job.kind}`,
@@ -1001,6 +1001,8 @@ export class FarmSystem extends Component {
         if (job.kind === 'fish') {
             this.unschedule(this.forceUnlockJob);
             this._pending = null;
+            // Stay locked for the whole minigame — unlock in the result callback.
+            this.player?.getComponent(PlayerController)?.setLocked(true);
             this.beginFishingMinigame(job);
             return;
         }

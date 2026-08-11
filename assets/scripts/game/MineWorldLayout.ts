@@ -1,3 +1,5 @@
+import { Node } from 'cc';
+
 /**
  * Shallow mine map constants / interaction queries.
  * Scene authority: assets/scenes/Mine.scene (tools/ui/bake_mine_scene.py).
@@ -14,15 +16,15 @@ export class MineWorldLayout {
     }
 
     static findInteract(
-        world: { children: ReadonlyArray<{ name: string; position: { x: number; y: number } }> },
+        world: Node,
         wx: number,
         wy: number,
         maxDist = 160,
     ):
-        | { kind: 'travel'; dest: 'town'; title: string }
-        | { kind: 'info'; title: string; body: string; storyFlag?: string }
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
+        | { kind: 'info'; title: string; body: string; storyFlag?: string; node: Node }
         | null {
-        let best: { dist: number; key: string } | null = null;
+        let best: { dist: number; key: string; node: Node } | null = null;
         for (const child of world.children) {
             const key = this.interactKey(child.name);
             if (!key) continue;
@@ -30,10 +32,11 @@ export class MineWorldLayout {
             const dy = wy - child.position.y;
             const d = Math.sqrt(dx * dx + dy * dy);
             if (d > maxDist) continue;
-            if (!best || d < best.dist) best = { dist: d, key };
+            if (!best || d < best.dist) best = { dist: d, key, node: child };
         }
         if (!best) return null;
-        return this.actionFor(best.key);
+        const action = this.actionFor(best.key);
+        return action ? { ...action, node: best.node } : null;
     }
 
     private static interactKey(name: string): string | null {

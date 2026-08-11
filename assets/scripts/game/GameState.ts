@@ -6,6 +6,9 @@ export type StoryMapId =
     | 'town'
     | 'mine'
     | 'mayorHouse'
+    | 'clinic'
+    | 'community'
+    | 'carpenterShop'
     | 'beach'
     | 'forest'
     | 'deepMine';
@@ -52,6 +55,9 @@ class GameStateStore {
         town: false,
         mine: false,
         mayorHouse: true,
+        clinic: true,
+        community: true,
+        carpenterShop: true,
         beach: false,
         forest: false,
         deepMine: false,

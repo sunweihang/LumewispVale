@@ -183,11 +183,16 @@ const SCRIPTS: Record<ScriptId, DialogueLine[]> = {
     ],
     community_bell: [
         {
-            text: '厅堂空置，钟楼积灰。墙角堆着未拆的脚手架，像被人忽然叫停的工程。',
+            speaker: '管理员·苔青',
+            text: '欢迎。钟楼积灰，脚手架还堆在墙角——工程像被人忽然叫停。',
+        },
+        {
+            speaker: '管理员·苔青',
+            text: '先认得这厅堂就好。材料齐了，春厅会重新亮起来。',
         },
         {
             speaker: '你',
-            text: '先记下这里。材料齐了，春厅会重新亮起来。',
+            text: '记下了。回头再来。',
         },
         {
             text: '第一章的线索接到了。领取奖励后，镇长会教你在市集买卖。',
@@ -341,7 +346,15 @@ export class StoryDialogue extends Component {
     guide: TutorialGuide | null = null;
 
     private _lastActiveId = -1;
-    private _map: 'farm' | 'town' | 'mine' | 'mayorHouse' | 'other' = 'other';
+    private _map:
+        | 'farm'
+        | 'town'
+        | 'mine'
+        | 'mayorHouse'
+        | 'clinic'
+        | 'community'
+        | 'carpenterShop'
+        | 'other' = 'other';
     private _queue: QueueItem[] = [];
     private _playing = false;
     private _booted = false;
@@ -349,7 +362,15 @@ export class StoryDialogue extends Component {
     bind(opts: {
         dialogue: DialoguePanel;
         quests: QuestSystem;
-        map: 'farm' | 'town' | 'mine' | 'mayorHouse' | 'other';
+        map:
+            | 'farm'
+            | 'town'
+            | 'mine'
+            | 'mayorHouse'
+            | 'clinic'
+            | 'community'
+            | 'carpenterShop'
+            | 'other';
         guide?: TutorialGuide | null;
         intro?: StoryIntroPanel | null;
     }) {
@@ -467,45 +488,52 @@ export class StoryDialogue extends Component {
     }
 
     /**
-     * Town building tap. Returns true if story dialogue consumed the interaction.
+     * Community hall props (indoor only): spring desk / lamp.
+     * Caretaker NPC uses tryBuilding('community') for visit_community.
+     */
+    tryCommunityProp(prop: 'spring_desk' | 'spring_lamp'): boolean {
+        const active = this.quests?.activeQuest?.id ?? 0;
+        if (prop === 'spring_desk' && active === 1022) {
+            this.enqueue(
+                'spring_pack',
+                () => {
+                    if ((this.quests?.flagOf('accept_spring_pack') ?? 0) < 1) {
+                        this.quests?.noteFlag('accept_spring_pack');
+                    }
+                },
+                true,
+            );
+            this.drain();
+            return true;
+        }
+        if (prop === 'spring_lamp' && active === 1027) {
+            this.enqueue(
+                'spring_light',
+                () => {
+                    const farm = this.quests?.farm;
+                    if (farm && farm.copper > 0) {
+                        const use = Math.min(3, farm.copper);
+                        farm.copper -= use;
+                        farm.notifyInventoryChanged();
+                    }
+                    if ((this.quests?.flagOf('light_spring_hall') ?? 0) < 1) {
+                        this.quests?.noteFlag('light_spring_hall');
+                    }
+                },
+                true,
+            );
+            this.drain();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Town NPC / building story tap. Returns true if dialogue consumed the interaction.
+     * Outdoor facades for clinic / community / carpenter travel indoors — call this on NPCs.
      */
     tryBuilding(key: string): boolean {
         const active = this.quests?.activeQuest?.id ?? 0;
-
-        if (key === 'community') {
-            if (active === 1022) {
-                this.enqueue(
-                    'spring_pack',
-                    () => {
-                        if ((this.quests?.flagOf('accept_spring_pack') ?? 0) < 1) {
-                            this.quests?.noteFlag('accept_spring_pack');
-                        }
-                    },
-                    true,
-                );
-                this.drain();
-                return true;
-            }
-            if (active === 1027) {
-                this.enqueue(
-                    'spring_light',
-                    () => {
-                        const farm = this.quests?.farm;
-                        if (farm && farm.copper > 0) {
-                            const use = Math.min(3, farm.copper);
-                            farm.copper -= use;
-                            farm.notifyInventoryChanged();
-                        }
-                        if ((this.quests?.flagOf('light_spring_hall') ?? 0) < 1) {
-                            this.quests?.noteFlag('light_spring_hall');
-                        }
-                    },
-                    true,
-                );
-                this.drain();
-                return true;
-            }
-        }
 
         const id = BUILDING_STORY[key];
         if (!id) return false;

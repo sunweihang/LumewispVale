@@ -13,7 +13,9 @@ import {
     UIOpacity,
     UITransform,
     assetManager,
+    game,
     input,
+    sys,
     tween,
     Tween,
     view,
@@ -396,11 +398,26 @@ export class LoadingScreen extends Component {
         // Global input — same as DialoguePanel「点击继续」(node hits can miss over Splash).
         input.on(Input.EventType.TOUCH_END, this.onStartTouch, this);
         input.on(Input.EventType.MOUSE_UP, this.onStartMouse, this);
+        // Web fallback — Cocos input can miss browser pointer events on web-mobile.
+        if (sys.isBrowser) {
+            window.addEventListener('pointerup', this.onStartDomPointer, {
+                passive: true,
+                capture: true,
+            });
+            window.addEventListener('pointercancel', this.onStartDomPointer, {
+                passive: true,
+                capture: true,
+            });
+        }
     }
 
     private unlistenStart() {
         input.off(Input.EventType.TOUCH_END, this.onStartTouch, this);
         input.off(Input.EventType.MOUSE_UP, this.onStartMouse, this);
+        if (sys.isBrowser) {
+            window.removeEventListener('pointerup', this.onStartDomPointer, true);
+            window.removeEventListener('pointercancel', this.onStartDomPointer, true);
+        }
     }
 
     private onStartTouch = (e: EventTouch) => {
@@ -414,6 +431,19 @@ export class LoadingScreen extends Component {
         if (!this._readyForStart || this._startResolved) return;
         if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
         e.propagationStopped = true;
+        playUiClick();
+        this.resolveStart();
+    };
+
+    private onStartDomPointer = (e: PointerEvent) => {
+        if (!this._readyForStart || this._startResolved) return;
+        const canvas = game.canvas as HTMLCanvasElement | null;
+        if (canvas) {
+            const box = canvas.getBoundingClientRect();
+            const lx = e.clientX - box.left;
+            const ly = e.clientY - box.top;
+            if (lx < 0 || ly < 0 || lx > box.width || ly > box.height) return;
+        }
         playUiClick();
         this.resolveStart();
     };

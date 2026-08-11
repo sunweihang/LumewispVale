@@ -14,7 +14,6 @@ import {
     gfx,
     tween,
     Tween,
-    view,
 } from 'cc';
 import { GotoAction } from '../cfg/schema';
 import { ClickMoveMarker } from './ClickMoveMarker';
@@ -31,9 +30,11 @@ import { QUEST_FRAMES } from './QuestFrames';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
+import { StoryIntroPanel } from './StoryIntroPanel';
 import { StoryWorldHooks } from './StoryWorldHooks';
 import { TOOL_FRAMES } from './ToolFrames';
 import { TownShopPanel } from './TownShopPanel';
+import { portraitVisibleSize } from './PortraitFit';
 import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -100,6 +101,15 @@ const PATH_DOT_MAX = 80;
 const PATH_VISIBLE_MAX = 36;
 /** Canvas size of each ground mote. */
 const PATH_DOT_SIZE = 28;
+/**
+ * Arc length (world) past the player's nearest path sample before the first mote.
+ * Clears feet / torso so the trail starts in front of the sprite, not through it.
+ */
+const PATH_START_CLEAR = 78;
+/** Extra body AABB around feet (world) — catch path zigzags that skim the sprite. */
+const PATH_BODY_HW = 34;
+const PATH_BODY_DOWN = 18;
+const PATH_BODY_UP = 78;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
@@ -279,8 +289,15 @@ export class TutorialGuide extends Component {
         if (this.node.getComponent(DialoguePanel)?.isOpen) return null;
         if (this.node.getComponent(RewardPopup)?.isOpen) return null;
         const shop = this.node.getComponent(TownShopPanel);
-        // Board / buy-sell tutorial keep the caption; other shop/info modals mute it.
-        if (shop?.isOpen && !shop.isBoardOpen && !shop.needsShopTradeGuide()) return null;
+        // Board / buy-sell / post-trade close keep the caption; other shop/info mute it.
+        if (
+            shop?.isOpen &&
+            !shop.isBoardOpen &&
+            !shop.needsShopTradeGuide() &&
+            !shop.needsShopCloseGuide()
+        ) {
+            return null;
+        }
         const hud = this.node.getComponent(FarmHUD);
         // Craft / bag modals normally hide the cue — keep guided craft / boost steps.
         if (
@@ -345,7 +362,9 @@ export class TutorialGuide extends Component {
 
     /** From GameBootstrap stick.onTap — consume while spotlight open. */
     handleTap(uiX: number, uiY: number): boolean {
-        if (!this._open || !this._inputReady) return this._open;
+        if (!this._open) return false;
+        // Fade-in guard: still consume (don't walk) but accept hole taps once ready.
+        if (!this._inputReady) return true;
         const local = this.uiToCanvasLocal(uiX, uiY);
         const inHole = this.hitHole(local.x, local.y);
 
@@ -357,7 +376,8 @@ export class TutorialGuide extends Component {
         }
 
         if (this._step === 'hand') {
-            if (!inHole) return true;
+            // Accept the painted hollow OR a direct hotbar-hand hit (coord skew).
+            if (!inHole && !this.hitUiGuideNode(uiX, uiY, this.handHoleNode())) return true;
             playUiClick();
             this.farm?.setTool('hand');
             this.gotoStep('grass');
@@ -504,11 +524,21 @@ export class TutorialGuide extends Component {
         // reward→dialogue restore can leave it stuck true and kill all arrows).
         if (this.node.getComponent(DialoguePanel)?.isOpen) return false;
         if (this.node.getComponent(RewardPopup)?.isOpen) return false;
+        // Skip unlocks moveLocked before the intro fade ends — keep the quest
+        // arrow suppressed while StoryIntro is still covering the farm.
+        if (this.node.getComponent(StoryIntroPanel)?.isCovering) return false;
         // Quest journal open → still show arrow (points at close so guide never dies).
         if (this.node.getComponent(FishingMinigame)?.isOpen) return false;
         const shop = this.node.getComponent(TownShopPanel);
-        // Board accept + shop buy/sell tutorial keep the arrow; other shop/info: hide.
-        if (shop?.isOpen && !shop.isBoardOpen && !shop.needsShopTradeGuide()) return false;
+        // Board accept + shop buy/sell + post-trade close keep the arrow; else hide.
+        if (
+            shop?.isOpen &&
+            !shop.isBoardOpen &&
+            !shop.needsShopTradeGuide() &&
+            !shop.needsShopCloseGuide()
+        ) {
+            return false;
+        }
         const hud = this.node.getComponent(FarmHUD);
         // Allow arrow over craft (first seed) and bag (drag boost to hotbar).
         if (
@@ -728,7 +758,7 @@ export class TutorialGuide extends Component {
         const boardGuide = this.resolveTownBoardGuide();
         if (boardGuide) return boardGuide;
 
-        // Shop buy (1020) / sell (1021) — force the in-panel tab or first row.
+        // Shop buy (1020) / sell (1021) — tab / row, then close after trade.
         const shopGuide = this.resolveTownShopGuide();
         if (shopGuide) return shopGuide;
 
@@ -864,17 +894,21 @@ export class TutorialGuide extends Component {
                     );
                 }
                 if (id === 1012) {
-                    return this.resolveTownOutdoorGuide(
-                        ['npc_carpenter', 'bld_carpenter'],
-                        '点击工匠·石楠打招呼',
-                        '往东市木工坊走，再点石楠',
+                    return this.resolveIndoorOrDoorGuide(
+                        'npc_carpenter',
+                        'bld_carpenter',
+                        '点工匠·石楠打招呼',
+                        '点木工坊大门进屋',
+                        '往东市木工坊走，点大门进屋',
                     );
                 }
                 if (id === 1013) {
-                    return this.resolveTownOutdoorGuide(
-                        ['bld_community'],
-                        '点击社区中心查看工程',
-                        '往社区中心走，再点一下',
+                    return this.resolveIndoorOrDoorGuide(
+                        'npc_caretaker',
+                        'bld_community',
+                        '点管理员·苔青打招呼',
+                        '点社区中心大门进屋',
+                        '往社区中心走，点大门进屋',
                     );
                 }
                 if (id === 1020) {
@@ -891,18 +925,31 @@ export class TutorialGuide extends Component {
                         '往种子店走，再点门面',
                     );
                 }
-                if (id === 1022 || id === 1027) {
-                    return this.resolveTownOutdoorGuide(
-                        ['bld_community'],
-                        id === 1022 ? '点击社区中心，签署春厅收集包' : '点击社区中心，点亮春厅',
-                        '往社区中心走，再点一下',
+                if (id === 1022) {
+                    return this.resolveIndoorOrDoorGuide(
+                        'prop_spring_desk',
+                        'bld_community',
+                        '点春厅名册桌签字',
+                        '点社区中心大门进屋',
+                        '往社区中心走，点大门进屋',
+                    );
+                }
+                if (id === 1027) {
+                    return this.resolveIndoorOrDoorGuide(
+                        'prop_spring_lamp',
+                        'bld_community',
+                        '点春厅旧灯，献上铜矿',
+                        '点社区中心大门进屋',
+                        '往社区中心走，点大门进屋',
                     );
                 }
                 if (id === 1023) {
-                    return this.resolveTownOutdoorGuide(
-                        ['bld_clinic'],
-                        '点击微光诊所听取叮嘱',
-                        '往微光诊所走，再点一下',
+                    return this.resolveIndoorOrDoorGuide(
+                        'npc_doctor',
+                        'bld_clinic',
+                        '点医生·荷叶听取叮嘱',
+                        '点微光诊所大门进屋',
+                        '往微光诊所走，点大门进屋',
                     );
                 }
                 if (id === 1024) {
@@ -949,14 +996,21 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Quest 1020 / 1021 while the shop is open: force「购买/出售」tab then the
-     * first list row (TownShopPanel swallows every other tap).
+     * Quest 1020 / 1021 while the shop is open: force「购买/出售」tab → first
+     * list row → close X after trade (panel still blocks claim / world taps).
      */
     private resolveTownShopGuide(): IdleGuide | null {
         const shop = this.node.getComponent(TownShopPanel);
-        if (!shop?.needsShopTradeGuide()) return null;
-        const qid = this.quests?.activeQuest?.id ?? 0;
+        if (!shop?.isShopOpen) return null;
         this.clearStickyTarget();
+        // Purchase / sale done — point at X before the quest-dock claim tip.
+        if (shop.needsShopCloseGuide()) {
+            const hole = this.uiNodeHole(shop.closeBtnNode());
+            if (!hole) return null;
+            return { hole, tip: '露穗：关掉商店继续吧', uiDock: true };
+        }
+        if (!shop.needsShopTradeGuide()) return null;
+        const qid = this.quests?.activeQuest?.id ?? 0;
         if (qid === 1021) {
             if (shop.shopSide !== 'sell') {
                 const hole = this.uiNodeHole(shop.sellTabNode());
@@ -1137,38 +1191,65 @@ export class TutorialGuide extends Component {
      * Off-screen → “往北走”, never a down-arrow on clinic.
      */
     private resolveMayorGuide(): IdleGuide | null {
-        const npc = this.farm?.findWorldNode('npc_mayor') ?? null;
-        if (npc) {
-            const pos = this.stickyWorldPos('mayor', {
-                x: npc.position.x,
-                y: npc.position.y + 36,
+        return this.resolveIndoorOrDoorGuide(
+            'npc_mayor',
+            'bld_mayor',
+            '点镇长·艾岚打招呼',
+            '点镇长府大门进屋',
+            '往北走到镇长府，点大门进屋',
+        );
+    }
+
+    /**
+     * Indoors: aim NPC / prop. Outdoors: aim building door feet.
+     * If neither is present but door_exit is, cue leaving the room.
+     */
+    private resolveIndoorOrDoorGuide(
+        indoorName: string,
+        outdoorBld: string,
+        indoorTip: string,
+        outdoorTip: string,
+        walkTip: string,
+    ): IdleGuide | null {
+        const indoor = this.farm?.findWorldNode(indoorName) ?? null;
+        if (indoor) {
+            const isNpc = indoor.name.startsWith('npc_');
+            const pos = this.stickyWorldPos(`in:${indoorName}`, {
+                x: indoor.position.x,
+                y: indoor.position.y + (isNpc ? 36 : 28),
             });
-            // Person — chevron only, no ground ripple.
-            return this.worldPosGuide(
+            const guide = this.worldPosGuide(
                 pos,
-                '点镇长·艾岚打招呼',
-                '走近镇长·艾岚，再点一下',
+                indoorTip,
+                isNpc ? `走近后再点一下` : walkTip,
+            );
+            return isNpc ? guide : this.withPlaceRipple(guide, pos);
+        }
+        const bld = this.farm?.findWorldNode(outdoorBld) ?? null;
+        if (bld) {
+            const pos = this.stickyWorldPos(`door:${outdoorBld}`, {
+                x: bld.position.x,
+                y: bld.position.y + 20,
+            });
+            return this.withPlaceRipple(
+                this.worldPosGuide(pos, outdoorTip, walkTip),
+                pos,
             );
         }
-        const bld = this.farm?.findWorldNode('bld_mayor') ?? null;
-        if (!bld) {
-            const q = this.questHole();
-            if (!q) return null;
-            return { hole: q, tip: '任务：去北区镇长府进屋拜访', uiDock: true };
-        }
-        // Door feet — building sprite center sits too high and reads as “clinic”.
-        const pos = this.stickyWorldPos('mayor', {
-            x: bld.position.x,
-            y: bld.position.y + 20,
-        });
-        return this.withPlaceRipple(
-            this.worldPosGuide(
+        const exit = this.farm?.findWorldNode('door_exit') ?? null;
+        if (exit) {
+            const pos = this.stickyWorldPos('door-exit', {
+                x: exit.position.x,
+                y: exit.position.y + 20,
+            });
+            return this.withPlaceRipple(
+                this.worldPosGuide(pos, '往南走到门口离开', '往南走到门口离开'),
                 pos,
-                '点镇长府大门进屋',
-                '往北走到镇长府，点大门进屋',
-            ),
-            pos,
-        );
+            );
+        }
+        const q = this.questHole();
+        if (!q) return null;
+        return { hole: q, tip: outdoorTip, uiDock: true };
     }
 
     /**
@@ -1570,6 +1651,22 @@ export class TutorialGuide extends Component {
         return this.toolSlotHole('hand');
     }
 
+    private handHoleNode(): Node | null {
+        return this.node.getComponent(FarmHUD)?.hotbarSlotNode('hand') ?? null;
+    }
+
+    /** Generous hit on a UI guide target (hotbar slot etc.). */
+    private hitUiGuideNode(uiX: number, uiY: number, node: Node | null): boolean {
+        const hole = this.uiNodeHole(node);
+        if (!hole) return false;
+        const local = this.uiToCanvasLocal(uiX, uiY);
+        const pad = 40;
+        return (
+            Math.abs(local.x - hole.x) <= hole.w * 0.5 + pad &&
+            Math.abs(local.y - hole.y) <= hole.h * 0.5 + pad
+        );
+    }
+
     private toolSlotHole(itemId: string): HoleRect | null {
         const fromHud = this.node.getComponent(FarmHUD)?.hotbarSlotNode(itemId) ?? null;
         if (fromHud) return this.uiNodeHole(fromHud);
@@ -1796,7 +1893,11 @@ export class TutorialGuide extends Component {
             } else if (arrowDeg === 180) {
                 fy = this._hole.y - 56;
             } else {
-                fy = this._idleSilent ? top + 40 : top + 56;
+                // Upper-half UI (craft/bag close): sit closer to the hole so the
+                // tip isn't tapped instead of the button underneath.
+                const nearTop = uiDock && this._hole.y > 0;
+                const above = this._idleSilent ? 40 : nearTop ? 28 : 56;
+                fy = top + above;
             }
             if (uiDock) {
                 fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
@@ -2161,7 +2262,9 @@ export class TutorialGuide extends Component {
     }
 
     private hitHole(lx: number, ly: number): boolean {
-        const pad = HOLE_PAD + 8;
+        // UI dock steps (hand / quest) need a wider pad — mouse aims the arrow tip.
+        const uiStep = this._step === 'hand' || this._step === 'quest';
+        const pad = HOLE_PAD + (uiStep ? 28 : 8);
         const hw = this._hole.w * 0.5 + pad;
         const hh = this._hole.h * 0.5 + pad;
         return Math.abs(lx - this._hole.x) <= hw && Math.abs(ly - this._hole.y) <= hh;
@@ -2174,7 +2277,8 @@ export class TutorialGuide extends Component {
 
     private canvasHalf() {
         const ui = this.node.getComponent(UITransform);
-        const vis = view.getVisibleSize();
+        // Match FarmHUD / TouchJoystick — portraitVisibleSize, not raw visible alone.
+        const vis = portraitVisibleSize();
         return {
             halfW: (ui?.contentSize.width || vis.width) * 0.5,
             halfH: (ui?.contentSize.height || vis.height) * 0.5,
@@ -2362,12 +2466,14 @@ export class TutorialGuide extends Component {
         const band = this.playfieldBand();
         const px = player.position.x;
         const py = player.position.y;
+        // Trail starts ahead of the body toward the goal — never behind / through the sprite.
+        const startI = this.pathTrailStartIndex(px, py);
         let shown = 0;
-        for (let i = 0; i < this._pathPts.length; i++) {
+        for (let i = startI; i < this._pathPts.length; i++) {
             if (shown >= PATH_VISIBLE_MAX) break;
             const pt = this._pathPts[i]!;
-            // Skip motes under / just ahead of the player's feet.
-            if (Math.hypot(pt.x - px, pt.y - py) < 36) continue;
+            // Safety: skip zigzags that still skim the character AABB.
+            if (this.pathDotHitsBody(pt.x - px, pt.y - py)) continue;
             const hole = this.worldPosHole(pt);
             if (!hole) continue;
             // Only paint dots inside the playfield (path continues off-screen as walk).
@@ -2437,6 +2543,39 @@ export class TutorialGuide extends Component {
             out.push({ x: last.x, y: last.y });
         }
         return out;
+    }
+
+    /**
+     * First path index that is ahead of the player by PATH_START_CLEAR.
+     * Drops the segment under / behind the body so motes only lead toward the goal.
+     */
+    private pathTrailStartIndex(px: number, py: number): number {
+        const pts = this._pathPts;
+        if (pts.length < 2) return pts.length;
+        let nearest = 0;
+        let nearestDist = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+            const pt = pts[i]!;
+            const d = Math.hypot(pt.x - px, pt.y - py);
+            if (d < nearestDist) {
+                nearestDist = d;
+                nearest = i;
+            }
+        }
+        let along = 0;
+        for (let i = nearest; i < pts.length - 1; i++) {
+            const a = pts[i]!;
+            const b = pts[i + 1]!;
+            along += Math.hypot(b.x - a.x, b.y - a.y);
+            if (along >= PATH_START_CLEAR) return i + 1;
+        }
+        // Goal is within the clear radius — hide the short stub rather than pierce the body.
+        return pts.length;
+    }
+
+    /** True when a world offset from feet still overlaps the standing sprite. */
+    private pathDotHitsBody(dx: number, dy: number): boolean {
+        return Math.abs(dx) <= PATH_BODY_HW && dy >= -PATH_BODY_DOWN && dy <= PATH_BODY_UP;
     }
 
     private hideGroundPath() {
@@ -2553,7 +2692,8 @@ export class TutorialGuide extends Component {
 
     /**
      * Idle farm chevron sits well above the tile hole — remap UI taps on the
-     * arrow / hole back to the sticky world aim so till / plant / water fire.
+     * arrow / hole / tip banner back to the sticky world aim so till / plant /
+     * water / boost fire (chevron taps otherwise round() onto the north soil).
      */
     snapIdleActAim(uiX: number, uiY: number): WorldPos | null {
         if (!this._idleOn || this._idleUiDock || this._idleEdgeWalk) return null;
@@ -2565,15 +2705,19 @@ export class TutorialGuide extends Component {
         const hy = this._hole.y;
         const hw = this._hole.w * 0.5 + HOLE_PAD + 24;
         const hh = this._hole.h * 0.5 + HOLE_PAD + 24;
-        // layoutChrome: arrow at hole-top + 56 (+ bob); tip sprite extends further up.
+        // layoutChrome: arrow at hole-top + 56 (+ bob); tip may sit above or
+        // clamp under the hole when the crop is high on screen.
         const arrowTop = hy + this._hole.h * 0.5 + HOLE_PAD + 56 + 72;
+        const tipBot = hy - this._hole.h * 0.5 - HOLE_PAD - TIP_H - TIP_ARROW_GAP - 24;
+        const tipTop = arrowTop + TIP_H + TIP_ARROW_GAP + 24;
         const onHole =
             Math.abs(local.x - hx) <= hw && Math.abs(local.y - hy) <= hh;
-        const onArrow =
-            Math.abs(local.x - hx) <= 72 &&
-            local.y >= hy - 16 &&
-            local.y <= arrowTop;
-        if (!onHole && !onArrow) return null;
+        // Tip banner is wide; keep X modest so left-dock UI isn't swallowed.
+        const onArrowOrTip =
+            Math.abs(local.x - hx) <= Math.max(96, hw) &&
+            local.y >= tipBot &&
+            local.y <= tipTop;
+        if (!onHole && !onArrowOrTip) return null;
         return { x: aim.x, y: aim.y };
     }
 

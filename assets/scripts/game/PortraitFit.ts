@@ -4,6 +4,7 @@ import {
   Rect,
   ResolutionPolicy,
   Size,
+  game,
   screen,
   view,
 } from 'cc';
@@ -51,6 +52,48 @@ export function portraitVisibleSize(out: Size = _size): Size {
   const v = view.getVisibleSize();
   out.set(Math.max(v.width, DESIGN_W), Math.max(v.height, DESIGN_H));
   return out;
+}
+
+/**
+ * Browser client coords → UI bottom-left (same space as `event.getUILocation()`).
+ * Maps through the letterboxed viewport so desktop SHOW_ALL / editor preview
+ * don't shift taps into the black bars.
+ */
+export function clientToUiLocation(
+  clientX: number,
+  clientY: number,
+  allowOutside = false,
+): { x: number; y: number } | null {
+  const canvas = game.canvas as HTMLCanvasElement | null;
+  if (!canvas) return null;
+  const box = canvas.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0) return null;
+
+  const lx = clientX - box.left;
+  const ly = clientY - box.top;
+  if (!allowOutside && (lx < 0 || ly < 0 || lx > box.width || ly > box.height)) {
+    return null;
+  }
+
+  // CSS px → engine window pixels (same space as `screen.windowSize` / viewport).
+  const win = screen.windowSize;
+  const ww = Math.max(win.width, 1);
+  const wh = Math.max(win.height, 1);
+  const frameX = (lx / box.width) * ww;
+  const frameY = wh - (ly / box.height) * wh; // bottom-left origin
+  const vp = view.getViewportRect();
+  const vpW = Math.max(1, vp.width);
+  const vpH = Math.max(1, vp.height);
+  const rx = (frameX - vp.x) / vpW;
+  const ry = (frameY - vp.y) / vpH;
+  if (!allowOutside && (rx < -0.02 || ry < -0.02 || rx > 1.02 || ry > 1.02)) {
+    return null;
+  }
+  const vis = portraitVisibleSize();
+  return {
+    x: Math.min(1, Math.max(0, rx)) * vis.width,
+    y: Math.min(1, Math.max(0, ry)) * vis.height,
+  };
 }
 
 /**

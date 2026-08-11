@@ -57,6 +57,8 @@ function portraitUuidForSpeaker(speaker: string): string | null {
     if (s === '露穗' || s.includes('露穗')) return DIALOGUE_PORTRAIT_FRAMES.girl;
     if (s.includes('艾岚') || s.includes('镇长')) return DIALOGUE_PORTRAIT_FRAMES.mayor;
     if (s.includes('石楠') || s.includes('工匠')) return DIALOGUE_PORTRAIT_FRAMES.carpenter;
+    if (s.includes('荷叶') || s.includes('医生')) return DIALOGUE_PORTRAIT_FRAMES.doctor;
+    if (s.includes('苔青') || s.includes('管理员')) return DIALOGUE_PORTRAIT_FRAMES.caretaker;
     if (s === '路人' || s.includes('路人')) return DIALOGUE_PORTRAIT_FRAMES.passerby;
     if (s === '你') return DIALOGUE_PORTRAIT_FRAMES.farmer;
     return null;

@@ -23,6 +23,8 @@ SOURCES = {
     "carpenter": ("carpenter", "carpenter-down-0"),
     "passerby": ("passerby", "passerby-down-0"),
     "farmer": ("farmer", "farmer-down-0"),
+    "doctor": ("doctor", "doctor-down-0"),
+    "caretaker": ("caretaker", "caretaker-down-0"),
 }
 
 OUT_SIZE = 96

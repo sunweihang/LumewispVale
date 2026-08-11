@@ -7,18 +7,32 @@ import {
     Node,
     UITransform,
     Vec3,
+    game,
     input,
+    sys,
     view,
 } from 'cc';
+import { clientToUiLocation, portraitVisibleSize } from './PortraitFit';
+import { FishingMinigame } from './FishingMinigame';
 import { InputBridge } from './InputBridge';
 
 const { ccclass, property } = _decorator;
+
+/**
+ * Collapse Cocos + DOM duplicate deliveries of the same physical press.
+ * Must be long enough to cover engine→DOM ordering, short enough to feel snappy.
+ */
+const TAP_DEDUP_MS = 140;
 
 /**
  * Drag-to-move stick + tap detection:
  * - Finger down → wait
  * - Move beyond threshold → drag stick (move)
  * - Release without dragging → tap (farm tool use / UI)
+ *
+ * On web-mobile, Cocos `input` often delivers DOWN but drops UP. DOM owns
+ * completion: any in-flight press can be finished by pointerup, and a lone
+ * pointerup still synthesizes a tap so clicks are not lost.
  */
 @ccclass('TouchJoystick')
 export class TouchJoystick extends Component {
@@ -49,6 +63,12 @@ export class TouchJoystick extends Component {
     private _ox = 0;
     private _oy = 0;
     private readonly _tmp = new Vec3();
+    private _domBound = false;
+    /** Wall-clock of last delivered onTap — dedupes Cocos + DOM doubles. */
+    private _lastTapAt = 0;
+    /** Last press end (tap or drag) — blocks synthetic taps after a finished gesture. */
+    private _lastGestureAt = 0;
+    private _capturedPtr: number | null = null;
 
     onEnable() {
         input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
@@ -58,6 +78,8 @@ export class TouchJoystick extends Component {
         input.on(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
         input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
         input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        this.bindDomFallback(true);
+        InputBridge.abortStick = () => this.abortTracking();
         this.hideVisual();
     }
 
@@ -69,9 +91,100 @@ export class TouchJoystick extends Component {
         input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
         input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
         input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        this.bindDomFallback(false);
+        if (InputBridge.abortStick) InputBridge.abortStick = null;
         InputBridge.clear();
         this.hideVisual();
     }
+
+    update() {
+        // Mid-press cast open: kill the stick so hold-to-lift can't drag-walk.
+        if (this._tracking && this.fishingOpen()) this.abortTracking();
+    }
+
+    /** Web-only: canvas/window pointer → reliable begin/move/end on hosts that drop Cocos UP. */
+    private bindDomFallback(on: boolean) {
+        if (!sys.isBrowser) return;
+        const canvas = game.canvas as HTMLCanvasElement | null;
+        if (!canvas) return;
+        if (on) {
+            if (this._domBound) return;
+            canvas.addEventListener('pointerdown', this.onDomPointerDown, { passive: true });
+            canvas.addEventListener('pointermove', this.onDomPointerMove, { passive: true });
+            // Window capture: release outside the canvas still completes the press.
+            window.addEventListener('pointerup', this.onDomPointerUp, { passive: true, capture: true });
+            window.addEventListener('pointercancel', this.onDomPointerUp, {
+                passive: true,
+                capture: true,
+            });
+            this._domBound = true;
+        } else if (this._domBound) {
+            canvas.removeEventListener('pointerdown', this.onDomPointerDown);
+            canvas.removeEventListener('pointermove', this.onDomPointerMove);
+            window.removeEventListener('pointerup', this.onDomPointerUp, true);
+            window.removeEventListener('pointercancel', this.onDomPointerUp, true);
+            this.releaseCapture();
+            this._domBound = false;
+        }
+    }
+
+    private releaseCapture() {
+        if (this._capturedPtr == null) return;
+        const canvas = game.canvas as HTMLCanvasElement | null;
+        try {
+            canvas?.releasePointerCapture?.(this._capturedPtr);
+        } catch {
+            /* already released */
+        }
+        this._capturedPtr = null;
+    }
+
+    private onDomPointerDown = (ev: PointerEvent) => {
+        // Never steal an in-flight Cocos mouse/touch — that replaced correct
+        // getUILocation() with a naive CSS map and broke letterboxed preview.
+        if (this._tracking) return;
+        const ui = clientToUiLocation(ev.clientX, ev.clientY, false);
+        if (!ui) return;
+        const canvas = game.canvas as HTMLCanvasElement | null;
+        try {
+            canvas?.setPointerCapture?.(ev.pointerId);
+            this._capturedPtr = ev.pointerId;
+        } catch {
+            this._capturedPtr = null;
+        }
+        this.begin(-200, ui.x, ui.y);
+    };
+
+    private onDomPointerMove = (ev: PointerEvent) => {
+        if (!this._tracking) return;
+        // Only drive DOM-owned presses; Cocos mouse/touch keep engine moves.
+        if (this._id !== -200) return;
+        const ui = clientToUiLocation(ev.clientX, ev.clientY, true);
+        if (!ui) return;
+        this.move(ui.x, ui.y);
+    };
+
+    private onDomPointerUp = (ev: PointerEvent) => {
+        const tracking = this._tracking;
+        const id = this._id;
+        const ui = clientToUiLocation(ev.clientX, ev.clientY, tracking);
+        this.releaseCapture();
+        if (!ui) {
+            if (tracking && id === -200) this.abortTracking();
+            return;
+        }
+
+        if (tracking) {
+            // DOM-owned press, or Cocos press that lost its UP — finish the gesture.
+            this.end(ui.x, ui.y);
+            return;
+        }
+        // Gesture already finished by Cocos end/drag — do not synth a second tap.
+        if (Date.now() - this._lastGestureAt < TAP_DEDUP_MS) return;
+        if (Date.now() - this._lastTapAt < TAP_DEDUP_MS) return;
+        // Missed down entirely — still treat as a short tap.
+        this.fireTap(ui.x, ui.y);
+    };
 
     private onTouchStart(e: EventTouch) {
         if (this._tracking) return;
@@ -112,15 +225,32 @@ export class TouchJoystick extends Component {
         this.end(loc.x, loc.y);
     }
 
+    private abortTracking() {
+        this._tracking = false;
+        this._dragging = false;
+        this._uiSlid = false;
+        this._id = -1;
+        this.releaseCapture();
+        InputBridge.clear();
+        this.hideVisual();
+    }
+
+    private fishingOpen(): boolean {
+        const canvas = this.node.parent;
+        return !!canvas?.getComponent(FishingMinigame)?.isOpen;
+    }
+
     private begin(id: number, x: number, y: number) {
         // Self-heal stale locks left by dialogue/reward fade races.
         this.clearStaleInputLocks();
-        // Fishing minigame owns the pointer — do not track / drag / tap-steal.
-        if (InputBridge.moveLocked) {
+        // Fishing owns the pointer entirely — hold lifts the bar, never the stick.
+        if (this.fishingOpen()) {
+            this.abortTracking();
             InputBridge.clear();
             return;
         }
-        // Hotbar: let FarmHUD handle via tap path (still track, but don't start stick in bar).
+        // Always track for short taps. moveLocked (story intro) only suppresses the
+        // walk-stick — taps still reach stick.onTap → StoryIntroPanel.handleTap.
         this._tracking = true;
         this._dragging = false;
         this._uiSlid = false;
@@ -144,6 +274,7 @@ export class TouchJoystick extends Component {
             // Forced spotlight owns uiBlocking — must not clear or the player walks
             // and the hollow drifts off the weed.
             const guide = canvas.getComponent('TutorialGuide') as { isOpen?: boolean } | null;
+            const fish = canvas.getComponent(FishingMinigame);
             if (
                 !dlg?.isOpen &&
                 !reward?.isOpen &&
@@ -151,14 +282,15 @@ export class TouchJoystick extends Component {
                 !hud?.isModalOpen &&
                 !intro?.isOpen &&
                 !shop?.isOpen &&
-                !guide?.isOpen
+                !guide?.isOpen &&
+                !fish?.isOpen
             ) {
                 InputBridge.uiBlocking = false;
             }
         }
         if (InputBridge.moveLocked) {
             const intro = canvas.getComponent('StoryIntroPanel') as { isOpen?: boolean } | null;
-            const fish = canvas.getComponent('FishingMinigame') as { isOpen?: boolean } | null;
+            const fish = canvas.getComponent(FishingMinigame);
             if (!intro?.isOpen && !fish?.isOpen) {
                 InputBridge.moveLocked = false;
             }
@@ -166,24 +298,33 @@ export class TouchJoystick extends Component {
     }
 
     private move(x: number, y: number) {
-        if (InputBridge.moveLocked) {
-            InputBridge.clear();
-            this._tracking = false;
-            this._dragging = false;
-            this._id = -1;
-            this.hideVisual();
-            return;
-        }
         const dx0 = x - this._ox;
         const dy0 = y - this._oy;
         const dist = Math.sqrt(dx0 * dx0 + dy0 * dy0);
+
+        // Fishing: hard-abort — don't keep a zombie press that becomes a stick later.
+        if (this.fishingOpen()) {
+            this.abortTracking();
+            return;
+        }
+
+        // Intro / forced lock: keep tap tracking, never start the walk-stick.
+        if (InputBridge.moveLocked) {
+            InputBridge.clear();
+            return;
+        }
 
         if (!this._dragging) {
             // Bag/chest/craft open: any small slide is a UI gesture (item drag),
             // not a world tap — match FarmHUD's drag threshold so onTap doesn't
             // fire after a successful bag→hotbar drop.
+            // IMPORTANT: do NOT treat spotlight / dialogue uiBlocking as a slide —
+            // mouse micro-moves (≥12px) were swallowing every tutorial hotbar tap.
             if (InputBridge.uiBlocking) {
-                if (dist >= 12) this._uiSlid = true;
+                const canvas = this.node.parent;
+                const hud = canvas?.getComponent('FarmHUD') as { isModalOpen?: boolean } | null;
+                const shop = canvas?.getComponent('TownShopPanel') as { isOpen?: boolean } | null;
+                if ((hud?.isModalOpen || shop?.isOpen) && dist >= 12) this._uiSlid = true;
                 return;
             }
             if (dist < this.dragThreshold) return;
@@ -216,27 +357,29 @@ export class TouchJoystick extends Component {
     }
 
     private end(x: number, y: number) {
-        if (InputBridge.moveLocked) {
-            this._tracking = false;
-            this._dragging = false;
-            this._uiSlid = false;
-            this._id = -1;
-            InputBridge.clear();
-            this.hideVisual();
-            return;
-        }
         const wasDrag = this._dragging;
         const uiSlid = this._uiSlid;
+        const tracking = this._tracking;
         this._tracking = false;
         this._dragging = false;
         this._uiSlid = false;
         this._id = -1;
+        this.releaseCapture();
         InputBridge.clear();
         this.hideVisual();
+        this._lastGestureAt = Date.now();
         // True short tap only — UI slides / item drags must not fire onTap.
-        if (!wasDrag && !uiSlid) {
-            this.onTap?.(x, y);
+        // moveLocked intro still needs onTap → StoryIntroPanel.handleTap.
+        if (tracking && !wasDrag && !uiSlid) {
+            this.fireTap(x, y);
         }
+    }
+
+    private fireTap(x: number, y: number) {
+        const now = Date.now();
+        if (now - this._lastTapAt < TAP_DEDUP_MS) return;
+        this._lastTapAt = now;
+        this.onTap?.(x, y);
     }
 
     private showVisualAt(uiX: number, uiY: number) {
@@ -245,7 +388,7 @@ export class TouchJoystick extends Component {
         // Canvas / visible frame center (not fixed design 1080×1920).
         const canvas = this.node.parent;
         const canvasUi = canvas?.getComponent(UITransform);
-        const vis = view.getVisibleSize();
+        const vis = portraitVisibleSize();
         const hw = (canvasUi?.contentSize.width || vis.width) * 0.5;
         const hh = (canvasUi?.contentSize.height || vis.height) * 0.5;
         this.visualRoot.setPosition(uiX - hw, uiY - hh, 0);

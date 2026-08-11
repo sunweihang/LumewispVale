@@ -863,17 +863,17 @@
   "portrait-farmer": {
     "texture": "71f057db-48d3-42d9-97e4-b1c618559483",
     "prefab": "",
-    "spriteFrame": "71f057db-48d3-42d9-97e4-b1c618559483@6c48a"
+    "spriteFrame": "71f057db-48d3-42d9-97e4-b1c618559483@f9941"
   },
   "portrait-girl": {
     "texture": "ae4405db-f119-45d0-96e4-785dd4e99371",
     "prefab": "",
-    "spriteFrame": "ae4405db-f119-45d0-96e4-785dd4e99371@6c48a"
+    "spriteFrame": "ae4405db-f119-45d0-96e4-785dd4e99371@f9941"
   },
   "portrait-passerby": {
     "texture": "db84a543-5081-4b50-87b1-16411ea16d30",
     "prefab": "",
-    "spriteFrame": "db84a543-5081-4b50-87b1-16411ea16d30@6c48a"
+    "spriteFrame": "db84a543-5081-4b50-87b1-16411ea16d30@f9941"
   },
   "ui-splash": {
     "texture": "5a4ebb12-2f98-4075-a870-b9286e9ac348",
@@ -888,12 +888,12 @@
   "portrait-mayor": {
     "texture": "a7306f84-6da9-4510-a781-d44857ef5a93",
     "prefab": "",
-    "spriteFrame": "a7306f84-6da9-4510-a781-d44857ef5a93@6c48a"
+    "spriteFrame": "a7306f84-6da9-4510-a781-d44857ef5a93@f9941"
   },
   "portrait-carpenter": {
     "texture": "0d1ddd02-8f44-4444-9698-9e3fc1193570",
     "prefab": "",
-    "spriteFrame": "0d1ddd02-8f44-4444-9698-9e3fc1193570@6c48a"
+    "spriteFrame": "0d1ddd02-8f44-4444-9698-9e3fc1193570@f9941"
   },
   "char-farmer": {
     "texture": "769eebee-d2d6-49c2-88d7-3fbacc1f2702",
@@ -1761,5 +1761,195 @@
   "ui-quest-path-dot-3": {
     "texture": "49f66278-703f-47a4-bb05-aeab17951511",
     "spriteFrame": "49f66278-703f-47a4-bb05-aeab17951511@f9941"
+  },
+  "ui-fishing-finger": {
+    "texture": "fb20137f-4171-44b3-b8ce-bd45889dfa92",
+    "prefab": "",
+    "spriteFrame": "fb20137f-4171-44b3-b8ce-bd45889dfa92@f9941"
+  },
+  "ui-fishing-hold": {
+    "texture": "565b65a9-03ba-4ef5-a5a9-7c3d5862b8f3",
+    "prefab": "",
+    "spriteFrame": "565b65a9-03ba-4ef5-a5a9-7c3d5862b8f3@f9941"
+  },
+  "ui-fishing-hold-pressed": {
+    "texture": "435c8a0f-2076-4047-8a25-bd5f077d822b",
+    "prefab": "",
+    "spriteFrame": "435c8a0f-2076-4047-8a25-bd5f077d822b@f9941"
+  },
+  "ui-fishing-hold-release": {
+    "texture": "3578de73-95c7-4102-a66b-f236287c114e",
+    "prefab": "",
+    "spriteFrame": "3578de73-95c7-4102-a66b-f236287c114e@f9941"
+  },
+  "doctor-down-0": {
+    "texture": "82c26c1a-afa1-4a5b-a531-b096e447b53f",
+    "prefab": "",
+    "spriteFrame": "82c26c1a-afa1-4a5b-a531-b096e447b53f@f9941"
+  },
+  "doctor-down-1": {
+    "texture": "32e764d7-0090-4926-b866-0a2de1e16a98",
+    "prefab": "",
+    "spriteFrame": "32e764d7-0090-4926-b866-0a2de1e16a98@f9941"
+  },
+  "doctor-down-2": {
+    "texture": "dc8fd73f-a8c3-49bd-8a79-1eb38d94b923",
+    "prefab": "",
+    "spriteFrame": "dc8fd73f-a8c3-49bd-8a79-1eb38d94b923@f9941"
+  },
+  "doctor-down-3": {
+    "texture": "89cf649a-4e58-4501-b474-01a00a80a847",
+    "prefab": "",
+    "spriteFrame": "89cf649a-4e58-4501-b474-01a00a80a847@f9941"
+  },
+  "doctor-left-0": {
+    "texture": "a1c617fb-55a4-4f72-b4c0-4aec04c3b38e",
+    "prefab": "",
+    "spriteFrame": "a1c617fb-55a4-4f72-b4c0-4aec04c3b38e@f9941"
+  },
+  "doctor-left-1": {
+    "texture": "c7e99440-b875-4f54-a2e6-4af445e1ca64",
+    "prefab": "",
+    "spriteFrame": "c7e99440-b875-4f54-a2e6-4af445e1ca64@f9941"
+  },
+  "doctor-left-2": {
+    "texture": "dbc0dbff-6d3d-4774-b728-87357b234ec2",
+    "prefab": "",
+    "spriteFrame": "dbc0dbff-6d3d-4774-b728-87357b234ec2@f9941"
+  },
+  "doctor-left-3": {
+    "texture": "93a21581-a9fd-4dad-8c0a-9ee2785d8423",
+    "prefab": "",
+    "spriteFrame": "93a21581-a9fd-4dad-8c0a-9ee2785d8423@f9941"
+  },
+  "doctor-right-0": {
+    "texture": "070f20f5-24a6-430e-bcd8-0cc2281ae539",
+    "prefab": "",
+    "spriteFrame": "070f20f5-24a6-430e-bcd8-0cc2281ae539@f9941"
+  },
+  "doctor-right-1": {
+    "texture": "c37d5f36-850d-4c0a-9ddd-eef565c0bea8",
+    "prefab": "",
+    "spriteFrame": "c37d5f36-850d-4c0a-9ddd-eef565c0bea8@f9941"
+  },
+  "doctor-right-2": {
+    "texture": "9767419d-7b03-4cfd-a17f-4c71a8e0be49",
+    "prefab": "",
+    "spriteFrame": "9767419d-7b03-4cfd-a17f-4c71a8e0be49@f9941"
+  },
+  "doctor-right-3": {
+    "texture": "6b8a0a12-7c7e-4437-935a-91058a89d854",
+    "prefab": "",
+    "spriteFrame": "6b8a0a12-7c7e-4437-935a-91058a89d854@f9941"
+  },
+  "doctor-up-0": {
+    "texture": "2e5616b0-5e35-4810-b258-4a2d3a479d61",
+    "prefab": "",
+    "spriteFrame": "2e5616b0-5e35-4810-b258-4a2d3a479d61@f9941"
+  },
+  "doctor-up-1": {
+    "texture": "c7d5a984-ff85-4559-ba9f-861c672ddd2f",
+    "prefab": "",
+    "spriteFrame": "c7d5a984-ff85-4559-ba9f-861c672ddd2f@f9941"
+  },
+  "doctor-up-2": {
+    "texture": "8c5d9a63-924a-41ea-9a9c-b2ab58cac52f",
+    "prefab": "",
+    "spriteFrame": "8c5d9a63-924a-41ea-9a9c-b2ab58cac52f@f9941"
+  },
+  "doctor-up-3": {
+    "texture": "9c4d4c18-b9cf-4294-8dd0-92d8c6f4985e",
+    "prefab": "",
+    "spriteFrame": "9c4d4c18-b9cf-4294-8dd0-92d8c6f4985e@f9941"
+  },
+  "caretaker-down-0": {
+    "texture": "3f5330ff-2144-4fd2-bbc4-75ba5eee5989",
+    "prefab": "",
+    "spriteFrame": "3f5330ff-2144-4fd2-bbc4-75ba5eee5989@f9941"
+  },
+  "caretaker-down-1": {
+    "texture": "ce418436-d1c6-4e44-a593-91f6aa15f850",
+    "prefab": "",
+    "spriteFrame": "ce418436-d1c6-4e44-a593-91f6aa15f850@f9941"
+  },
+  "caretaker-down-2": {
+    "texture": "b05ba3f2-8061-4d45-91c6-69c0503e8769",
+    "prefab": "",
+    "spriteFrame": "b05ba3f2-8061-4d45-91c6-69c0503e8769@f9941"
+  },
+  "caretaker-down-3": {
+    "texture": "28d4f680-0445-4e91-b742-ba6e98747587",
+    "prefab": "",
+    "spriteFrame": "28d4f680-0445-4e91-b742-ba6e98747587@f9941"
+  },
+  "caretaker-left-0": {
+    "texture": "46cb1921-41bc-4c46-ba53-2996fa03c0a6",
+    "prefab": "",
+    "spriteFrame": "46cb1921-41bc-4c46-ba53-2996fa03c0a6@f9941"
+  },
+  "caretaker-left-1": {
+    "texture": "2811b22f-9c1c-45dd-8d85-fb964ddb5da7",
+    "prefab": "",
+    "spriteFrame": "2811b22f-9c1c-45dd-8d85-fb964ddb5da7@f9941"
+  },
+  "caretaker-left-2": {
+    "texture": "30874b46-a1f4-4082-bf88-44bf8bcfe044",
+    "prefab": "",
+    "spriteFrame": "30874b46-a1f4-4082-bf88-44bf8bcfe044@f9941"
+  },
+  "caretaker-left-3": {
+    "texture": "d55de166-df21-4823-886a-777aa3058653",
+    "prefab": "",
+    "spriteFrame": "d55de166-df21-4823-886a-777aa3058653@f9941"
+  },
+  "caretaker-right-0": {
+    "texture": "76f9590e-a526-46f5-96d5-8a9c282fe3cc",
+    "prefab": "",
+    "spriteFrame": "76f9590e-a526-46f5-96d5-8a9c282fe3cc@f9941"
+  },
+  "caretaker-right-1": {
+    "texture": "40c4ea15-c2ba-499a-a29a-14257e059a77",
+    "prefab": "",
+    "spriteFrame": "40c4ea15-c2ba-499a-a29a-14257e059a77@f9941"
+  },
+  "caretaker-right-2": {
+    "texture": "b470d78b-be4e-4e7b-9cf6-95ccf4b159ac",
+    "prefab": "",
+    "spriteFrame": "b470d78b-be4e-4e7b-9cf6-95ccf4b159ac@f9941"
+  },
+  "caretaker-right-3": {
+    "texture": "b7a2a525-1435-4a67-84fc-ab0947aa6de3",
+    "prefab": "",
+    "spriteFrame": "b7a2a525-1435-4a67-84fc-ab0947aa6de3@f9941"
+  },
+  "caretaker-up-0": {
+    "texture": "50d2cc5a-a96f-4594-9709-7fcb7e7c27aa",
+    "prefab": "",
+    "spriteFrame": "50d2cc5a-a96f-4594-9709-7fcb7e7c27aa@f9941"
+  },
+  "caretaker-up-1": {
+    "texture": "25c6888a-5147-4412-b682-b2c1c250c0e9",
+    "prefab": "",
+    "spriteFrame": "25c6888a-5147-4412-b682-b2c1c250c0e9@f9941"
+  },
+  "caretaker-up-2": {
+    "texture": "eb6fd80e-c2c2-4a24-bdf3-e276097b062d",
+    "prefab": "",
+    "spriteFrame": "eb6fd80e-c2c2-4a24-bdf3-e276097b062d@f9941"
+  },
+  "caretaker-up-3": {
+    "texture": "d7b95af2-f0cb-4239-873d-5a77ff4bd247",
+    "prefab": "",
+    "spriteFrame": "d7b95af2-f0cb-4239-873d-5a77ff4bd247@f9941"
+  },
+  "portrait-doctor": {
+    "texture": "93dd9f57-4ca3-4f8a-a190-8ad392249274",
+    "prefab": "",
+    "spriteFrame": "93dd9f57-4ca3-4f8a-a190-8ad392249274@f9941"
+  },
+  "portrait-caretaker": {
+    "texture": "11707a82-1c6b-4df5-b1d1-bc3b9f9b3cfa",
+    "prefab": "",
+    "spriteFrame": "11707a82-1c6b-4df5-b1d1-bc3b9f9b3cfa@f9941"
   }
 }

@@ -210,6 +210,12 @@ export class WorldYSort extends Component {
             name === '__mine_spawn' ||
             name === '__mayor_house_baked' ||
             name === '__mayor_house_spawn' ||
+            name === '__clinic_baked' ||
+            name === '__clinic_spawn' ||
+            name === '__community_baked' ||
+            name === '__community_spawn' ||
+            name === '__carpenter_shop_baked' ||
+            name === '__carpenter_shop_spawn' ||
             name.startsWith('tile-') ||
             name.startsWith('fringe_') ||
             name.startsWith('water_') ||

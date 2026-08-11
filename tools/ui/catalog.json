@@ -1273,7 +1273,7 @@
       ],
       "path": "assets/textures/ui/ui-craft-btn.png",
       "prefab": "",
-      "note": "Craftbench row button chrome (blank wood; Label overlays 制作)",
+      "note": "Craftbench row button chrome (blank wood; Label overlays \u5236\u4f5c)",
       "tags": [
         "craft",
         "button"
@@ -1342,6 +1342,73 @@
         "fishing",
         "guide",
         "ripple",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-fishing-finger",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-finger.png",
+      "spriteFrame": "fb20137f-4171-44b3-b8ce-bd45889dfa92@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "fishing",
+        "finger",
+        "hint",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-fishing-hold",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-hold.png",
+      "spriteFrame": "565b65a9-03ba-4ef5-a5a9-7c3d5862b8f3@f9941",
+      "size": [
+        192,
+        192
+      ],
+      "tags": [
+        "fishing",
+        "hold",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-fishing-hold-pressed",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-hold-pressed.png",
+      "spriteFrame": "435c8a0f-2076-4047-8a25-bd5f077d822b@f9941",
+      "size": [
+        192,
+        192
+      ],
+      "tags": [
+        "fishing",
+        "hold",
+        "pressed",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-fishing-hold-release",
+      "kind": "chrome",
+      "group": "fishing",
+      "path": "assets/textures/ui/ui-fishing-hold-release.png",
+      "spriteFrame": "3578de73-95c7-4102-a66b-f236287c114e@f9941",
+      "size": [
+        192,
+        192
+      ],
+      "tags": [
+        "fishing",
+        "hold",
+        "release",
         "ai"
       ]
     },

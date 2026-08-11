@@ -15,10 +15,11 @@ import {
     Vec3,
     assetManager,
     input,
+    sys,
     tween,
     Tween,
 } from 'cc';
-import { DESIGN_H, DESIGN_W, portraitVisibleSize } from './PortraitFit';
+import { clientToUiLocation, DESIGN_H, DESIGN_W, portraitVisibleSize } from './PortraitFit';
 import { InputBridge } from './InputBridge';
 import { StoryIntroAudio } from './StoryIntroAudio';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
@@ -42,7 +43,8 @@ const BOX_Y = -780;
 const TYPE_CPS = 7;
 const FADE_IN = 0.18;
 const FADE_OUT = 0.12;
-const INPUT_GUARD_SEC = FADE_IN + 0.35;
+/** Short guard — long enough to ignore the open gesture, short enough for snappy taps. */
+const INPUT_GUARD_SEC = 0.28;
 const PAGE_CROSS = 0.18;
 
 const HUD_CHROME = [
@@ -116,9 +118,13 @@ export class StoryIntroPanel extends Component {
     private _onDone: (() => void) | null = null;
     private _open = false;
     private _inputReady = false;
+    /** Wall-clock open time — scheduleOnce can miss on web-mobile; see tryAdvance. */
+    private _openedAt = 0;
     private _listening = false;
     private _busy = false;
     private _lastAdvanceAt = 0;
+    /** After Skip, ignore trailing DOM/engine ups that would call tryAdvance. */
+    private _skipGuardUntil = 0;
     private _prevBlocking = false;
     private _prevMoveLocked = false;
     private _chromeWas = new Map<string, boolean>();
@@ -129,6 +135,14 @@ export class StoryIntroPanel extends Component {
 
     get isOpen() {
         return this._open;
+    }
+
+    /**
+     * True while the cover is still on screen (including skip fade-out).
+     * TutorialGuide must gate on this — skip clears moveLocked before the fade ends.
+     */
+    get isCovering() {
+        return this._open || !!(this._root?.isValid && this._root.active);
     }
 
     /** GM / skip: close immediately without running the play `onDone` callback. */
@@ -231,7 +245,8 @@ export class StoryIntroPanel extends Component {
      * Debounced tryAdvance merges with global mouse/touch listeners.
      */
     handleTap(uiX: number, uiY: number): boolean {
-        if (!this._open) return false;
+        // Fade-out still covers the farm — swallow the trailing skip/advance tap.
+        if (!this._open) return this.isCovering;
         if (this.hitSkip(uiX, uiY)) {
             this.skip();
             return true;
@@ -348,9 +363,17 @@ export class StoryIntroPanel extends Component {
     }
 
     private tryAdvance() {
-        if (!this._open || !this._inputReady || this._busy) return;
+        if (!this._open || this._busy) return;
+        // Duplicate DOM + engine ups after Skip must not flip the next page.
+        if (Date.now() < this._skipGuardUntil) return;
+        // scheduleOnce can miss on web-mobile / hot-reload — unlock after guard elapsed.
+        if (!this._inputReady) {
+            if (Date.now() - this._openedAt < INPUT_GUARD_SEC * 1000) return;
+            this.enableInput();
+        }
+        if (!this._inputReady) return;
         const now = Date.now();
-        if (now - this._lastAdvanceAt < 280) return;
+        if (now - this._lastAdvanceAt < 160) return;
         this._lastAdvanceAt = now;
         this._audio.unlockFromGesture();
         playUiClick();
@@ -377,6 +400,7 @@ export class StoryIntroPanel extends Component {
         this._onDone = null;
         this._pages = [];
         this._index = 0;
+        this.setHintVisible(false);
         // Keep calm piano looping into the farm / main scene.
         this._audio.continueCalm();
         this.hide(() => done?.());
@@ -386,7 +410,10 @@ export class StoryIntroPanel extends Component {
     private skip() {
         if (!this._open) return;
         this._busy = false;
+        this._skipGuardUntil = Date.now() + 400;
         this.stopTypewriter();
+        // Never flash “点击继续” / hint arrow on the way out.
+        this.setHintVisible(false);
         this._audio.unlockFromGesture();
         playUiClick();
         this.finish();
@@ -403,6 +430,7 @@ export class StoryIntroPanel extends Component {
         }
         this._open = true;
         this._inputReady = false;
+        this._openedAt = Date.now();
         this.unschedule(this.enableInput);
         // Listen immediately so top-right Skip works during the advance guard.
         this.listen();
@@ -551,6 +579,15 @@ export class StoryIntroPanel extends Component {
         this._listening = true;
         input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
         input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        // TouchControls is hidden during intro — DOM fallback must live here.
+        // Window capture: release outside the canvas still advances.
+        if (sys.isBrowser) {
+            window.addEventListener('pointerup', this.onDomPointerUp, { passive: true, capture: true });
+            window.addEventListener('pointercancel', this.onDomPointerUp, {
+                passive: true,
+                capture: true,
+            });
+        }
     }
 
     private unlisten() {
@@ -558,7 +595,22 @@ export class StoryIntroPanel extends Component {
         this._listening = false;
         input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
         input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        if (sys.isBrowser) {
+            window.removeEventListener('pointerup', this.onDomPointerUp, true);
+            window.removeEventListener('pointercancel', this.onDomPointerUp, true);
+        }
     }
+
+    private onDomPointerUp = (ev: PointerEvent) => {
+        if (!this._open) return;
+        const ui = clientToUiLocation(ev.clientX, ev.clientY, false);
+        if (!ui) return;
+        if (this.hitSkip(ui.x, ui.y)) {
+            this.skip();
+            return;
+        }
+        this.tryAdvance();
+    };
 
     private onTouchEnd(e: EventTouch) {
         if (!this._open) return;
@@ -568,7 +620,6 @@ export class StoryIntroPanel extends Component {
             this.skip();
             return;
         }
-        if (!this._inputReady) return;
         this.tryAdvance();
     }
 
@@ -581,23 +632,58 @@ export class StoryIntroPanel extends Component {
             this.skip();
             return;
         }
-        if (!this._inputReady) return;
         this.tryAdvance();
+    }
+
+    /** Same half-extents FarmHUD / TouchJoystick use for UI ↔ canvas-local. */
+    private canvasHalf(): { halfW: number; halfH: number } {
+        const canvasUi = this.node.getComponent(UITransform);
+        const vis = portraitVisibleSize();
+        return {
+            halfW: (canvasUi?.contentSize.width || vis.width || DESIGN_W) * 0.5,
+            halfH: (canvasUi?.contentSize.height || vis.height || DESIGN_H) * 0.5,
+        };
+    }
+
+    private uiToCanvasLocal(uiX: number, uiY: number): { x: number; y: number } {
+        const { halfW, halfH } = this.canvasHalf();
+        return { x: uiX - halfW, y: uiY - halfH };
     }
 
     private hitSkip(uiX: number, uiY: number): boolean {
         if (!this._skipBtn?.isValid || !this._skipBtn.active) return false;
         const ut = this._skipBtn.getComponent(UITransform);
-        if (!ut) return false;
-        const canvasUt = this.node.getComponent(UITransform);
-        const halfW = (canvasUt?.contentSize.width || DESIGN_W) * 0.5;
-        const halfH = (canvasUt?.contentSize.height || DESIGN_H) * 0.5;
-        const x = uiX - halfW;
-        const y = uiY - halfH;
-        const p = this._skipBtn.position;
-        const hw = ut.contentSize.width * 0.5;
-        const hh = ut.contentSize.height * 0.5;
-        return Math.abs(x - p.x) <= hw && Math.abs(y - p.y) <= hh;
+        const canvasUi = this.node.getComponent(UITransform);
+        if (!ut || !canvasUi) return false;
+
+        // Prefer world AABB → canvas local (parent offsets / scale safe).
+        const pad = 32;
+        const w = ut.contentSize.width;
+        const h = ut.contentSize.height;
+        const ax = ut.anchorX;
+        const ay = ut.anchorY;
+        const corners = [
+            new Vec3(-w * ax, -h * ay, 0),
+            new Vec3(w * (1 - ax), -h * ay, 0),
+            new Vec3(-w * ax, h * (1 - ay), 0),
+            new Vec3(w * (1 - ax), h * (1 - ay), 0),
+        ];
+        let x0 = Infinity;
+        let y0 = Infinity;
+        let x1 = -Infinity;
+        let y1 = -Infinity;
+        const world = new Vec3();
+        const local = new Vec3();
+        for (let i = 0; i < corners.length; i++) {
+            ut.convertToWorldSpaceAR(corners[i]!, world);
+            canvasUi.convertToNodeSpaceAR(world, local);
+            if (local.x < x0) x0 = local.x;
+            if (local.y < y0) y0 = local.y;
+            if (local.x > x1) x1 = local.x;
+            if (local.y > y1) y1 = local.y;
+        }
+        const p = this.uiToCanvasLocal(uiX, uiY);
+        return p.x >= x0 - pad && p.x <= x1 + pad && p.y >= y0 - pad && p.y <= y1 + pad;
     }
 
     private layoutArt() {
@@ -626,14 +712,13 @@ export class StoryIntroPanel extends Component {
 
     private layoutSkip() {
         if (!this._skipBtn?.isValid) return;
-        const vis = portraitVisibleSize();
-        const vw = vis.width || DESIGN_W;
-        const vh = vis.height || DESIGN_H;
+        // Match GmChip / FarmHUD — canvas UIT half, not a divergent visible size.
+        const { halfW, halfH } = this.canvasHalf();
         const ut = this._skipBtn.getComponent(UITransform);
         const bw = ut?.contentSize.width ?? 148;
         const bh = ut?.contentSize.height ?? 56;
         const pad = 36;
-        this._skipBtn.setPosition(vw * 0.5 - pad - bw * 0.5, vh * 0.5 - pad - bh * 0.5, 0);
+        this._skipBtn.setPosition(halfW - pad - bw * 0.5, halfH - pad - bh * 0.5, 0);
     }
 
     private ensureBodyLayout() {
@@ -799,6 +884,22 @@ export class StoryIntroPanel extends Component {
         });
         this._skipLab = skipLab;
         this._skipBtn = skip;
+        // Engine hit-test path — survives canvas/visible half mismatches on web-mobile.
+        skip.on(Node.EventType.TOUCH_END, this.onSkipNodeTouch, this);
+        skip.on(Node.EventType.MOUSE_UP, this.onSkipNodeMouse, this);
         this.layoutSkip();
     }
+
+    private onSkipNodeTouch = (e: EventTouch) => {
+        if (!this._open) return;
+        e.propagationStopped = true;
+        this.skip();
+    };
+
+    private onSkipNodeMouse = (e: EventMouse) => {
+        if (!this._open) return;
+        if (e.getButton() !== EventMouse.BUTTON_LEFT) return;
+        e.propagationStopped = true;
+        this.skip();
+    };
 }

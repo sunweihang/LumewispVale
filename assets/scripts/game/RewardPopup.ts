@@ -27,6 +27,7 @@ import {
     UI_INK_MUTE as INK_MUTE,
     UI_PRICE as COUNT_INK,
     drawWoodParchmentPanel,
+    mountPanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -68,6 +69,7 @@ export class RewardPopup extends Component {
     private _titleLab: Label | null = null;
     private _chipHost: Node | null = null;
     private _btnLab: Label | null = null;
+    private _closeBtn: Node | null = null;
     private _rootOp: UIOpacity | null = null;
     private _dimOp: UIOpacity | null = null;
     private _open = false;
@@ -118,7 +120,7 @@ export class RewardPopup extends Component {
 
     handleTap(_uiX: number, _uiY: number): boolean {
         if (!this._open || !this._root) return false;
-        // Anywhere on modal / dimmer claims — one-tap friendly.
+        // Anywhere on modal / dimmer / close X claims — one-tap friendly.
         this.confirmClaim();
         return true;
     }
@@ -500,6 +502,8 @@ export class RewardPopup extends Component {
             outlineColor: new Color(255, 240, 200, 180),
         });
         this._titleLab = title;
+
+        this._closeBtn = mountPanelCloseButton(root, PANEL_W, PANEL_H);
 
         // Reward grid — vertically centered between title and button.
         const chips = new Node('Chips');

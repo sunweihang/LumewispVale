@@ -1,5 +1,5 @@
-import { Color } from 'cc';
-import type { Graphics } from 'cc';
+import { Color, Graphics, Node, Sprite, SpriteFrame, UITransform, assetManager } from 'cc';
+import { TOOL_FRAMES } from './ToolFrames';
 
 /** Farm / Stardew-like panel palette — shared by bag, quest, shop, GM, rewards. */
 export const UI_WOOD = new Color(176, 110, 48, 255);
@@ -13,6 +13,16 @@ export const UI_INK = new Color(68, 40, 18, 255);
 export const UI_INK_MUTE = new Color(110, 78, 42, 255);
 export const UI_CREAM = new Color(255, 244, 214, 255);
 export const UI_PRICE = new Color(140, 84, 24, 255);
+
+/** Bag-standard close chip (FarmHUD: 56 × 1.5). */
+export const PANEL_CLOSE_BTN = 84;
+/** Inset from panel outer edge to close icon edge. */
+export const PANEL_CLOSE_PAD = 33;
+/** Generous hit plate (tutorial chevron sits above the X). */
+export const PANEL_CLOSE_HIT = Math.round(PANEL_CLOSE_BTN * 1.85);
+
+let _closeFrameCache: SpriteFrame | null | undefined;
+const _closeFrameWaiters: Array<(frame: SpriteFrame | null) => void> = [];
 
 /**
  * Outer wood frame + inner parchment (matches FarmHUD / QuestPanel).
@@ -105,26 +115,132 @@ export function drawParchmentRow(g: Graphics, w: number, h: number, radius = 12)
     g.stroke();
 }
 
-/** Wood square close with X (fallback when no sprite). */
+/**
+ * Wood-framed close chip matching bag `TOOL_FRAMES.close`
+ * (rim + parchment face + dark X). Last-resort fallback only.
+ */
 export function drawWoodClose(g: Graphics, size: number) {
     const half = size * 0.5;
-    const r = Math.round(size * 0.18);
+    const r = Math.round(size * 0.16);
+    const inset = Math.max(4, Math.round(size * 0.12));
     g.clear();
     g.fillColor = UI_WOOD;
     g.roundRect(-half, -half, size, size, r);
     g.fill();
+    g.fillColor = UI_WOOD_DARK;
+    g.roundRect(-half + 3, -half + 3, size - 6, size - 6, Math.max(2, r - 2));
+    g.fill();
+    g.fillColor = UI_PARCHMENT_LIGHT;
+    g.roundRect(-half + inset, -half + inset, size - inset * 2, size - inset * 2, Math.max(2, r - 4));
+    g.fill();
     g.strokeColor = UI_STROKE;
-    g.lineWidth = 4;
+    g.lineWidth = Math.max(3, Math.round(size * 0.06));
     g.roundRect(-half, -half, size, size, r);
     g.stroke();
-    g.strokeColor = new Color(72, 42, 22, 255);
-    g.lineWidth = 5;
-    const m = Math.round(size * 0.28);
+    g.strokeColor = new Color(54, 30, 14, 255);
+    g.lineWidth = Math.max(4, Math.round(size * 0.09));
+    const m = Math.round(size * 0.26);
     g.moveTo(-m, m);
     g.lineTo(m, -m);
     g.moveTo(-m, -m);
     g.lineTo(m, m);
     g.stroke();
+}
+
+/** Cached load of bag close sprite (`TOOL_FRAMES.close`). */
+export function loadPanelCloseFrame(done: (frame: SpriteFrame | null) => void) {
+    if (_closeFrameCache !== undefined) {
+        done(_closeFrameCache);
+        return;
+    }
+    _closeFrameWaiters.push(done);
+    if (_closeFrameWaiters.length > 1) return;
+    assetManager.loadAny({ uuid: TOOL_FRAMES.close }, (err, asset) => {
+        _closeFrameCache = !err && asset ? (asset as SpriteFrame) : null;
+        if (err || !asset) console.warn('[UiChrome] close frame missing', err);
+        const waiters = _closeFrameWaiters.splice(0, _closeFrameWaiters.length);
+        for (const w of waiters) w(_closeFrameCache);
+    });
+}
+
+/** Top-right corner placement matching FarmHUD bag / chest / craft. */
+export function placePanelCloseButton(
+    btn: Node,
+    panelW: number,
+    panelH: number,
+    opts?: { size?: number; pad?: number; hit?: number },
+) {
+    const size = opts?.size ?? PANEL_CLOSE_BTN;
+    const pad = opts?.pad ?? PANEL_CLOSE_PAD;
+    const hit = opts?.hit ?? Math.round(size * 1.85);
+    btn.setPosition(panelW * 0.5 - pad - size * 0.5, panelH * 0.5 - pad - size * 0.5, 0);
+    const ut = btn.getComponent(UITransform) ?? btn.addComponent(UITransform);
+    ut.setContentSize(hit, hit);
+}
+
+/**
+ * Bag-standard close visual: prefer `TOOL_FRAMES.close` sprite, else drawWoodClose.
+ * Call after the button's hit UITransform is sized.
+ */
+export function paintPanelCloseVisual(
+    btn: Node,
+    opts: { size?: number; layer: number; frame?: SpriteFrame | null },
+) {
+    const size = opts.size ?? PANEL_CLOSE_BTN;
+    const { layer } = opts;
+    const frame = opts.frame ?? null;
+    let icon = btn.getChildByName('Icon');
+    if (frame) {
+        if (!icon) {
+            icon = new Node('Icon');
+            icon.layer = layer;
+            icon.setParent(btn);
+            icon.addComponent(UITransform).setContentSize(size, size);
+            icon.addComponent(Sprite);
+        }
+        icon.active = true;
+        icon.layer = layer;
+        const iut = icon.getComponent(UITransform) ?? icon.addComponent(UITransform);
+        iut.setContentSize(size, size);
+        const sp = icon.getComponent(Sprite) ?? icon.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.spriteFrame = frame;
+        const g = btn.getComponent(Graphics);
+        if (g) g.clear();
+        return;
+    }
+    if (icon) icon.active = false;
+    const g = btn.getComponent(Graphics) ?? btn.addComponent(Graphics);
+    drawWoodClose(g, size);
+}
+
+/**
+ * Create bag-standard close button under `parent`, load sprite async, paint when ready.
+ * Returns the hit node immediately (fallback Graphics until frame arrives).
+ */
+export function mountPanelCloseButton(
+    parent: Node,
+    panelW: number,
+    panelH: number,
+    opts?: { name?: string; size?: number; pad?: number; frame?: SpriteFrame | null },
+): Node {
+    const size = opts?.size ?? PANEL_CLOSE_BTN;
+    const btn = new Node(opts?.name ?? 'CloseBtn');
+    btn.layer = parent.layer;
+    btn.setParent(parent);
+    placePanelCloseButton(btn, panelW, panelH, { size, pad: opts?.pad });
+    paintPanelCloseVisual(btn, {
+        size,
+        layer: parent.layer,
+        frame: opts?.frame ?? null,
+    });
+    if (!opts?.frame) {
+        loadPanelCloseFrame((frame) => {
+            if (!btn.isValid || !frame) return;
+            paintPanelCloseVisual(btn, { size, layer: btn.layer, frame });
+        });
+    }
+    return btn;
 }
 
 /** Bottom dialogue band — wood rim, warm dark fill (readable over world). */

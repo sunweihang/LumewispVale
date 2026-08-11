@@ -29,6 +29,9 @@ import { REWARD_FRAMES } from './RewardFrames';
 import { TOOL_FRAMES } from './ToolFrames';
 import { playUiClick } from './UiAudio';
 import {
+    PANEL_CLOSE_BTN,
+    PANEL_CLOSE_HIT,
+    PANEL_CLOSE_PAD,
     UI_GOLD as GOLD,
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
@@ -37,10 +40,11 @@ import {
     UI_WOOD as WOOD,
     UI_WOOD_DARK as WOOD_DARK,
     drawWoodParchmentPanel,
+    loadPanelCloseFrame,
+    paintPanelCloseVisual,
+    placePanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
-
-const CLOSE_FRAME_UUID = TOOL_FRAMES.close;
 
 const { ccclass, property } = _decorator;
 
@@ -553,9 +557,8 @@ export class QuestPanel extends Component {
                 finish();
             });
         }
-        assetManager.loadAny({ uuid: CLOSE_FRAME_UUID }, (err, asset) => {
-            if (!err && asset) this._closeFrame = asset as SpriteFrame;
-            else console.warn('[QuestPanel] close frame missing', err);
+        loadPanelCloseFrame((frame) => {
+            this._closeFrame = frame;
             finish();
         });
     }
@@ -583,10 +586,12 @@ export class QuestPanel extends Component {
             this.titleLab.node.setPosition(0, L.titleY, 0);
             const tut = this.titleLab.node.getComponent(UITransform);
             // Side gutters so title never sits under the close hit plate (craft uses ~2.8×).
-            if (tut) tut.setContentSize(Math.max(200, L.panelW - L.closeBtn * 2.8), 48);
+            if (tut) tut.setContentSize(Math.max(200, L.panelW - PANEL_CLOSE_BTN * 2.8), 48);
         }
         // Close stays in the header band only — never overlaps the list.
-        if (this.btnClose) this.btnClose.setPosition(L.closeX, L.closeY, 0);
+        if (this.btnClose) {
+            placePanelCloseButton(this.btnClose, L.panelW, L.panelH);
+        }
         if (this.btnGoto) this.btnGoto.active = false;
         // Close / scrollbar above list chrome.
         if (this.panelRoot) {
@@ -625,52 +630,21 @@ export class QuestPanel extends Component {
     /** Top-right X — same asset / corner placement as bag & craft. */
     private paintCloseButton() {
         if (!this.btnClose) return;
-        // Keep hit near the icon so it doesn't steal taps from the hero card below.
-        const hit = Math.round(L.closeBtn * 1.15);
-        const ut = this.btnClose.getComponent(UITransform) ?? this.btnClose.addComponent(UITransform);
-        ut.setContentSize(hit, hit);
-        this.btnClose.setPosition(L.closeX, L.closeY, 0);
+        placePanelCloseButton(this.btnClose, L.panelW, L.panelH, {
+            size: PANEL_CLOSE_BTN,
+            pad: PANEL_CLOSE_PAD,
+            hit: PANEL_CLOSE_HIT,
+        });
 
         // Hide legacy footer label if present.
         const lab = this.btnClose.getChildByName('Label');
         if (lab) lab.active = false;
 
-        let icon = this.btnClose.getChildByName('Icon');
-        if (!icon) {
-            icon = new Node('Icon');
-            icon.layer = this.btnClose.layer;
-            icon.setParent(this.btnClose);
-            icon.addComponent(UITransform).setContentSize(L.closeBtn, L.closeBtn);
-            icon.addComponent(Sprite);
-        }
-        const iut = icon.getComponent(UITransform);
-        if (iut) iut.setContentSize(L.closeBtn, L.closeBtn);
-        const sp = icon.getComponent(Sprite);
-        if (!sp) return;
-        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        if (this._closeFrame) {
-            sp.spriteFrame = this._closeFrame;
-            return;
-        }
-        // Fallback wood X if frame not loaded yet.
-        const g = this.btnClose.getComponent(Graphics) ?? this.btnClose.addComponent(Graphics);
-        const half = L.closeBtn * 0.5;
-        g.clear();
-        g.fillColor = WOOD;
-        g.roundRect(-half, -half, L.closeBtn, L.closeBtn, 15);
-        g.fill();
-        g.strokeColor = STROKE;
-        g.lineWidth = 4;
-        g.roundRect(-half, -half, L.closeBtn, L.closeBtn, 15);
-        g.stroke();
-        g.strokeColor = new Color(72, 42, 22, 255);
-        g.lineWidth = 5;
-        const m = 21;
-        g.moveTo(-m, m);
-        g.lineTo(m, -m);
-        g.moveTo(-m, -m);
-        g.lineTo(m, m);
-        g.stroke();
+        paintPanelCloseVisual(this.btnClose, {
+            size: PANEL_CLOSE_BTN,
+            layer: this.btnClose.layer,
+            frame: this._closeFrame,
+        });
     }
 
     /**

@@ -28,6 +28,7 @@ import {
     UI_STROKE,
     drawWoodButton,
     drawWoodParchmentPanel,
+    mountPanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -267,7 +268,8 @@ export class GmPanel extends Component {
             outline: true,
         });
 
-        this.addBtn(panel, '关闭', panelW * 0.5 - 66, panelH * 0.5 - 38, 88, 40, () => this.setOpen(false), true);
+        const closeBtn = mountPanelCloseButton(panel, panelW, panelH);
+        this._btns.push({ node: closeBtn, action: () => this.setOpen(false) });
 
         // Tab bar
         const tabY = panelH * 0.5 - 96;

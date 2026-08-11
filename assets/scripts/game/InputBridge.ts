@@ -14,6 +14,12 @@ export class InputBridge {
      */
     static moveLocked = false;
 
+    /**
+     * Wired by TouchJoystick — exclusive UIs (fishing) call this to kill an
+     * in-flight press so hold-to-lift never becomes drag-to-move.
+     */
+    static abortStick: (() => void) | null = null;
+
     static setMove(x: number, y: number) {
         if (InputBridge.moveLocked) {
             InputBridge.move.set(0, 0);

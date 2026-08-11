@@ -27,7 +27,9 @@ import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
+import { portraitVisibleSize } from './PortraitFit';
 import { playFarmTool, playUiClick } from './UiAudio';
+import { mountPanelCloseButton } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
@@ -379,11 +381,12 @@ export class FarmHUD extends Component {
                 // First-seed guide: swallow all taps while the 5s craft runs.
                 return true;
             }
-            if (
-                this.hitCraftClose(uiX, uiY) ||
-                this.hitCraftAd(uiX, uiY) ||
-                this.hitCraftRow(uiX, uiY)
-            ) {
+            // Close first — header X is small and the guide arrow sits above it.
+            if (this.hitCraftClose(uiX, uiY)) {
+                playUiClick();
+                return true;
+            }
+            if (this.hitCraftAd(uiX, uiY) || this.hitCraftRow(uiX, uiY)) {
                 playUiClick();
                 return true;
             }
@@ -391,9 +394,15 @@ export class FarmHUD extends Component {
                 playUiClick();
                 return true;
             }
-            if (this.hitCraftPanel(uiX, uiY)) return true;
-            // Outside tap closes — unless tutorial still needs an explicit close.
-            if (this._tutorialCraftAwaitClose) return true;
+            if (this.hitCraftPanel(uiX, uiY)) {
+                // Await-close guide used to swallow panel taps that missed the X
+                // (arrow tip sits above the button) and soft-locked the modal.
+                if (this._tutorialCraftAwaitClose) {
+                    playUiClick();
+                    this.setCraftOpen(false);
+                }
+                return true;
+            }
             playUiClick();
             this.setCraftOpen(false);
             return true;
@@ -1149,57 +1158,11 @@ export class FarmHUD extends Component {
         }
     }
 
-    /** Shared corner placement for bag / chest / craft close buttons. */
-    private placePanelCloseButton(btn: Node, panelW: number, panelH: number) {
-        // Inset into the parchment so the X isn't flush to the outer wood rim (looked “偏右”).
-        const pad = Math.round(22 * UI_SCALE);
-        const hit = Math.round(CLOSE_BTN * 1.35);
-        btn.setPosition(
-            panelW * 0.5 - pad - CLOSE_BTN * 0.5,
-            panelH * 0.5 - pad - CLOSE_BTN * 0.5,
-            0,
-        );
-        btn.addComponent(UITransform).setContentSize(hit, hit);
-    }
-
-    private fillPanelCloseVisual(btn: Node, layer: number) {
-        if (this._frames.close) {
-            const icon = new Node('Icon');
-            icon.layer = layer;
-            icon.setParent(btn);
-            icon.addComponent(UITransform).setContentSize(CLOSE_BTN, CLOSE_BTN);
-            const sp = icon.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.spriteFrame = this._frames.close;
-            return;
-        }
-        const g = btn.addComponent(Graphics);
-        const half = CLOSE_BTN * 0.5;
-        g.fillColor = new Color(186, 110, 36, 255);
-        g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-        g.fill();
-        g.strokeColor = new Color(54, 30, 14, 255);
-        g.lineWidth = Math.round(4 * UI_SCALE);
-        g.roundRect(-half, -half, CLOSE_BTN, CLOSE_BTN, Math.round(10 * UI_SCALE));
-        g.stroke();
-        g.strokeColor = new Color(72, 42, 22, 255);
-        g.lineWidth = Math.round(5 * UI_SCALE);
-        const m = Math.round(14 * UI_SCALE);
-        g.moveTo(-m, m);
-        g.lineTo(m, -m);
-        g.moveTo(-m, -m);
-        g.lineTo(m, m);
-        g.stroke();
-    }
-
     private buildCloseButton(panel: Node, panelW: number, panelH: number) {
-        const canvas = this.node;
-        const btn = new Node('CloseBtn');
-        btn.layer = canvas.layer;
-        btn.setParent(panel);
-        this.placePanelCloseButton(btn, panelW, panelH);
-        this.fillPanelCloseVisual(btn, canvas.layer);
-        this._closeBtn = btn;
+        this._closeBtn = mountPanelCloseButton(panel, panelW, panelH, {
+            size: CLOSE_BTN,
+            frame: this._frames.close ?? null,
+        });
     }
 
     private drawPanelChrome(g: Graphics, w: number, h: number, dockH: number) {
@@ -1578,12 +1541,10 @@ export class FarmHUD extends Component {
     }
 
     private buildChestCloseButton(panel: Node, panelW: number, panelH: number) {
-        const btn = new Node('CloseBtn');
-        btn.layer = panel.layer;
-        btn.setParent(panel);
-        this.placePanelCloseButton(btn, panelW, panelH);
-        this.fillPanelCloseVisual(btn, panel.layer);
-        this._chestCloseBtn = btn;
+        this._chestCloseBtn = mountPanelCloseButton(panel, panelW, panelH, {
+            size: CLOSE_BTN,
+            frame: this._frames.close ?? null,
+        });
     }
 
     private drawChestChrome(g: Graphics, w: number, h: number, dockH: number) {
@@ -1755,12 +1716,10 @@ export class FarmHUD extends Component {
     }
 
     private buildCraftCloseButton(panel: Node, panelW: number, panelH: number) {
-        const btn = new Node('CloseBtn');
-        btn.layer = panel.layer;
-        btn.setParent(panel);
-        this.placePanelCloseButton(btn, panelW, panelH);
-        this.fillPanelCloseVisual(btn, panel.layer);
-        this._craftCloseBtn = btn;
+        this._craftCloseBtn = mountPanelCloseButton(panel, panelW, panelH, {
+            size: CLOSE_BTN,
+            frame: this._frames.close ?? null,
+        });
     }
 
     private buildCraftRow(
@@ -2265,16 +2224,68 @@ export class FarmHUD extends Component {
         if (!this._craftCloseBtn?.isValid || !this._craftCloseBtn.active || !this._craftPanel?.isValid) {
             return false;
         }
-        const ui = this._craftCloseBtn.getComponent(UITransform);
-        if (!ui) return false;
-        const { x, y } = this.toDesignLocal(uiX, uiY);
-        const bx = this._craftPanel.position.x + this._craftCloseBtn.position.x;
-        const by = this._craftPanel.position.y + this._craftCloseBtn.position.y;
-        if (Math.abs(x - bx) <= ui.contentSize.width * 0.5 && Math.abs(y - by) <= ui.contentSize.height * 0.5) {
-            this.setCraftOpen(false);
-            return true;
+        // World-space AABB + pad (matches TutorialGuide hole; covers arrow tip above X).
+        const pad = this._tutorialCraftAwaitClose ? 48 : 28;
+        if (!this.hitNodeOnCanvas(this._craftCloseBtn, uiX, uiY, pad)) {
+            // Header-right gutter: players often tap the chrome next to the X.
+            if (!this.hitCraftCloseGutter(uiX, uiY)) return false;
         }
-        return false;
+        this.setCraftOpen(false);
+        return true;
+    }
+
+    /** Top-right parchment corner around the craft close button. */
+    private hitCraftCloseGutter(uiX: number, uiY: number): boolean {
+        if (!this._craftPanel?.isValid || !this._craftCloseBtn?.isValid) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const panel = this._craftPanel;
+        const ui = panel.getComponent(UITransform);
+        if (!ui) return false;
+        const pw = ui.contentSize.width;
+        const ph = ui.contentSize.height;
+        const px = panel.position.x;
+        const py = panel.position.y;
+        const gutterW = Math.round(CLOSE_BTN * 2.4);
+        const gutterH = Math.round(CRAFT_HEADER_H + CRAFT_PAD);
+        const x0 = px + pw * 0.5 - gutterW;
+        const x1 = px + pw * 0.5;
+        const y0 = py + ph * 0.5 - gutterH;
+        const y1 = py + ph * 0.5;
+        return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    }
+
+    /** UI bottom-left → hit test a node via canvas-local AABB (parent offsets safe). */
+    private hitNodeOnCanvas(node: Node, uiX: number, uiY: number, pad = 0): boolean {
+        if (!node?.isValid || !node.active) return false;
+        const ui = node.getComponent(UITransform);
+        const canvasUi = this.node.getComponent(UITransform);
+        if (!ui || !canvasUi) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const w = ui.contentSize.width;
+        const h = ui.contentSize.height;
+        const ax = ui.anchorX;
+        const ay = ui.anchorY;
+        const corners = [
+            new Vec3(-w * ax, -h * ay, 0),
+            new Vec3(w * (1 - ax), -h * ay, 0),
+            new Vec3(-w * ax, h * (1 - ay), 0),
+            new Vec3(w * (1 - ax), h * (1 - ay), 0),
+        ];
+        let x0 = Infinity;
+        let y0 = Infinity;
+        let x1 = -Infinity;
+        let y1 = -Infinity;
+        const world = new Vec3();
+        const local = new Vec3();
+        for (let i = 0; i < corners.length; i++) {
+            ui.convertToWorldSpaceAR(corners[i]!, world);
+            canvasUi.convertToNodeSpaceAR(world, local);
+            if (local.x < x0) x0 = local.x;
+            if (local.y < y0) y0 = local.y;
+            if (local.x > x1) x1 = local.x;
+            if (local.y > y1) y1 = local.y;
+        }
+        return x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad;
     }
 
     private hitCraftPanel(uiX: number, uiY: number): boolean {
@@ -2558,7 +2569,7 @@ export class FarmHUD extends Component {
 
     private toDesignLocal(uiX: number, uiY: number) {
         const canvasUi = this.node.getComponent(UITransform);
-        const vis = view.getVisibleSize();
+        const vis = portraitVisibleSize();
         const hw = (canvasUi?.contentSize.width || vis.width) * 0.5;
         const hh = (canvasUi?.contentSize.height || vis.height) * 0.5;
         return { x: uiX - hw, y: uiY - hh };

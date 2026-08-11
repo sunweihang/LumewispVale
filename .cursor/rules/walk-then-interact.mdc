@@ -1,0 +1,58 @@
+---
+description: World taps must walk into range before dialogue/shop/travel fires
+globs: assets/scripts/game/**/*.ts
+alwaysApply: true
+---
+
+# Walk-then-interact (hard law)
+
+Every **world-space** tap that opens dialogue, shop, board, info, quest flag, or map travel MUST walk the player into range first. Far taps never fire the act instantly.
+
+## Required choke points
+
+Use `StoryWorldHooks` only — do not invent a parallel walk:
+
+| Target | API |
+|--------|-----|
+| NPC | `story.approachNpcThen(node, act)` |
+| Building / sign / prop / portal | `story.approachInteractThen(node, act)` |
+
+`findInteract` / `findNpc` helpers MUST return the hit `node` so the caller can pass it into these APIs.
+
+## Pattern
+
+```typescript
+// ✅ GOOD
+const hit = SomeWorldLayout.findInteract(world, wx, wy);
+if (hit) {
+  story.approachInteractThen(hit.node, () => {
+    if (!hit.node.isValid) return;
+    // openShop / tryBuilding / travelTo / openInfo / noteFlag …
+  });
+  return;
+}
+
+// ❌ BAD — instant fire from across the map
+if (hit) {
+  storyDlg.tryBuilding(hit.key);
+  shopPanel.openShop(hit.shopId);
+  travelTo('mine', …);
+  return;
+}
+```
+
+## Exceptions (do NOT wrap)
+
+- UI / HUD / modal taps (`handleTap` on panels, quest dock claim, dialogue advance)
+- Empty-ground click-to-move (`ClickMoveMarker` / `finishWorldTap`)
+- Proximity auto zones that are not tap-driven (e.g. mayor-house exit walk-through)
+- Farm gather/chop/dig already walks via `FarmSystem` + `PlayerController.walkTo` — keep that path; do not double-wrap
+
+## When adding a new map / POI / quest building
+
+1. Hit-test returns `{ …, node }`.
+2. `GameBootstrap` (or the map’s tap handler) calls `approachNpcThen` / `approachInteractThen`.
+3. Put side effects **only** inside the arrive callback.
+4. Stand feet for new building names go in `StoryWorldHooks.standForInteract` (and TutorialGuide aims stay in sync).
+
+If a tap opens content without going through these helpers, it is a bug — fix the choke point, do not special-case one quest.

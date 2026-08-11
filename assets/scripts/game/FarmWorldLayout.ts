@@ -280,7 +280,8 @@ export class FarmWorldLayout {
         }
 
         // Light corner nibble only (heavy nibble was shrinking the lake)
-        for (const key of [...set]) {
+        // Array.from — web-mobile downlevel turns [...set] into [].concat(set), which breaks.
+        for (const key of Array.from(set)) {
             const [ix, iy] = key.split(',').map(Number);
             const n = set.has(`${ix},${iy + 1}`);
             const s = set.has(`${ix},${iy - 1}`);
@@ -296,7 +297,7 @@ export class FarmWorldLayout {
         this.jitterShoreline(set);
 
         // Drop orphan puddles
-        for (const key of [...set]) {
+        for (const key of Array.from(set)) {
             const [ix, iy] = key.split(',').map(Number);
             let n = 0;
             if (set.has(`${ix},${iy + 1}`)) n++;
@@ -318,7 +319,7 @@ export class FarmWorldLayout {
             }
         }
 
-        return [...set].map((key) => {
+        return Array.from(set).map((key) => {
             const [ix, iy] = key.split(',').map(Number);
             return [ix, iy] as [number, number];
         });

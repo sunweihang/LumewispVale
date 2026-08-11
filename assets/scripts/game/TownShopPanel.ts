@@ -22,14 +22,16 @@ import {
 } from './TownCatalog';
 import { playUiClick } from './UiAudio';
 import {
+    PANEL_CLOSE_BTN,
+    PANEL_CLOSE_PAD,
     UI_CREAM,
     UI_INK,
     UI_INK_MUTE,
     UI_PRICE,
     drawParchmentRow,
     drawWoodButton,
-    drawWoodClose,
     drawWoodParchmentPanel,
+    mountPanelCloseButton,
 } from './UiChrome';
 import { styleUiLabel } from './UiFont';
 
@@ -49,9 +51,6 @@ const LIST_TOP_SHOP = PANEL_H * 0.5 - 280;
 const ACTION_Y = -PANEL_H * 0.35;
 const ACTION_W = 320;
 const ACTION_H = 72;
-
-const CLOSE_BTN = 56;
-const CLOSE_PAD = 22;
 
 /**
  * Town shop / board UI — FarmHUD wood + parchment chrome, gold → FarmSystem.
@@ -74,6 +73,7 @@ export class TownShopPanel extends Component {
     private _sellTab: Node | null = null;
     private _buyTabLab: Label | null = null;
     private _sellTabLab: Label | null = null;
+    private _closeBtn: Node | null = null;
     private _rows: Node[] = [];
     private _sellRows: TownSellGoods[] = [];
     private _shop: TownShopDef | null = null;
@@ -130,6 +130,12 @@ export class TownShopPanel extends Component {
         return row?.isValid ? row : null;
     }
 
+    /** Top-right X — TutorialGuide points here after buy / sell completes. */
+    closeBtnNode(): Node | null {
+        if (!this.isShopOpen || !this._closeBtn?.isValid || !this._closeBtn.active) return null;
+        return this._closeBtn;
+    }
+
     /**
      * Quest 1020 / 1021: keep the idle arrow over the shop and lock taps to the
      * guided control (tab or first row) until buy / sell completes.
@@ -139,6 +145,18 @@ export class TownShopPanel extends Component {
         const quests = this.quests;
         const q = quests?.activeQuest;
         if (!q || quests?.isAwaitingClaim) return false;
+        return q.id === 1020 || q.id === 1021;
+    }
+
+    /**
+     * After shop_buy / shop_sell flips awaiting-claim, force close before the
+     * quest dock tip (modal still swallows world / HUD taps).
+     */
+    needsShopCloseGuide(): boolean {
+        if (!this.isShopOpen) return false;
+        const quests = this.quests;
+        const q = quests?.activeQuest;
+        if (!q || !quests?.isAwaitingClaim) return false;
         return q.id === 1020 || q.id === 1021;
     }
 
@@ -201,9 +219,9 @@ export class TownShopPanel extends Component {
         const local = { x: canvas.x - this._root.position.x, y: canvas.y - this._root.position.y };
         const guide = this.tradeGuideTarget();
         // Close chip top-right — blocked while buy/sell tutorial needs a click.
-        const closeHalf = CLOSE_BTN * 0.7;
-        const closeX = PANEL_W * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5;
-        const closeY = PANEL_H * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5;
+        const closeHalf = PANEL_CLOSE_BTN * 0.85;
+        const closeX = PANEL_W * 0.5 - PANEL_CLOSE_PAD - PANEL_CLOSE_BTN * 0.5;
+        const closeY = PANEL_H * 0.5 - PANEL_CLOSE_PAD - PANEL_CLOSE_BTN * 0.5;
         if (
             Math.abs(local.x - closeX) <= closeHalf &&
             Math.abs(local.y - closeY) <= closeHalf
@@ -833,16 +851,6 @@ export class TownShopPanel extends Component {
         this._actionBtn = action;
         this._actionLab = actionLab;
 
-        const closeN = new Node('Close');
-        closeN.layer = root.layer;
-        closeN.setParent(root);
-        closeN.setPosition(
-            PANEL_W * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5,
-            PANEL_H * 0.5 - CLOSE_PAD - CLOSE_BTN * 0.5,
-            0,
-        );
-        closeN.addComponent(UITransform).setContentSize(Math.round(CLOSE_BTN * 1.35), Math.round(CLOSE_BTN * 1.35));
-        const cg = closeN.addComponent(Graphics);
-        drawWoodClose(cg, CLOSE_BTN);
+        this._closeBtn = mountPanelCloseButton(root, PANEL_W, PANEL_H, { name: 'Close' });
     }
 }

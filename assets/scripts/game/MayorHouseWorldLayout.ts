@@ -80,11 +80,11 @@ export class MayorHouseWorldLayout {
         wx: number,
         wy: number,
     ):
-        | { kind: 'travel'; dest: 'town'; title: string }
-        | { kind: 'info'; title: string; body: string }
+        | { kind: 'travel'; dest: 'town'; title: string; node: Node }
+        | { kind: 'info'; title: string; body: string; node: Node }
         | null {
         // Sprite AABB hit (not a loose radius) so open floor stays click-to-move.
-        let best: { area: number; key: string } | null = null;
+        let best: { area: number; key: string; node: Node } | null = null;
         const pad = 8;
         for (const child of world.children) {
             const key = this.interactKey(child.name);
@@ -101,10 +101,11 @@ export class MayorHouseWorldLayout {
             const top = p.y + h * (1 - ui.anchorY) + pad;
             if (wx < left || wx > right || wy < bottom || wy > top) continue;
             const area = w * h;
-            if (!best || area < best.area) best = { area, key };
+            if (!best || area < best.area) best = { area, key, node: child };
         }
         if (!best) return null;
-        return this.actionFor(best.key);
+        const action = this.actionFor(best.key);
+        return action ? { ...action, node: best.node } : null;
     }
 
     private static interactKey(name: string): string | null {

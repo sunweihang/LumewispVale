@@ -3,7 +3,7 @@ import { NPC_FRAMES } from './NpcFrames';
 import { NpcAnimator, NpcDir } from './NpcAnimator';
 import { shopByBuilding } from './TownCatalog';
 
-export type TownNpcId = 'mayor' | 'carpenter' | 'passerby';
+export type TownNpcId = 'mayor' | 'carpenter' | 'passerby' | 'doctor' | 'caretaker';
 
 type NpcSpawn = {
     id: TownNpcId;
@@ -23,12 +23,11 @@ export class TownWorldLayout {
 
     /**
      * Foot positions for runtime NPC actors (south of building doors / plaza).
-     * Mayor lives inside MayorHouse.scene — not outdoors.
+     * Mayor / doctor / caretaker / carpenter live indoors — not outdoors.
      * bld_mayor=(447.5,783), bld_mayor_yard=(448,742), decor_garden_mayor_yard=(447.5,742),
-     * bld_carpenter=(832,-348), spawn=(0,-96).
+     * spawn=(0,-96).
      */
     static readonly NPC_SPAWNS: readonly NpcSpawn[] = [
-        { id: 'carpenter', x: 832, y: -428, face: 'left' },
         { id: 'passerby', x: 120, y: -40, face: 'left' },
     ];
 
@@ -86,6 +85,20 @@ export class TownWorldLayout {
                 storyFlag: 'visit_carpenter',
             };
         }
+        if (id === 'doctor') {
+            return {
+                title: '医生·荷叶',
+                body: '矿洞潮滑，别逞强。头晕耳鸣立刻上来。',
+                storyFlag: 'visit_clinic',
+            };
+        }
+        if (id === 'caretaker') {
+            return {
+                title: '管理员·苔青',
+                body: '春厅要亮，得有钉子、药草和铜。材料齐了再来厅里。',
+                storyFlag: 'visit_community',
+            };
+        }
         if (id === 'passerby') {
             return {
                 title: '路人',
@@ -108,7 +121,15 @@ export class TownWorldLayout {
         for (const child of world.children) {
             if (!child.name.startsWith('npc_')) continue;
             const id = child.name.slice(4) as TownNpcId;
-            if (id !== 'mayor' && id !== 'carpenter' && id !== 'passerby') continue;
+            if (
+                id !== 'mayor' &&
+                id !== 'carpenter' &&
+                id !== 'passerby' &&
+                id !== 'doctor' &&
+                id !== 'caretaker'
+            ) {
+                continue;
+            }
             const p = child.position;
             const dx = wx - p.x;
             const dy = wy - p.y;
@@ -130,10 +151,16 @@ export class TownWorldLayout {
         wy: number,
         maxDist = 180,
     ):
-        | { kind: 'shop'; shopId: string; title: string; key: string }
-        | { kind: 'board'; board: 'police' | 'post'; title: string; key: string }
-        | { kind: 'info'; title: string; body: string; storyFlag?: string; key: string }
-        | { kind: 'travel'; dest: 'farm' | 'mine' | 'mayorHouse'; title: string; key: string }
+        | { kind: 'shop'; shopId: string; title: string; key: string; node: Node }
+        | { kind: 'board'; board: 'police' | 'post'; title: string; key: string; node: Node }
+        | { kind: 'info'; title: string; body: string; storyFlag?: string; key: string; node: Node }
+        | {
+              kind: 'travel';
+              dest: 'farm' | 'mine' | 'mayorHouse' | 'clinic' | 'community' | 'carpenterShop';
+              title: string;
+              key: string;
+              node: Node;
+          }
         | null {
         let best: { dist: number; node: Node; key: string } | null = null;
         for (const child of world.children) {
@@ -148,7 +175,7 @@ export class TownWorldLayout {
         }
         if (!best) return null;
         const action = this.actionFor(best.key);
-        return action ? { ...action, key: best.key } : null;
+        return action ? { ...action, key: best.key, node: best.node } : null;
     }
 
     private static signKey(name: string): string | null {
@@ -197,7 +224,11 @@ export class TownWorldLayout {
         | { kind: 'shop'; shopId: string; title: string }
         | { kind: 'board'; board: 'police' | 'post'; title: string }
         | { kind: 'info'; title: string; body: string; storyFlag?: string }
-        | { kind: 'travel'; dest: 'farm' | 'mine' | 'mayorHouse'; title: string }
+        | {
+              kind: 'travel';
+              dest: 'farm' | 'mine' | 'mayorHouse' | 'clinic' | 'community' | 'carpenterShop';
+              title: string;
+          }
         | null {
         if (key === 'sign_farm') {
             return { kind: 'travel', dest: 'farm', title: '通往农场' };
@@ -207,6 +238,15 @@ export class TownWorldLayout {
         }
         if (key === 'mayor') {
             return { kind: 'travel', dest: 'mayorHouse', title: '进入镇长府' };
+        }
+        if (key === 'clinic') {
+            return { kind: 'travel', dest: 'clinic', title: '进入微光诊所' };
+        }
+        if (key === 'community') {
+            return { kind: 'travel', dest: 'community', title: '进入社区中心' };
+        }
+        if (key === 'carpenter') {
+            return { kind: 'travel', dest: 'carpenterShop', title: '进入木工坊' };
         }
         if (key === 'police') {
             return { kind: 'board', board: 'police', title: '警察局' };
@@ -222,16 +262,6 @@ export class TownWorldLayout {
             string,
             { title: string; body: string; storyFlag?: string }
         > = {
-            community: {
-                title: '社区中心',
-                body: '市集买卖熟了之后，再来签春厅收集包。送过铜，第一盏灯就会亮。',
-                storyFlag: 'visit_community',
-            },
-            clinic: {
-                title: '微光诊所',
-                body: '治疗与草药补给。医生·荷叶说：矿洞潮滑，别逞强。',
-                storyFlag: 'visit_clinic',
-            },
             school: {
                 title: '镇立小学',
                 body: '孩子们在这里认字、学农时。午后可以听见铃声。',
@@ -243,11 +273,6 @@ export class TownWorldLayout {
             museum: {
                 title: '溪谷博物室',
                 body: '展出矿晶、古物与渔获标本。捐赠系统筹备中。',
-            },
-            carpenter: {
-                title: '木工坊',
-                body: '工匠·石楠抬起头：「扩建农舍、修路的事，随时来找我。」',
-                storyFlag: 'visit_carpenter',
             },
             chapel: {
                 title: '微光小堂',
@@ -288,6 +313,8 @@ export class TownWorldLayout {
         if (npc) {
             if (npc.id === 'mayor') return '点击与镇长·艾岚交谈';
             if (npc.id === 'carpenter') return '点击与工匠·石楠交谈';
+            if (npc.id === 'doctor') return '点击与医生·荷叶交谈';
+            if (npc.id === 'caretaker') return '点击与管理员·苔青交谈';
             if (npc.id === 'passerby') return '点击与路人交谈';
         }
         const hit = this.findInteract(world, px, py, 160);

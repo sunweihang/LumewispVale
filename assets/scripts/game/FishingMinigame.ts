@@ -40,10 +40,8 @@ export class FishingMinigame extends Component {
     private _progG: Graphics | null = null;
     private _banner: Label | null = null;
     private _holdLabel: Label | null = null;
-    private _holdG: Graphics | null = null;
-    private _holdPulse: Graphics | null = null;
-    private _fingerG: Graphics | null = null;
-    private _fingerN: Node | null = null;
+    private _holdSp: Sprite | null = null;
+    private _holdN: Node | null = null;
     private _barSp: Sprite | null = null;
 
     private _panelSf: SpriteFrame | null = null;
@@ -51,9 +49,13 @@ export class FishingMinigame extends Component {
     /** Red AI paddle when fish is outside the catch zone. */
     private _barMissSf: SpriteFrame | null = null;
     private _fishSf: SpriteFrame | null = null;
+    private _holdSf: SpriteFrame | null = null;
+    private _holdPressedSf: SpriteFrame | null = null;
+    private _holdReleaseSf: SpriteFrame | null = null;
     private _framesReady = false;
     private _loadGen = 0;
     private _barShowingMiss = false;
+    private _holdKind: 'idle' | 'pressed' | 'release' = 'idle';
 
     private _active = false;
     private _holding = false;
@@ -98,8 +100,9 @@ export class FishingMinigame extends Component {
     private readonly BAR_INSET_X = 3;
     private readonly HOLD_R = 96;
 
+    /** True from open() until the result banner UI is destroyed. */
     get isOpen(): boolean {
-        return this._active;
+        return this._active || !!this._root;
     }
 
     onLoad() {
@@ -150,13 +153,15 @@ export class FishingMinigame extends Component {
         InputBridge.uiBlocking = true;
         InputBridge.moveLocked = true;
         InputBridge.clear();
+        // Kill any in-flight press so the cast tap / hold never becomes a stick.
+        InputBridge.abortStick?.();
 
         this.ensureFrames(() => {
             if (!this._active) return;
             this.buildUi();
             this.bindInput(true);
             this.layoutDynamic();
-            this.paintHoldPad();
+            this.refreshHoldPad();
         });
     }
 
@@ -165,9 +170,11 @@ export class FishingMinigame extends Component {
         if (!this._active && !this._root) return;
         this.bindInput(false);
         this._active = false;
+        this._ended = true;
         InputBridge.uiBlocking = this._prevBlocking;
         InputBridge.moveLocked = this._prevMoveLocked;
         InputBridge.clear();
+        InputBridge.abortStick?.();
         const root = this._root;
         this.clearUiRefs();
         if (root?.isValid) root.destroy();
@@ -244,8 +251,7 @@ export class FishingMinigame extends Component {
 
         this.refreshCoach();
         this.layoutDynamic();
-        this.paintHoldPad();
-        this.updateFinger();
+        this.refreshHoldPad();
 
         if (this._progress >= 1) {
             this.finish(this._perfect ? 'perfect' : 'catch');
@@ -272,9 +278,11 @@ export class FishingMinigame extends Component {
         this._coach = kind;
 
         if (this._holdLabel) {
-            if (this._holding) this._holdLabel.string = '抬竿中…';
+            // Keep the pad face clean — text only for the first tip / release cue.
+            if (this._holding) this._holdLabel.string = '';
             else if (kind === 'release') this._holdLabel.string = '松开';
-            else this._holdLabel.string = '按住抬竿';
+            else if (this._age < 2.8 || this._tutorial) this._holdLabel.string = '按住';
+            else this._holdLabel.string = '';
         }
     }
 
@@ -283,9 +291,11 @@ export class FishingMinigame extends Component {
         this._ended = true;
         this._active = false;
         this.bindInput(false);
-        InputBridge.uiBlocking = this._prevBlocking;
-        InputBridge.moveLocked = this._prevMoveLocked;
+        // Keep locks through the result banner — releasing early let hold become walk.
+        InputBridge.uiBlocking = true;
+        InputBridge.moveLocked = true;
         InputBridge.clear();
+        InputBridge.abortStick?.();
 
         if (this._banner) {
             if (result === 'perfect') this._banner.string = '完美!';
@@ -293,7 +303,6 @@ export class FishingMinigame extends Component {
             else this._banner.string = '跑掉了…';
             this._banner.node.active = true;
         }
-        if (this._fingerN) this._fingerN.active = false;
 
         const cb = this._onDone;
         this._onDone = null;
@@ -303,6 +312,9 @@ export class FishingMinigame extends Component {
             .call(() => {
                 if (root?.isValid) root.destroy();
                 if (this._root === root) this.clearUiRefs();
+                InputBridge.uiBlocking = this._prevBlocking;
+                InputBridge.moveLocked = this._prevMoveLocked;
+                InputBridge.clear();
                 cb?.(result);
             })
             .start();
@@ -316,12 +328,11 @@ export class FishingMinigame extends Component {
         this._progG = null;
         this._banner = null;
         this._holdLabel = null;
-        this._holdG = null;
-        this._holdPulse = null;
-        this._fingerG = null;
-        this._fingerN = null;
+        this._holdSp = null;
+        this._holdN = null;
         this._barSp = null;
         this._barShowingMiss = false;
+        this._holdKind = 'idle';
     }
 
     private ensureFrames(done?: () => void) {
@@ -330,17 +341,31 @@ export class FishingMinigame extends Component {
             this._panelSf &&
             this._barSf &&
             this._barMissSf &&
-            this._fishSf
+            this._fishSf &&
+            this._holdSf &&
+            this._holdPressedSf &&
+            this._holdReleaseSf
         ) {
             done?.();
             return;
         }
         const gen = ++this._loadGen;
-        const jobs: { key: 'panel' | 'bar' | 'barMiss' | 'fish'; uuid: string }[] = [
+        type FrameKey =
+            | 'panel'
+            | 'bar'
+            | 'barMiss'
+            | 'fish'
+            | 'hold'
+            | 'holdPressed'
+            | 'holdRelease';
+        const jobs: { key: FrameKey; uuid: string }[] = [
             { key: 'panel', uuid: FISHING_FRAMES.panel },
             { key: 'bar', uuid: FISHING_FRAMES.bar },
             { key: 'barMiss', uuid: FISHING_FRAMES.barMiss },
             { key: 'fish', uuid: FISHING_FRAMES.fish },
+            { key: 'hold', uuid: FISHING_FRAMES.hold },
+            { key: 'holdPressed', uuid: FISHING_FRAMES.holdPressed },
+            { key: 'holdRelease', uuid: FISHING_FRAMES.holdRelease },
         ];
         let left = jobs.length;
         const finishOne = () => {
@@ -350,7 +375,10 @@ export class FishingMinigame extends Component {
                 this._panelSf &&
                 this._barSf &&
                 this._barMissSf &&
-                this._fishSf
+                this._fishSf &&
+                this._holdSf &&
+                this._holdPressedSf &&
+                this._holdReleaseSf
             );
             done?.();
         };
@@ -364,7 +392,10 @@ export class FishingMinigame extends Component {
                     if (job.key === 'panel') this._panelSf = asset as SpriteFrame;
                     else if (job.key === 'bar') this._barSf = asset as SpriteFrame;
                     else if (job.key === 'barMiss') this._barMissSf = asset as SpriteFrame;
-                    else this._fishSf = asset as SpriteFrame;
+                    else if (job.key === 'fish') this._fishSf = asset as SpriteFrame;
+                    else if (job.key === 'hold') this._holdSf = asset as SpriteFrame;
+                    else if (job.key === 'holdPressed') this._holdPressedSf = asset as SpriteFrame;
+                    else this._holdReleaseSf = asset as SpriteFrame;
                 }
                 finishOne();
             });
@@ -392,10 +423,6 @@ export class FishingMinigame extends Component {
         const dimG = dim.addComponent(Graphics);
         dimG.fillColor = new Color(10, 16, 26, 110);
         dimG.rect(-vis.width * 0.5, -vis.height * 0.5, vis.width, vis.height);
-        dimG.fill();
-        // Soft spotlight on the hold pad so the click target reads first.
-        dimG.fillColor = new Color(40, 70, 40, 36);
-        dimG.circle(240, -40, 168);
         dimG.fill();
 
         const panelX = -200;
@@ -491,48 +518,42 @@ export class FishingMinigame extends Component {
         bannerN.active = false;
         this._banner = banner;
 
-        // Primary click target — big hold pad on the clear right half.
+        // Primary click target — AI hold pad on the clear right half.
         const holdX = 240;
         const holdY = -40;
+        const holdSize = this.HOLD_R * 2;
         const hold = new Node('HoldPad');
         hold.layer = root.layer;
         hold.setParent(root);
         hold.setPosition(holdX, holdY, 0);
-        hold.addComponent(UITransform).setContentSize(this.HOLD_R * 2 + 24, this.HOLD_R * 2 + 24);
-        this._holdPulse = hold.addComponent(Graphics);
-
-        const holdCore = new Node('HoldCore');
-        holdCore.layer = root.layer;
-        holdCore.setParent(hold);
-        holdCore.addComponent(UITransform).setContentSize(this.HOLD_R * 2, this.HOLD_R * 2);
-        this._holdG = holdCore.addComponent(Graphics);
+        hold.addComponent(UITransform).setContentSize(holdSize, holdSize);
+        if (this._holdSf) {
+            const sp = hold.addComponent(Sprite);
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            sp.trim = false;
+            sp.spriteFrame = this._holdSf;
+            this._holdSp = sp;
+        }
+        this._holdN = hold;
 
         const holdLabN = new Node('HoldLab');
         holdLabN.layer = root.layer;
         holdLabN.setParent(hold);
-        holdLabN.setPosition(0, 0, 0);
-        holdLabN.addComponent(UITransform).setContentSize(180, 48);
+        // Sit just under the pad so the face stays icon-free.
+        holdLabN.setPosition(0, -holdSize * 0.58, 0);
+        holdLabN.addComponent(UITransform).setContentSize(160, 40);
         const holdLab = holdLabN.addComponent(Label);
-        holdLab.string = '按住抬竿';
+        holdLab.string = '按住';
         holdLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         holdLab.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(holdLab, {
-            size: 32,
+            size: 26,
             color: new Color(255, 248, 220, 255),
             outline: true,
             outlineWidth: 4,
             outlineColor: new Color(28, 40, 18, 240),
         });
         this._holdLabel = holdLab;
-
-        const finger = new Node('FingerHint');
-        finger.layer = root.layer;
-        finger.setParent(hold);
-        finger.setPosition(36, -52, 0);
-        finger.addComponent(UITransform).setContentSize(72, 88);
-        this._fingerG = finger.addComponent(Graphics);
-        this.paintFinger(this._fingerG);
-        this._fingerN = finger;
 
         loadUiFont().then((font) => {
             if (!font) return;
@@ -541,115 +562,37 @@ export class FishingMinigame extends Component {
         });
     }
 
-    private paintFinger(g: Graphics) {
-        g.clear();
-        // Simple pointing hand — taps the hold pad.
-        g.fillColor = new Color(255, 220, 170, 255);
-        g.circle(0, 18, 16);
-        g.fill();
-        g.fillColor = new Color(255, 210, 150, 255);
-        g.roundRect(-10, -28, 20, 40, 8);
-        g.fill();
-        g.strokeColor = new Color(70, 42, 22, 255);
-        g.lineWidth = 3;
-        g.circle(0, 18, 16);
-        g.stroke();
-        g.roundRect(-10, -28, 20, 40, 8);
-        g.stroke();
-    }
+    private refreshHoldPad() {
+        const sp = this._holdSp;
+        const n = this._holdN;
+        if (!sp || !n?.isValid) return;
 
-    private paintHoldPad() {
-        const g = this._holdG;
-        const pulse = this._holdPulse;
-        if (!g) return;
-        const r = this.HOLD_R;
-        const pressed = this._holding;
-        const urgency = this._coach === 'hurry' || (!this._fishIn && this._progress < 0.28);
-        const needHold = this._coach === 'hold' || this._coach === 'ready' || this._coach === 'hurry';
-        const needRelease = this._coach === 'release';
+        const needRelease = this._coach === 'release' && !this._holding;
+        let kind: 'idle' | 'pressed' | 'release' = 'idle';
+        if (this._holding) kind = 'pressed';
+        else if (needRelease) kind = 'release';
 
-        if (pulse) {
-            pulse.clear();
-            if (!pressed && (needHold || this._age < 2.5)) {
-                const wave = 0.5 + 0.5 * Math.sin(this._pulseT * 4.2);
-                const pr = r + 10 + wave * 18;
-                pulse.strokeColor = new Color(
-                    urgency ? 255 : 160,
-                    urgency ? 140 : 220,
-                    urgency ? 90 : 120,
-                    Math.floor(70 + wave * 90),
-                );
-                pulse.lineWidth = 6;
-                pulse.circle(0, 0, pr);
-                pulse.stroke();
-            }
+        if (kind !== this._holdKind) {
+            this._holdKind = kind;
+            const sf =
+                kind === 'pressed'
+                    ? this._holdPressedSf
+                    : kind === 'release'
+                      ? this._holdReleaseSf
+                      : this._holdSf;
+            if (sf) sp.spriteFrame = sf;
         }
 
-        g.clear();
-        const body = pressed
-            ? new Color(70, 130, 48, 245)
-            : needRelease
-              ? new Color(110, 92, 48, 235)
-              : urgency
-                ? new Color(150, 110, 40, 245)
-                : new Color(92, 158, 58, 245);
-        const rim = pressed
-            ? new Color(40, 70, 28, 255)
-            : new Color(36, 52, 22, 255);
-        const hi = pressed
-            ? new Color(140, 200, 90, 200)
-            : new Color(180, 230, 120, 220);
-
-        g.fillColor = new Color(20, 28, 14, 160);
-        g.circle(4, -6, r + 4);
-        g.fill();
-        g.fillColor = body;
-        g.circle(0, pressed ? -4 : 0, r);
-        g.fill();
-        g.fillColor = hi;
-        g.circle(-18, pressed ? 18 : 22, r * 0.42);
-        g.fill();
-        g.strokeColor = rim;
-        g.lineWidth = 5;
-        g.circle(0, pressed ? -4 : 0, r);
-        g.stroke();
-        g.strokeColor = new Color(255, 236, 160, pressed ? 120 : 200);
-        g.lineWidth = 3;
-        g.circle(0, pressed ? -4 : 0, r - 10);
-        g.stroke();
-
-        // Up chevron inside pad when player should lift.
-        if (needHold && !pressed) {
-            g.fillColor = new Color(255, 248, 210, 230);
-            g.moveTo(0, 46);
-            g.lineTo(-22, 18);
-            g.lineTo(22, 18);
-            g.close();
-            g.fill();
-        } else if (needRelease && !pressed) {
-            g.fillColor = new Color(255, 230, 170, 230);
-            g.moveTo(0, -40);
-            g.lineTo(-22, -12);
-            g.lineTo(22, -12);
-            g.close();
-            g.fill();
+        // Soft breathe on idle so the AI pad still reads as the tap target.
+        if (!this._holding && (this._coach === 'hold' || this._coach === 'ready' || this._age < 2.5)) {
+            const wave = 0.5 + 0.5 * Math.sin(this._pulseT * 4.2);
+            const s = 1 + wave * 0.04;
+            n.setScale(s, s, 1);
+            n.setPosition(240, -40 - (this._holding ? 4 : 0), 0);
+        } else {
+            n.setScale(this._holding ? 0.96 : 1, this._holding ? 0.96 : 1, 1);
+            n.setPosition(240, this._holding ? -44 : -40, 0);
         }
-    }
-
-    private updateFinger() {
-        const n = this._fingerN;
-        if (!n?.isValid) return;
-        const show =
-            !this._ended &&
-            !this._holding &&
-            (this._age < 3.2 || this._tutorial) &&
-            this._coach !== 'release';
-        n.active = show;
-        if (!show) return;
-        const bob = Math.sin(this._pulseT * 6) * 10;
-        n.setPosition(40, -48 + bob, 0);
-        const op = n.getComponent(UIOpacity) ?? n.addComponent(UIOpacity);
-        op.opacity = Math.floor(170 + Math.sin(this._pulseT * 5) * 70);
     }
 
     private layoutDynamic() {

@@ -525,6 +525,11 @@ export class PlayerController extends Component {
 
     update(dt: number) {
         if (this._locked) return;
+        // Fishing / story exclusive modes — never walk even if stick misfires.
+        if (InputBridge.moveLocked) {
+            InputBridge.clear();
+            return;
+        }
         const frameDt = Math.min(dt, 1 / 30);
 
         if (this._repathCooldown > 0) this._repathCooldown -= frameDt;

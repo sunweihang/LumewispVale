@@ -27,16 +27,17 @@ const SIGN_FRAME_UUID = '6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941';
 const FARM_TOWN_PORTAL = { x: 13 * 64, y: 4 * 64 + 36 };
 /** Tap hit on the sign sprite (screen can see it before the player arrives). */
 const PORTAL_TAP_RADIUS = 90;
-/** Player must be this close before travel fires — farther taps walk over first. */
-const PORTAL_USE_RANGE = 72;
+/** Player must be this close before travel / POI act fires — farther taps walk over first. */
+const INTERACT_USE_RANGE = 80;
 /** Player must be this close before NPC dialogue fires — farther taps walk over first. */
 const NPC_TALK_RANGE = 72;
-/** Town: stand at mayor door feet before entering MayorHouse.scene. */
-const MAYOR_DOOR_USE_RANGE = 80;
 
 /**
  * Story props + proximity / portal hooks for the mainline.
- * Farm: town road sign. Town: farm road sign travel.
+ *
+ * **Walk-then-interact law:** every world tap that opens dialogue, shop, board,
+ * info, or travel MUST go through `approachNpcThen` / `approachInteractThen`
+ * (or a thin wrapper). Far taps walk first; never fire the act instantly.
  */
 @ccclass('StoryWorldHooks')
 export class StoryWorldHooks extends Component {
@@ -47,10 +48,8 @@ export class StoryWorldHooks extends Component {
     infoBoard: FarmInfoBoard | null = null;
     storyDialogue: StoryDialogue | null = null;
     isTown = false;
-    /** Bumps when a new portal walk starts so stale arrive callbacks no-op. */
-    private _portalWalkGen = 0;
-    /** Bumps when a new NPC approach walk starts so stale arrive callbacks no-op. */
-    private _npcWalkGen = 0;
+    /** Bumps when a new approach walk starts so stale arrive callbacks no-op. */
+    private _walkGen = 0;
 
     bind(opts: {
         world: Node;
@@ -87,9 +86,8 @@ export class StoryWorldHooks extends Component {
     }
 
     /**
-     * Tap NPC: if already in talk range, run `act` now; otherwise walk beside
-     * them (south / free stand) and run `act` on arrive. Far taps must not
-     * open dialogue instantly.
+     * Tap NPC: walk into talk range, then run `act`.
+     * Far taps must not open dialogue instantly.
      */
     approachNpcThen(npc: Node, act: () => void): boolean {
         if (!npc?.isValid) return false;
@@ -99,8 +97,7 @@ export class StoryWorldHooks extends Component {
         }
         const pp = this.player.position;
         const np = npc.position;
-        const dist = Math.hypot(pp.x - np.x, pp.y - np.y);
-        if (dist <= NPC_TALK_RANGE) {
+        if (Math.hypot(pp.x - np.x, pp.y - np.y) <= NPC_TALK_RANGE) {
             act();
             return true;
         }
@@ -116,25 +113,42 @@ export class StoryWorldHooks extends Component {
         // Prefer standing in front of the NPC (south of feet).
         const prefer = { x: np.x, y: np.y - 36 };
         const stand = ctrl.freeStandNear(prefer.x, prefer.y, pp.x, pp.y, 48);
-        const gen = (this._npcWalkGen += 1);
-        const npcRef = npc;
-        this.node.getComponent(ClickMoveMarker)?.hide();
-        ctrl.walkTo(
+        return this.walkToThen(stand.x, stand.y, np.x, np.y, NPC_TALK_RANGE, act, npc);
+    }
+
+    /**
+     * Tap building / sign / prop / portal: walk to door/feet, then run `act`.
+     * **Required choke point** for all non-NPC world interacts (every map).
+     */
+    approachInteractThen(target: Node, act: () => void): boolean {
+        if (!target?.isValid) {
+            act();
+            return true;
+        }
+        if (!this.player?.isValid) {
+            act();
+            return true;
+        }
+        const stand = StoryWorldHooks.standForInteract(target);
+        const pp = this.player.position;
+        if (Math.hypot(pp.x - stand.x, pp.y - stand.y) <= INTERACT_USE_RANGE) {
+            act();
+            return true;
+        }
+        return this.walkToThen(
             stand.x,
             stand.y,
-            () => {
-                if (!this.isValid || gen !== this._npcWalkGen) return;
-                if (!npcRef.isValid) return;
-                act();
-            },
-            () => {
-                /* stick drag / cancel — stay quiet */
-            },
-            16,
-            null,
-            { x: np.x, y: np.y, dist: NPC_TALK_RANGE },
+            stand.x,
+            stand.y,
+            INTERACT_USE_RANGE,
+            act,
+            target,
         );
-        return true;
+    }
+
+    /** @deprecated Use `approachInteractThen` — kept as alias for call-site clarity. */
+    approachTownInteractThen(target: Node, act: () => void): boolean {
+        return this.approachInteractThen(target, act);
     }
 
     /** Farm: tap town portal sign — walk up first, then travel. */
@@ -146,43 +160,10 @@ export class StoryWorldHooks extends Component {
         const dx = wx - p.x;
         const dy = wy - p.y;
         if (dx * dx + dy * dy > PORTAL_TAP_RADIUS * PORTAL_TAP_RADIUS) return false;
-
-        const pp = this.player.position;
-        const dist = Math.hypot(pp.x - p.x, pp.y - p.y);
-        if (dist <= PORTAL_USE_RANGE) {
-            this.useTownPortal();
-            return true;
-        }
-
-        // Too far to enter — walk beside the sign, then travel on arrive.
-        this.farm?.cancelPending();
-        const ctrl = this.player.getComponent(PlayerController);
-        if (!ctrl) {
-            this.useTownPortal();
-            return true;
-        }
-        const standX = p.x - 40;
-        const standY = p.y;
-        const gen = (this._portalWalkGen += 1);
-        this.node.getComponent(ClickMoveMarker)?.hide();
-        ctrl.walkTo(
-            standX,
-            standY,
-            () => {
-                if (!this.isValid || gen !== this._portalWalkGen) return;
-                this.useTownPortal();
-            },
-            () => {
-                /* stick drag / cancel — stay on farm */
-            },
-            18,
-            null,
-            { x: p.x, y: p.y, dist: PORTAL_USE_RANGE },
-        );
-        return true;
+        return this.approachInteractThen(sign, () => this.useTownPortal());
     }
 
-    /** Town: tap farm road sign. */
+    /** Town: tap farm road sign (caller must already have walked via approachInteractThen). */
     tryTownFarmSignTap(): boolean {
         if (!this.isTown) return false;
         this.useFarmPortal();
@@ -190,11 +171,11 @@ export class StoryWorldHooks extends Component {
     }
 
     /**
-     * Town: enter mayor house — walk to the door first (same as farm portal),
-     * never instant-travel from across the square.
+     * Town: enter mayor house — walk to the door first.
+     * Prefer `approachInteractThen(hit.node, …)` when the tap already resolved a node.
      */
     approachMayorHouseThen(onArrive: () => void): boolean {
-        if (!this.isTown || !this.world || !this.player?.isValid) {
+        if (!this.isTown || !this.world) {
             onArrive();
             return true;
         }
@@ -204,44 +185,63 @@ export class StoryWorldHooks extends Component {
             onArrive();
             return true;
         }
-        // Door feet — keep in sync with TutorialGuide.resolveMayorGuide.
-        const standX = door.position.x;
-        const standY = door.position.y + 20;
-        const pp = this.player.position;
-        if (Math.hypot(pp.x - standX, pp.y - standY) <= MAYOR_DOOR_USE_RANGE) {
-            onArrive();
-            return true;
-        }
+        return this.approachInteractThen(door, onArrive);
+    }
 
+    /**
+     * Door / board / portal stand feet.
+     * Keep in sync with TutorialGuide town outdoor aims.
+     */
+    static standForInteract(target: Node): { x: number; y: number } {
+        const p = target.position;
+        if (target.name === 'portal_town') {
+            return { x: p.x - 40, y: p.y };
+        }
+        const biasX = target.name === 'bld_police' ? -40 : 0;
+        return { x: p.x + biasX, y: p.y + 20 };
+    }
+
+    portalHint(_px: number, _py: number): string {
+        return '';
+    }
+
+    /**
+     * Shared walk → act. Cancels click marker; bumps walk gen so stale arrives no-op.
+     */
+    private walkToThen(
+        standX: number,
+        standY: number,
+        focusX: number,
+        focusY: number,
+        useRange: number,
+        act: () => void,
+        target: Node | null,
+    ): boolean {
         this.farm?.cancelPending();
-        const ctrl = this.player.getComponent(PlayerController);
+        const ctrl = this.player?.getComponent(PlayerController);
         if (!ctrl) {
-            onArrive();
+            act();
             return true;
         }
-        const gen = (this._portalWalkGen += 1);
-        // Same as farm portal / NPC approach: walk to the door without
-        // click-to-move arrow + ripple (those are only for empty-ground taps).
+        const gen = (this._walkGen += 1);
+        const targetRef = target;
         this.node.getComponent(ClickMoveMarker)?.hide();
         ctrl.walkTo(
             standX,
             standY,
             () => {
-                if (!this.isValid || gen !== this._portalWalkGen) return;
-                onArrive();
+                if (!this.isValid || gen !== this._walkGen) return;
+                if (targetRef && !targetRef.isValid) return;
+                act();
             },
             () => {
-                /* stick drag / cancel — stay in town */
+                /* stick drag / cancel — stay quiet */
             },
             18,
             null,
-            { x: standX, y: standY, dist: MAYOR_DOOR_USE_RANGE },
+            { x: focusX, y: focusY, dist: useRange },
         );
         return true;
-    }
-
-    portalHint(_px: number, _py: number): string {
-        return '';
     }
 
     private townUnlockedFromQuest(quests: QuestSystem): boolean {
@@ -311,7 +311,10 @@ export class StoryWorldHooks extends Component {
     /** Apply pending spawn after scene load. */
     static applyPendingSpawn(
         player: Node,
-        map: Extract<StoryMapId, 'farm' | 'town' | 'mine' | 'mayorHouse'>,
+        map: Extract<
+            StoryMapId,
+            'farm' | 'town' | 'mine' | 'mayorHouse' | 'clinic' | 'community' | 'carpenterShop'
+        >,
     ) {
         const pending = GameState.pendingSpawn;
         if (!pending) return;
