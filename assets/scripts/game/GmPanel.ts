@@ -81,6 +81,7 @@ export class GmPanel extends Component {
 
     onDestroy() {
         if (InputBridge.gmUiHit) InputBridge.gmUiHit = null;
+        InputBridge.gmPanelOpen = false;
         input.off(Input.EventType.KEY_DOWN, this.onKey, this);
         if (this._open) InputBridge.uiBlocking = this._prevBlocking;
         this._root?.destroy();
@@ -106,6 +107,7 @@ export class GmPanel extends Component {
             return;
         }
         this._open = open;
+        InputBridge.gmPanelOpen = open;
         if (open) {
             this._prevBlocking = InputBridge.uiBlocking;
             InputBridge.uiBlocking = true;

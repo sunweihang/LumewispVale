@@ -23,7 +23,6 @@ import { CraftItemId, CraftRecipe, getCraftRecipes } from './CraftRecipes';
 import { FarmMaterial, FarmSystem, FarmTool } from './FarmSystem';
 import { FARM_FRAMES } from './FarmFrames';
 import { FishingMinigame } from './FishingMinigame';
-import { GmPanel } from './GmPanel';
 import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QuestSystem } from './QuestSystem';
@@ -3131,7 +3130,7 @@ export class FarmHUD extends Component {
         if (e.keyCode === KeyCode.DIGIT_7 || e.keyCode === KeyCode.NUM_7) pickSlot(6);
         if (e.keyCode === KeyCode.KEY_B || e.keyCode === KeyCode.TAB) this.toggleBag();
         if (e.keyCode === KeyCode.ESCAPE) {
-            if (this.node.getComponent(GmPanel)?.isOpen) return;
+            if (InputBridge.gmPanelOpen) return;
             if (this._chestOpen) this.setChestOpen(false);
             else if (this._craftOpen) {
                 if (this._tutorialCraftLock) return;

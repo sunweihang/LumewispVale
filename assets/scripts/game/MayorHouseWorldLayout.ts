@@ -76,23 +76,32 @@ export class MayorHouseWorldLayout {
     }
 
     static findInteract(
-        world: { children: ReadonlyArray<{ name: string; position: { x: number; y: number } }> },
+        world: Node,
         wx: number,
         wy: number,
-        maxDist = 140,
     ):
         | { kind: 'travel'; dest: 'town'; title: string }
         | { kind: 'info'; title: string; body: string }
         | null {
-        let best: { dist: number; key: string } | null = null;
+        // Sprite AABB hit (not a loose radius) so open floor stays click-to-move.
+        let best: { area: number; key: string } | null = null;
+        const pad = 8;
         for (const child of world.children) {
             const key = this.interactKey(child.name);
             if (!key) continue;
-            const dx = wx - child.position.x;
-            const dy = wy - child.position.y;
-            const d = Math.sqrt(dx * dx + dy * dy);
-            if (d > maxDist) continue;
-            if (!best || d < best.dist) best = { dist: d, key };
+            const ui = child.getComponent(UITransform);
+            if (!ui) continue;
+            const w = ui.contentSize.width;
+            const h = ui.contentSize.height;
+            if (w <= 0 || h <= 0) continue;
+            const p = child.position;
+            const left = p.x - w * ui.anchorX - pad;
+            const right = p.x + w * (1 - ui.anchorX) + pad;
+            const bottom = p.y - h * ui.anchorY - pad;
+            const top = p.y + h * (1 - ui.anchorY) + pad;
+            if (wx < left || wx > right || wy < bottom || wy > top) continue;
+            const area = w * h;
+            if (!best || area < best.area) best = { area, key };
         }
         if (!best) return null;
         return this.actionFor(best.key);

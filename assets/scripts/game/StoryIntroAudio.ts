@@ -8,11 +8,17 @@ const CLIP_PATHS = {
     thunder: 'audio/story/story-thunder-boom',
 } as const;
 
-/** Same seek as SpaceCard: skip long drum intro on Volatile Reaction. */
-const ALERT_SKIP_SEC = 16;
+/**
+ * Alert bed is trimmed at encode time (web-mobile pack) so playback starts
+ * on the usable loop; keep 0 unless shipping the full untrimmed source again.
+ */
+const ALERT_SKIP_SEC = 0;
 const BGM_VOL = 0.46;
 const THUNDER_VOL = 0.9;
 const FADE_OUT_SEC = 0.45;
+
+/** Prologue + farm bed — load before town hub BGM. */
+const BOOT_CLIP_KEYS: (keyof typeof CLIP_PATHS)[] = ['alert', 'calm', 'thunder'];
 
 type Track = 'alert' | 'calm' | 'town' | null;
 type MapBed = 'farm' | 'town' | 'mine';
@@ -79,23 +85,30 @@ export class StoryIntroAudio {
         }
     }
 
-    /** Warm clips so the first page can unlock audio inside a gesture. */
+    private loadClip(key: keyof typeof CLIP_PATHS): Promise<void> {
+        if (this._clips.has(key)) return Promise.resolve();
+        const path = CLIP_PATHS[key];
+        return new Promise((resolve) => {
+            resources.load(path, AudioClip, (err, clip) => {
+                if (!err && clip) this._clips.set(key, clip);
+                else console.warn(`[StoryIntroAudio] load failed: ${path}`, err);
+                resolve();
+            });
+        });
+    }
+
+    /** Warm prologue/farm clips; town hub BGM loads on first town travel. */
     preload(): Promise<void> {
         if (this._loading) return this._loading;
-        this._loading = Promise.all(
-            (Object.keys(CLIP_PATHS) as (keyof typeof CLIP_PATHS)[]).map(
-                (key) =>
-                    new Promise<void>((resolve) => {
-                        const path = CLIP_PATHS[key];
-                        resources.load(path, AudioClip, (err, clip) => {
-                            if (!err && clip) this._clips.set(key, clip);
-                            else console.warn(`[StoryIntroAudio] load failed: ${path}`, err);
-                            resolve();
-                        });
-                    }),
-            ),
-        ).then(() => undefined);
+        this._loading = Promise.all(BOOT_CLIP_KEYS.map((key) => this.loadClip(key))).then(
+            () => undefined,
+        );
         return this._loading;
+    }
+
+    /** Ensure a single track is cached (used for deferred town BGM). */
+    private ensureClip(key: keyof typeof CLIP_PATHS): Promise<void> {
+        return this.loadClip(key);
     }
 
     /** Begin prologue bed (alert). Call from play()/beginPlay. */
@@ -220,7 +233,11 @@ export class StoryIntroAudio {
         const clip = this._clips.get(track) ?? null;
         const src = this._bgm;
         if (!clip || !src?.isValid) {
-            void this.preload().then(() => {
+            const warm =
+                track === 'town'
+                    ? this.ensureClip('town')
+                    : this.preload().then(() => this.ensureClip(track));
+            void warm.then(() => {
                 if (!this._bed) return;
                 if (this._track === track && !forceRestart) return;
                 this.setTrack(track, forceRestart);

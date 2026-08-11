@@ -9,6 +9,8 @@
   "scripts": {
     "gen:world": "python3 tools/ui/generate_world_assets.py",
     "gen:config": "bash tools/luban/gen.sh",
-    "gen:quest-prefab": "python3 tools/ui/generate_quest_panel_prefab.py"
+    "gen:quest-prefab": "python3 tools/ui/generate_quest_panel_prefab.py",
+    "gen:uuid-deps": "python tools/ui/generate_uuid_build_deps.py",
+    "optimize:webmobile": "python tools/optimize_webmobile.py"
   }
 }

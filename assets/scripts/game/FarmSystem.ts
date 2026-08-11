@@ -216,7 +216,9 @@ export class FarmSystem extends Component {
 
     start() {
         if (!this.world) return;
-        this.initPlots();
+        // Plots only exist on the farm — town / mine / mayor house share tile
+        // indices with TILLABLE and must not steal empty-ground click-to-move.
+        if (FarmWorldLayout.isBaked(this.world)) this.initPlots();
         this.spawnHudLabels();
         this.refreshHud();
     }
@@ -365,14 +367,17 @@ export class FarmSystem extends Component {
 
     /**
      * Tap a screen point (UI coords, origin bottom-left) → walk over, play action, then apply.
-     * Tap must land on the plot or sprite. Nature sprites win over the plot grid underfoot.
+     * Soft weeds / garden flowers yield to an actable plot under the same tap (hoe/seeds/can);
+     * trees and rocks still win. Guide arrows sit above the tile — near-miss still farms.
      * @returns true when the tap was consumed (job / tip / modal); false = empty ground.
      */
     tryActAtUi(uiX: number, uiY: number): boolean {
-        if (!this._ready || !this.player || !this.world) return true;
+        // false = empty ground → click-to-move; true = farm job / tip ate the tap.
+        if (!this.player || !this.world) return false;
+        if (!this._ready) return false;
         if (this.node.getComponent(FishingMinigame)?.isOpen) return true;
         const worldPt = this.uiToWorld(uiX, uiY);
-        if (!worldPt) return true;
+        if (!worldPt) return false;
         // Grow-boost ad chip wins over plot / nature under the same tap.
         const adKey = this.hitGrowAdKey(worldPt.x, worldPt.y);
         if (adKey) {
@@ -392,24 +397,45 @@ export class FarmSystem extends Component {
             this.queueCraftJob(craft.node);
             return true;
         }
-        // Tree / rock / weed first — canopy often overlaps a farm tile.
+
+        const plotKey = this.plotKeyNear(worldPt.x, worldPt.y);
+        const plot = plotKey ? this._plots.get(plotKey) ?? null : null;
+        const plotOk =
+            !!plotKey && !!plot && !this.tutorialBlocks('plot') && this.canActOnPlot(plot);
+
+        // Tree / rock / weed — but soft cover on a farmable tile must not block till/plant/water.
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
-            if (this.rejectTutorialAct('nature')) return true;
-            const ok = this.toolMatchesNature(nature.act);
-            console.log(
-                `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
-                    `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
-                    `toolOk=${ok}`,
-            );
-            if (!ok) {
-                const tip = this.wrongToolTipFor(nature.act);
-                console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
-                this.floatTip(tip);
-                return true;
+            const softOverPlot = plotOk && nature.act === 'pull';
+            if (!softOverPlot) {
+                const natureBlock = this.tutorialBlocks('nature');
+                if (natureBlock) {
+                    // SelectHoe etc. forbid nature; if this tap can farm, do that instead of a tip.
+                    if (!plotOk) {
+                        this.floatTip(natureBlock);
+                        return true;
+                    }
+                } else {
+                    const ok = this.toolMatchesNature(nature.act);
+                    console.log(
+                        `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
+                            `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
+                            `toolOk=${ok}`,
+                    );
+                    if (!ok) {
+                        const tip = this.wrongToolTipFor(nature.act);
+                        console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
+                        this.floatTip(tip);
+                        return true;
+                    }
+                    this.queueNatureJob(nature);
+                    return true;
+                }
+            } else {
+                console.log(
+                    `[FarmTap] soft ${nature.node.name} on plot ${plotKey} → prefer plot`,
+                );
             }
-            this.queueNatureJob(nature);
-            return true;
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
         if (fish) {
@@ -418,12 +444,10 @@ export class FarmSystem extends Component {
             this.tryFishAt(fish);
             return true;
         }
-        const key = `${Math.round(worldPt.x / TILE)},${Math.round(worldPt.y / TILE)}`;
-        const plot = this._plots.get(key);
-        if (plot) {
+        if (plot && plotKey) {
             if (this.rejectTutorialAct('plot')) return true;
-            console.log(`[FarmTap] → plot ${key} phase=${plot.phase}`);
-            this.tryPlotWithTool(key, plot);
+            console.log(`[FarmTap] → plot ${plotKey} phase=${plot.phase}`);
+            this.tryPlotWithTool(plotKey, plot);
             return true;
         }
         console.log(
@@ -431,6 +455,33 @@ export class FarmSystem extends Component {
                 `world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)}) tool=${this.tool}`,
         );
         return false;
+    }
+
+    /**
+     * Exact tile under the tap, or a nearby actable plot.
+     * Quest chevrons sit above the soil center — a raw round() often lands on the neighbor.
+     */
+    private plotKeyNear(wx: number, wy: number): string | null {
+        const direct = `${Math.round(wx / TILE)},${Math.round(wy / TILE)}`;
+        if (this._plots.has(direct)) return direct;
+        const maxSq = (TILE * 0.9) * (TILE * 0.9);
+        let best: string | null = null;
+        let bestSq = maxSq;
+        for (const [key, p] of this._plots) {
+            if (!this.canActOnPlot(p)) continue;
+            const parts = key.split(',');
+            const ix = Number(parts[0]);
+            const iy = Number(parts[1]);
+            if (!Number.isFinite(ix) || !Number.isFinite(iy)) continue;
+            const dx = ix * TILE - wx;
+            const dy = iy * TILE - wy;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = key;
+            }
+        }
+        return best;
     }
 
     /**

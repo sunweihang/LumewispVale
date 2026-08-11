@@ -7,8 +7,8 @@
 
 ## 参考
 
-- 气质参考：`assets/textures/reference/town-night-ref.png`（夜景小镇广场）
-- 开局农场构图：`assets/textures/reference/farm-start-ref.png`（小屋靠边 + 荒地杂物，有机散布）
+- 气质参考：`tools/reference/town-night-ref.png`（夜景小镇广场，编辑用不上包）
+- 开局农场构图：`tools/reference/farm-start-ref.png`（小屋靠边 + 荒地杂物，有机散布）
 - 只抽构图、分层与物件类型；**禁止扒帧当 chrome / 贴图源**
 - 自有 IP：微光溪谷（Lumewisp Vale），晶簇陨石为世界观锚点
 - AI 原图归档：`tools/ui/ai-source/`；入库贴图经抠底 + 像素缩放写入 `assets/textures/**`

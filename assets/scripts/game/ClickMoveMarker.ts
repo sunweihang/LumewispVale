@@ -22,9 +22,13 @@ const { ccclass } = _decorator;
 
 type FarmCancel = { cancelPending: () => void };
 
+/** Arrow tip (bottom anchor) above the ripple center — matches TutorialGuide place aims. */
+const ARROW_TIP_Y = 16;
+const ARROW_BOB = 14;
+
 /**
- * Stardew-style click-to-move chrome: ground ripple + bobbing gold arrow
- * at the walk goal (canvas space, tracks World under CameraFollow).
+ * Click-to-move walk helper. Arrow + ripple chrome is NOT for player taps —
+ * TutorialGuide owns those place-aim cues. `show` stays for rare guided walks.
  */
 @ccclass('ClickMoveMarker')
 export class ClickMoveMarker extends Component {
@@ -60,7 +64,8 @@ export class ClickMoveMarker extends Component {
     }
 
     /**
-     * Pathfind to a world point and show the destination marker.
+     * Pathfind to a world point. No destination arrow/ripple — player taps
+     * only walk; place-aim chrome is TutorialGuide's job.
      * Returns false when the tap was ignored (locked / already there / no path).
      */
     go(player: Node | null, world: Node | null, farm: FarmCancel | null, wx: number, wy: number): boolean {
@@ -70,7 +75,7 @@ export class ClickMoveMarker extends Component {
         if (!ctrl || ctrl.locked) return false;
 
         farm?.cancelPending();
-        // Drop any prior chrome first so a re-tap never stacks a second ripple.
+        // Drop any leftover guided chrome so a tap never leaves a stale ring.
         this.hide();
         const gen = (this._walkGen += 1);
         ctrl.walkTo(
@@ -85,12 +90,7 @@ export class ClickMoveMarker extends Component {
                 this.hide();
             },
         );
-        if (!ctrl.isAutoWalking) {
-            this.hide();
-            return false;
-        }
-        this.show(world, ctrl.walkGoalX, ctrl.walkGoalY);
-        return true;
+        return ctrl.isAutoWalking;
     }
 
     show(world: Node, wx: number, wy: number) {
@@ -121,7 +121,7 @@ export class ClickMoveMarker extends Component {
         }
         if (this._arrow) {
             Tween.stopAllByTarget(this._arrow);
-            this._arrow.setPosition(0, 52, 0);
+            this._arrow.setPosition(0, ARROW_TIP_Y, 0);
         }
         if (this._rippleOp) this._rippleOp.opacity = 0;
         root.active = false;
@@ -163,7 +163,7 @@ export class ClickMoveMarker extends Component {
         const arrow = new Node('Arrow');
         arrow.layer = this.node.layer;
         arrow.setParent(root);
-        arrow.setPosition(0, 52, 0);
+        arrow.setPosition(0, ARROW_TIP_Y, 0);
         const aUi = arrow.addComponent(UITransform);
         aUi.setContentSize(72, 88);
         aUi.setAnchorPoint(0.5, 0);
@@ -246,12 +246,12 @@ export class ClickMoveMarker extends Component {
         if (!n?.isValid) return;
         Tween.stopAllByTarget(n);
         this._arrowBobbing = true;
-        n.setPosition(0, 52, 0);
+        n.setPosition(0, ARROW_TIP_Y, 0);
         tween(n)
             .repeatForever(
                 tween(n)
-                    .to(0.35, { position: new Vec3(0, 66, 0) }, { easing: 'sineInOut' })
-                    .to(0.35, { position: new Vec3(0, 52, 0) }, { easing: 'sineInOut' }),
+                    .to(0.35, { position: new Vec3(0, ARROW_TIP_Y + ARROW_BOB, 0) }, { easing: 'sineInOut' })
+                    .to(0.35, { position: new Vec3(0, ARROW_TIP_Y, 0) }, { easing: 'sineInOut' }),
             )
             .start();
     }

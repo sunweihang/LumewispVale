@@ -220,27 +220,23 @@ export class StoryWorldHooks extends Component {
             return true;
         }
         const gen = (this._portalWalkGen += 1);
-        const marker = this.node.getComponent(ClickMoveMarker);
+        // Same as farm portal / NPC approach: walk to the door without
+        // click-to-move arrow + ripple (those are only for empty-ground taps).
+        this.node.getComponent(ClickMoveMarker)?.hide();
         ctrl.walkTo(
             standX,
             standY,
             () => {
                 if (!this.isValid || gen !== this._portalWalkGen) return;
-                marker?.hide();
                 onArrive();
             },
             () => {
-                marker?.hide();
+                /* stick drag / cancel — stay in town */
             },
             18,
             null,
             { x: standX, y: standY, dist: MAYOR_DOOR_USE_RANGE },
         );
-        // Already-in-range / locked paths fire onArrive inside walkTo; only show
-        // chrome while a real auto-walk is in flight (never warp on abort).
-        if (ctrl.isAutoWalking && this.world.isValid) {
-            marker?.show(this.world, ctrl.walkGoalX, ctrl.walkGoalY);
-        }
         return true;
     }
 

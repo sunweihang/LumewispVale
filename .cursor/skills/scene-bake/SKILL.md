@@ -184,4 +184,4 @@ python tools/ui/bake_mayor_house_scene.py
 
 - 门户、UUID、fringe、节点 schema：[reference.md](reference.md)
 - 像素单件流水线：[pixel-art-draw/SKILL.md](../pixel-art-draw/SKILL.md)
-- 气质参考：`assets/textures/reference/farm-start-ref.png`、`town-night-ref.png`
+- 气质参考：`tools/reference/farm-start-ref.png`、`town-night-ref.png`（编辑用，不进包）

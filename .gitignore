@@ -47,3 +47,7 @@ tools/ui/ai-source/farmer-action-vs-walk-*.png
 tools/ui/ai-source/info-panel-dial-debug.png
 tools/ui/ai-source/fishing-ingame-mock.png
 
+
+# local one-shot helpers
+tools/ui/_tmp_*
+

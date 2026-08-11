@@ -43,7 +43,7 @@ import { ensureNightWash } from './NightWash';
 import { GameState } from './GameState';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
-import { warmupCriticalAssets } from './AssetWarmup';
+import { warmupCriticalAssets, warmupDeferredAssets } from './AssetWarmup';
 import { DialoguePanel } from './DialoguePanel';
 import { InputBridge } from './InputBridge';
 import { LoadingScreen } from './LoadingScreen';
@@ -790,6 +790,9 @@ export class GameBootstrap extends Component {
                 restoreChrome: !covered,
             });
         });
+
+        // Non-blocking: action frames / town NPCs / fishing after first paint.
+        warmupDeferredAssets();
 
         if (covered) {
             // Intro / dialogue own input locks; just clear stale stick state.

@@ -84,10 +84,49 @@ export class TownShopPanel extends Component {
         return this.isOpen && this._mode === 'shop';
     }
 
+    get shopSide(): 'buy' | 'sell' {
+        return this._shopSide;
+    }
+
     /** Accept / OK chrome — TutorialGuide points here while the board is open. */
     acceptBtnNode(): Node | null {
         if (!this.isOpen || !this._actionBtn?.active) return null;
         return this._actionBtn;
+    }
+
+    buyTabNode(): Node | null {
+        if (!this.isShopOpen || !this._buyTab?.active) return null;
+        return this._buyTab;
+    }
+
+    sellTabNode(): Node | null {
+        if (!this.isShopOpen || !this._sellTab?.active) return null;
+        return this._sellTab;
+    }
+
+    /** First buy / sell list row — TutorialGuide hollow target. */
+    firstBuyRowNode(): Node | null {
+        if (!this.isShopOpen || this._shopSide !== 'buy') return null;
+        const row = this._rows[0];
+        return row?.isValid ? row : null;
+    }
+
+    firstSellRowNode(): Node | null {
+        if (!this.isShopOpen || this._shopSide !== 'sell') return null;
+        const row = this._rows[0];
+        return row?.isValid ? row : null;
+    }
+
+    /**
+     * Quest 1020 / 1021: keep the idle arrow over the shop and lock taps to the
+     * guided control (tab or first row) until buy / sell completes.
+     */
+    needsShopTradeGuide(): boolean {
+        if (!this.isShopOpen) return false;
+        const quests = this.quests;
+        const q = quests?.activeQuest;
+        if (!q || quests?.isAwaitingClaim) return false;
+        return q.id === 1020 || q.id === 1021;
     }
 
     onLoad() {
@@ -147,13 +186,19 @@ export class TownShopPanel extends Component {
         const canvas = this.uiToCanvasLocal(uiX, uiY);
         // Panel is offset (0, 40) on canvas.
         const local = { x: canvas.x - this._root.position.x, y: canvas.y - this._root.position.y };
-        // Close chip top-right
+        const guide = this.tradeGuideTarget();
+        // Close chip top-right — blocked while buy/sell tutorial needs a click.
         if (local.x > PANEL_W * 0.5 - 70 && local.y > PANEL_H * 0.5 - 70) {
+            if (guide) return true;
             playUiClick();
             this.close();
             return true;
         }
         if (this._mode === 'shop' && this._shop) {
+            if (guide) {
+                this.handleGuidedShopTap(local.x, local.y, guide);
+                return true;
+            }
             // Buy / Sell tabs
             if (local.y > TAB_Y - TAB_H * 0.5 - 6 && local.y < TAB_Y + TAB_H * 0.5 + 6) {
                 if (local.x > -220 && local.x < -20) {
@@ -205,6 +250,60 @@ export class TownShopPanel extends Component {
             }
         }
         return true;
+    }
+
+    /** Forced control while quest 1020 / 1021 is live inside the shop. */
+    private tradeGuideTarget(): 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row' | null {
+        if (!this.needsShopTradeGuide() || !this._shop) return null;
+        const qid = this.quests?.activeQuest?.id ?? 0;
+        if (qid === 1021) {
+            if (this._shopSide !== 'sell') return 'sell-tab';
+            return this._sellRows.length > 0 ? 'sell-row' : null;
+        }
+        if (qid === 1020) {
+            if (this._shopSide !== 'buy') return 'buy-tab';
+            return this._shop.goods.length > 0 ? 'buy-row' : null;
+        }
+        return null;
+    }
+
+    /** Swallow every tap except the guided tab / first list row. */
+    private handleGuidedShopTap(
+        lx: number,
+        ly: number,
+        guide: 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row',
+    ) {
+        if (guide === 'buy-tab' || guide === 'sell-tab') {
+            if (ly > TAB_Y - TAB_H * 0.5 - 6 && ly < TAB_Y + TAB_H * 0.5 + 6) {
+                if (guide === 'buy-tab' && lx > -220 && lx < -20) {
+                    playUiClick();
+                    this._shopSide = 'buy';
+                    this.refresh();
+                    return;
+                }
+                if (guide === 'sell-tab' && lx > 20 && lx < 220) {
+                    playUiClick();
+                    this._shopSide = 'sell';
+                    this.refresh();
+                    return;
+                }
+            }
+            return;
+        }
+        const listTop = LIST_TOP_SHOP;
+        const rowY = listTop - ROW_H * 0.5;
+        if (Math.abs(ly - rowY) >= ROW_H * 0.5 || Math.abs(lx) >= PANEL_W * 0.42) return;
+        if (guide === 'buy-row') {
+            const g = this._shop?.goods[0];
+            if (!g) return;
+            playUiClick();
+            this.buy(g);
+            return;
+        }
+        const g = this._sellRows[0];
+        if (!g) return;
+        playUiClick();
+        this.sell(g);
     }
 
     private hitAction(lx: number, ly: number): boolean {

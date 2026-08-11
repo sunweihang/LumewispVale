@@ -57,6 +57,11 @@ const ARROW_UI_FLOOR = -560;
 const ARROW_TOP_RESERVE = 200;
 /** Chevron half-height above its node center (sprite / fallback). */
 const ARROW_EXTENT_UP = 48;
+/**
+ * Place-aim chevron center above the ground-ripple origin.
+ * Tip sits ~8px above the ring (96px sprite, tip ≈ center − 48).
+ */
+const PLACE_ARROW_ABOVE = 56;
 /** Gap between arrow top and tip banner bottom. */
 const TIP_ARROW_GAP = 18;
 /** Bag → hotbar drag demo loop (ms). */
@@ -274,8 +279,8 @@ export class TutorialGuide extends Component {
         if (this.node.getComponent(DialoguePanel)?.isOpen) return null;
         if (this.node.getComponent(RewardPopup)?.isOpen) return null;
         const shop = this.node.getComponent(TownShopPanel);
-        // Board accept handoff keeps the caption; other shop/info modals mute it.
-        if (shop?.isOpen && !shop.isBoardOpen) return null;
+        // Board / buy-sell tutorial keep the caption; other shop/info modals mute it.
+        if (shop?.isOpen && !shop.isBoardOpen && !shop.needsShopTradeGuide()) return null;
         const hud = this.node.getComponent(FarmHUD);
         // Craft / bag modals normally hide the cue — keep guided craft / boost steps.
         if (
@@ -502,8 +507,8 @@ export class TutorialGuide extends Component {
         // Quest journal open → still show arrow (points at close so guide never dies).
         if (this.node.getComponent(FishingMinigame)?.isOpen) return false;
         const shop = this.node.getComponent(TownShopPanel);
-        // Police / post board: keep arrow on「接受委托」. Shop / info: hide.
-        if (shop?.isOpen && !shop.isBoardOpen) return false;
+        // Board accept + shop buy/sell tutorial keep the arrow; other shop/info: hide.
+        if (shop?.isOpen && !shop.isBoardOpen && !shop.needsShopTradeGuide()) return false;
         const hud = this.node.getComponent(FarmHUD);
         // Allow arrow over craft (first seed) and bag (drag boost to hotbar).
         if (
@@ -723,6 +728,10 @@ export class TutorialGuide extends Component {
         const boardGuide = this.resolveTownBoardGuide();
         if (boardGuide) return boardGuide;
 
+        // Shop buy (1020) / sell (1021) — force the in-panel tab or first row.
+        const shopGuide = this.resolveTownShopGuide();
+        if (shopGuide) return shopGuide;
+
         // Before yard spotlight — free roam (no lock); soft arrow on 露穗 only.
         if (quests.activeQuest.id === 1001 && !GameState.hasSeenDialogue(GUIDE_ID)) {
             return this.worldNodeGuide(
@@ -932,6 +941,43 @@ export class TutorialGuide extends Component {
         if (!hole) return null;
         this.clearStickyTarget();
         return { hole, tip: '露穗：点「接受委托」接任务呀', uiDock: true };
+    }
+
+    /**
+     * Quest 1020 / 1021 while the shop is open: force「购买/出售」tab then the
+     * first list row (TownShopPanel swallows every other tap).
+     */
+    private resolveTownShopGuide(): IdleGuide | null {
+        const shop = this.node.getComponent(TownShopPanel);
+        if (!shop?.needsShopTradeGuide()) return null;
+        const qid = this.quests?.activeQuest?.id ?? 0;
+        this.clearStickyTarget();
+        if (qid === 1021) {
+            if (shop.shopSide !== 'sell') {
+                const hole = this.uiNodeHole(shop.sellTabNode());
+                if (!hole) return null;
+                return { hole, tip: '露穗：先点「出售」页签呀', uiDock: true };
+            }
+            const hole = this.uiNodeHole(shop.firstSellRowNode());
+            if (hole) {
+                return { hole, tip: '露穗：点这一行卖掉一件呀', uiDock: true };
+            }
+            // Empty sell list — keep the panel cue (don't fall through to buildings).
+            const tab = this.uiNodeHole(shop.sellTabNode());
+            if (!tab) return null;
+            return { hole: tab, tip: '露穗：背包里还没有可卖的收获物呀', uiDock: true };
+        }
+        if (qid === 1020) {
+            if (shop.shopSide !== 'buy') {
+                const hole = this.uiNodeHole(shop.buyTabNode());
+                if (!hole) return null;
+                return { hole, tip: '露穗：先点「购买」页签呀', uiDock: true };
+            }
+            const hole = this.uiNodeHole(shop.firstBuyRowNode());
+            if (!hole) return null;
+            return { hole, tip: '露穗：点这一行买一件呀', uiDock: true };
+        }
+        return null;
     }
 
     /**
@@ -1712,8 +1758,20 @@ export class TutorialGuide extends Component {
             (!this._open && this._idleOn && this._idleUiDock);
         // Screen-edge walk cues use the ground path (incl. south, deg 0).
         const walkGuide = !this._open && this._idleOn && this._idleEdgeWalk;
+        // Door / gate / pier — chevron must stay locked to the ground ripple.
+        // Playfield Y clamp used to drag the arrow south while the ring stayed on the feet.
+        const placeRipple =
+            !this._open &&
+            this._idleOn &&
+            this._idleGroundRipple &&
+            !this._idleUiDock &&
+            arrowDeg === 0;
         this.syncGroundPath();
-        let fx = this._hole.x;
+        const rippleHole =
+            (placeRipple && this._idleRippleWorld
+                ? this.worldPosHole(this._idleRippleWorld)
+                : null) ?? this._hole;
+        let fx = rippleHole.x;
         let fy = this._idleSilent ? top + 40 : top + 56;
         if (walkGuide) {
             finger.active = false;
@@ -1721,7 +1779,10 @@ export class TutorialGuide extends Component {
         } else {
             finger.active = true;
             const bob = Math.sin(Date.now() * 0.01) * 12;
-            if (arrowDeg === 90) {
+            if (placeRipple) {
+                fx = rippleHole.x;
+                fy = rippleHole.y + PLACE_ARROW_ABOVE;
+            } else if (arrowDeg === 90) {
                 fx = this._hole.x - 56;
                 fy = this._hole.y;
             } else if (arrowDeg === -90) {
@@ -1735,6 +1796,9 @@ export class TutorialGuide extends Component {
             if (uiDock) {
                 fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
                 fy = Math.max(-halfH + 80, Math.min(halfH - 50, fy));
+            } else if (placeRipple) {
+                // X only — Y stays on the ripple so door aims don't split.
+                fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
             } else {
                 fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
                 fy = Math.max(band.y0 + 50, Math.min(band.y1 - 20, fy));

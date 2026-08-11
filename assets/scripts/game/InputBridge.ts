@@ -65,6 +65,9 @@ export class InputBridge {
      */
     static gmUiHit: ((uiX: number, uiY: number) => boolean) | null = null;
 
+    /** True while the GM overlay owns Escape (avoids FarmHUD↔GmPanel imports). */
+    static gmPanelOpen = false;
+
     /**
      * Bottom hotbar band / info board — drag-to-move must not start here.
      * `uiX/uiY` are UI coords with origin at bottom-left.

@@ -1,4 +1,4 @@
-import { AudioClip, Prefab, SpriteFrame, assetManager, resources } from 'cc';
+import { Prefab, SpriteFrame, assetManager } from 'cc';
 import { loadConfigTables } from './ConfigService';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FARM_FRAMES } from './FarmFrames';
@@ -11,20 +11,6 @@ import { QUEST_FRAMES, QUEST_PANEL_PREFAB_UUID } from './QuestFrames';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
 import { TOOL_FRAMES } from './ToolFrames';
 import { loadUiFont } from './UiFont';
-
-const STORY_AUDIO_PATHS = [
-    'audio/story/storyThemeAlert',
-    'audio/story/storyThemeCalm',
-    'audio/story/townTheme',
-    'audio/story/story-thunder-boom',
-];
-
-const UI_AUDIO_PATHS = [
-    'audio/ui/ui-click',
-    'audio/ui/farm-tool',
-    'audio/ui/farm-gather',
-    'audio/ui/ui-gold',
-];
 
 const STORY_UUIDS = [
     /** Meteor prefab */
@@ -54,19 +40,32 @@ function flattenUuids(value: unknown, out: Set<string>) {
     }
 }
 
-function collectSpriteUuids(): string[] {
+/** First-screen + prologue + farm HUD — keep the boot gate short on web-mobile. */
+function collectCriticalSpriteUuids(): string[] {
     const set = new Set<string>();
-    flattenUuids(FARMER_FRAMES, set);
-    flattenUuids(NPC_FRAMES, set);
+    flattenUuids(FARMER_FRAMES.farmer, set);
+    if (typeof FARMER_FRAMES.questMarker === 'string') set.add(FARMER_FRAMES.questMarker);
+    flattenUuids(NPC_FRAMES.girl, set);
     flattenUuids(DIALOGUE_PORTRAIT_FRAMES, set);
     flattenUuids(TOOL_FRAMES, set);
     flattenUuids(MATERIAL_FRAMES, set);
     flattenUuids(FARM_FRAMES, set);
     flattenUuids(QUEST_FRAMES, set);
     flattenUuids(INFO_BOARD_FRAMES, set);
-    flattenUuids(FISHING_FRAMES, set);
     for (const u of STORY_UUIDS) set.add(u);
     return [...set];
+}
+
+/** Tools / town NPCs / fishing — warm after the gate so first paint stays light. */
+function collectDeferredSpriteUuids(): string[] {
+    const set = new Set<string>();
+    flattenUuids(FARMER_FRAMES.actions, set);
+    flattenUuids(NPC_FRAMES.mayor, set);
+    flattenUuids(NPC_FRAMES.carpenter, set);
+    flattenUuids(NPC_FRAMES.passerby, set);
+    flattenUuids(FISHING_FRAMES, set);
+    const critical = new Set(collectCriticalSpriteUuids());
+    return [...set].filter((u) => !critical.has(u));
 }
 
 function loadUuid(uuid: string): Promise<void> {
@@ -78,16 +77,31 @@ function loadUuid(uuid: string): Promise<void> {
 function loadPrefab(uuid: string): Promise<void> {
     return new Promise((resolve) => {
         assetManager.loadAny({ uuid }, (_err, asset) => {
-            // Touch the type so the engine keeps the Prefab / SpriteFrame warm.
             void (asset as Prefab | SpriteFrame | null);
             resolve();
         });
     });
 }
 
+async function loadUuidBatch(
+    uuids: string[],
+    onBatch?: (done: number, total: number) => void,
+    batch = 8,
+): Promise<void> {
+    const total = Math.max(1, uuids.length);
+    for (let i = 0; i < uuids.length; i += batch) {
+        const slice = uuids.slice(i, i + batch);
+        await Promise.all(slice.map((u) => loadUuid(u)));
+        onBatch?.(Math.min(total, i + slice.length), total);
+    }
+}
+
+let _deferredStarted = false;
+
 /**
  * Preload config + font + HUD/player/quest chrome into the asset cache
  * so runtime systems resolve instantly without pop-in.
+ * Audio is owned by UiAudio / StoryIntroAudio (avoid double-fetch).
  */
 export async function warmupCriticalAssets(onProgress?: WarmupProgress): Promise<void> {
     const report = onProgress ?? (() => undefined);
@@ -99,33 +113,32 @@ export async function warmupCriticalAssets(onProgress?: WarmupProgress): Promise
     report(0.12, '装载字体…');
     await loadUiFont();
 
-    report(0.15, '装载开场音效…');
-    await Promise.all(
-        [...STORY_AUDIO_PATHS, ...UI_AUDIO_PATHS].map(
-            (path) =>
-                new Promise<void>((resolve) => {
-                    resources.load(path, AudioClip, (_err, _clip) => resolve());
-                }),
-        ),
-    );
-
     report(0.18, '准备界面预制体…');
     await Promise.all([
         loadPrefab(INFO_BOARD_PREFAB_UUID),
         loadPrefab(QUEST_PANEL_PREFAB_UUID),
     ]);
 
-    const uuids = collectSpriteUuids();
+    const uuids = collectCriticalSpriteUuids();
     const total = Math.max(1, uuids.length);
     report(0.22, `加载贴图 0/${total}`);
-    let done = 0;
-    const batch = 8;
-    for (let i = 0; i < uuids.length; i += batch) {
-        const slice = uuids.slice(i, i + batch);
-        await Promise.all(slice.map((u) => loadUuid(u)));
-        done = Math.min(total, i + slice.length);
-        const t = 0.22 + 0.75 * (done / total);
-        report(t, `加载贴图 ${done}/${total}`);
-    }
+    await loadUuidBatch(uuids, (done, t) => {
+        const p = 0.22 + 0.75 * (done / t);
+        report(p, `加载贴图 ${done}/${t}`);
+    });
     report(1, '就绪');
+}
+
+/**
+ * Background-warm action / town / fishing frames after the boot gate.
+ * Safe to call multiple times; only the first run does work.
+ */
+export function warmupDeferredAssets(): void {
+    if (_deferredStarted) return;
+    _deferredStarted = true;
+    const uuids = collectDeferredSpriteUuids();
+    if (uuids.length === 0) return;
+    void loadUuidBatch(uuids, undefined, 4).catch((err) => {
+        console.warn('[AssetWarmup] deferred failed', err);
+    });
 }
