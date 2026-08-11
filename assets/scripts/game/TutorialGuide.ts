@@ -758,19 +758,6 @@ export class TutorialGuide extends Component {
         const action = quests.activeGotoAction();
         const tool = this.farm?.tool;
 
-        const needTool = (
-            t: string,
-            slot: string,
-            clickTip: string,
-            world: () => HoleRect | null,
-        ): IdleGuide | null => {
-            if (tool !== t) {
-                this.clearStickyTarget();
-                return this.toolSwapGuide(t, slot);
-            }
-            return this.worldOrQuest(world(), clickTip);
-        };
-
         switch (action) {
             case GotoAction.SelectHand: {
                 // Harvest (1006): bag→hotbar boost → use on crop → hand harvest.
@@ -780,26 +767,44 @@ export class TutorialGuide extends Component {
                     if (boost) return boost;
                     return this.worldOrQuest(null, '露穗：再等等，作物就要熟啦');
                 }
-                return needTool('hand', 'hand', '露穗：点成熟作物收获呀', () =>
-                    this.worldPosHole(harvestPos),
+                if (tool !== 'hand') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('hand', 'hand');
+                }
+                return this.worldPosGuide(harvestPos, '露穗：点成熟作物收获呀');
+            }
+            case GotoAction.HintGrass: {
+                if (tool !== 'hand') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('hand', 'hand');
+                }
+                return this.worldNodeGuide(
+                    this.pickHintGrass(),
+                    '露穗：点这里拔掉杂草～',
                 );
             }
-            case GotoAction.HintGrass:
-                return needTool('hand', 'hand', '露穗：点这里拔掉杂草～', () =>
-                    this.worldNodeHole(this.pickHintGrass()),
-                );
-            case GotoAction.SelectHoe:
-                return needTool('hoe', 'hoe', '露穗：点这里开垦田地哦', () =>
-                    this.worldPosHole(this.stickyPlotPos('soil')),
-                );
-            case GotoAction.SelectSeeds:
-                return needTool('seeds', 'seeds', '露穗：点翻好的地播种呀', () =>
-                    this.worldPosHole(this.stickyPlotPos('tilled')),
-                );
-            case GotoAction.SelectCan:
-                return needTool('can', 'can', '露穗：给作物浇点水吧', () =>
-                    this.worldPosHole(this.stickyPlotPos('water')),
-                );
+            case GotoAction.SelectHoe: {
+                if (tool !== 'hoe') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('hoe', 'hoe');
+                }
+                // worldPosGuide attaches pathWorld so arrow taps snap to the plot.
+                return this.worldPosGuide(this.stickyPlotPos('soil'), '露穗：点这里开垦田地哦');
+            }
+            case GotoAction.SelectSeeds: {
+                if (tool !== 'seeds') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('seeds', 'seeds');
+                }
+                return this.worldPosGuide(this.stickyPlotPos('tilled'), '露穗：点翻好的地播种呀');
+            }
+            case GotoAction.SelectCan: {
+                if (tool !== 'can') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('can', 'can');
+                }
+                return this.worldPosGuide(this.stickyPlotPos('water'), '露穗：给作物浇点水吧');
+            }
             case GotoAction.SelectRod:
             case GotoAction.HintFish:
                 return this.resolveFishGuide(tool);
@@ -2543,6 +2548,32 @@ export class TutorialGuide extends Component {
         if (!aim) return null;
         if ((this._idleArrowDeg ?? 0) !== 0) return null;
         if (Math.hypot(wx - aim.x, wy - aim.y) > radius) return null;
+        return { x: aim.x, y: aim.y };
+    }
+
+    /**
+     * Idle farm chevron sits well above the tile hole — remap UI taps on the
+     * arrow / hole back to the sticky world aim so till / plant / water fire.
+     */
+    snapIdleActAim(uiX: number, uiY: number): WorldPos | null {
+        if (!this._idleOn || this._idleUiDock || this._idleEdgeWalk) return null;
+        if ((this._idleArrowDeg ?? 0) !== 0) return null;
+        const aim = this._idlePathWorld ?? this._stickyPos ?? this._idleRippleWorld;
+        if (!aim) return null;
+        const local = this.uiToCanvasLocal(uiX, uiY);
+        const hx = this._hole.x;
+        const hy = this._hole.y;
+        const hw = this._hole.w * 0.5 + HOLE_PAD + 24;
+        const hh = this._hole.h * 0.5 + HOLE_PAD + 24;
+        // layoutChrome: arrow at hole-top + 56 (+ bob); tip sprite extends further up.
+        const arrowTop = hy + this._hole.h * 0.5 + HOLE_PAD + 56 + 72;
+        const onHole =
+            Math.abs(local.x - hx) <= hw && Math.abs(local.y - hy) <= hh;
+        const onArrow =
+            Math.abs(local.x - hx) <= 72 &&
+            local.y >= hy - 16 &&
+            local.y <= arrowTop;
+        if (!onHole && !onArrow) return null;
         return { x: aim.x, y: aim.y };
     }
 

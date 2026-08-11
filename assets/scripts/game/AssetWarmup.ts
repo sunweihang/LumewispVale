@@ -13,8 +13,6 @@ import { TOOL_FRAMES } from './ToolFrames';
 import { loadUiFont } from './UiFont';
 
 const STORY_UUIDS = [
-    /** Meteor prefab */
-    'e51a5553-5169-4993-a867-03e35beb87e2',
     /** Town / farm road sign frame */
     '6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941',
     /** Boot splash 1080×2200 */

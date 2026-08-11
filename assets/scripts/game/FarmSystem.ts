@@ -376,8 +376,19 @@ export class FarmSystem extends Component {
         if (!this.player || !this.world) return false;
         if (!this._ready) return false;
         if (this.node.getComponent(FishingMinigame)?.isOpen) return true;
-        const worldPt = this.uiToWorld(uiX, uiY);
+        // Idle quest chevron sits above the tile — remap arrow taps to the aim feet.
+        const guide = this.node.getComponent('TutorialGuide') as {
+            snapIdleActAim?: (x: number, y: number) => { x: number; y: number } | null;
+        } | null;
+        const guided = guide?.snapIdleActAim?.(uiX, uiY) ?? null;
+        const worldPt = guided ?? this.uiToWorld(uiX, uiY);
         if (!worldPt) return false;
+        if (guided) {
+            console.log(
+                `[FarmTap] guide-snap ui=(${uiX.toFixed(0)},${uiY.toFixed(0)}) ` +
+                    `→ world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)})`,
+            );
+        }
         // Grow-boost ad chip wins over plot / nature under the same tap.
         const adKey = this.hitGrowAdKey(worldPt.x, worldPt.y);
         if (adKey) {
@@ -464,7 +475,8 @@ export class FarmSystem extends Component {
     private plotKeyNear(wx: number, wy: number): string | null {
         const direct = `${Math.round(wx / TILE)},${Math.round(wy / TILE)}`;
         if (this._plots.has(direct)) return direct;
-        const maxSq = (TILE * 0.9) * (TILE * 0.9);
+        // Chevron tip sits ~1.5–2 tiles above soil center — keep near-miss farming.
+        const maxSq = (TILE * 1.8) * (TILE * 1.8);
         let best: string | null = null;
         let bestSq = maxSq;
         for (const [key, p] of this._plots) {

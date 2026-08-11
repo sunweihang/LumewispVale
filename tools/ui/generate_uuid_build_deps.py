@@ -32,7 +32,6 @@ UUID_RE = re.compile(
 EXTRA_PREFABS = [
     "80815e00-313f-4257-93fa-95aa89a25f45",  # QuestPanel
     "220473b9-25ed-460c-b9ef-c7bb009504cf",  # FarmInfoBoard
-    "e51a5553-5169-4993-a867-03e35beb87e2",  # spc-meteor
 ]
 
 
