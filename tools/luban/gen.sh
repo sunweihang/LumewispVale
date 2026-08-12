@@ -16,9 +16,9 @@ if [[ ! -f "$LUBAN_DLL" ]]; then
   exit 1
 fi
 
-# Prefer Homebrew/system pythons that already have openpyxl.
-if command -v /usr/local/bin/python3 >/dev/null 2>&1; then
-  PY=/usr/local/bin/python3
+# Prefer a modern system python (for .meta helper only). Excel under SourceData/Datas is the Luban source of truth — do not overwrite it here.
+if /usr/bin/python3 -c 'import sys' 2>/dev/null; then
+  PY=/usr/bin/python3
 elif command -v python3 >/dev/null 2>&1; then
   PY=python3
 else
@@ -26,13 +26,7 @@ else
   exit 1
 fi
 
-# Rebuild Excel shells when SLG template Datas are available; otherwise use committed SourceData/Datas.
-SLG_DATAS_DEFAULT="/Users/sunix/SLG/SourceData/SourceData/Datas"
-if [[ -d "${SLG_LUBAN_DATAS:-$SLG_DATAS_DEFAULT}" ]]; then
-  SLG_LUBAN_DATAS="${SLG_LUBAN_DATAS:-$SLG_DATAS_DEFAULT}" "$PY" "$SCRIPT_DIR/build_source_xlsx.py"
-else
-  echo "SLG template Datas not found; using committed SourceData/Datas"
-fi
+echo "Using committed Luban Excel: $CONF_ROOT/Datas"
 
 mkdir -p "$OUT_CODE" "$OUT_DATA"
 # Remove previous generated outputs but keep .meta files Cocos needs.

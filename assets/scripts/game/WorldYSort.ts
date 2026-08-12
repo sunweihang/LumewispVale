@@ -9,6 +9,8 @@ type StaticEntry = { node: Node; y: number };
  * - Ground tiles always behind (never Y-merged with actors)
  * - Static props sorted once (rebuilt when hierarchy size changes)
  * - Only movers (player / crops / grow UI) re-merge each tick
+ * - Door portal FX bias south over porch/yard facades, then nearby movers
+ *   are promoted past them so the hero stands on the circle (not under it)
  */
 @ccclass('WorldYSort')
 export class WorldYSort extends Component {
@@ -55,7 +57,7 @@ export class WorldYSort extends Component {
         for (let i = 0; i < children.length; i++) {
             const child = children[i]!;
             if (this.isMover(child.name)) {
-                movers.push({ node: child, y: this.footY(child) });
+                movers.push({ node: child, y: this.rawFootY(child) });
             }
         }
         movers.sort((a, b) => b.y - a.y);
@@ -105,6 +107,10 @@ export class WorldYSort extends Component {
             }
         }
 
+        // Door FX use a south bias so they clear porch/yard sprites; that also
+        // parks them over the hero. Pull overlapping movers back in front.
+        this.promoteMoversPastDoorFx(desired);
+
         for (let i = 0; i < desired.length; i++) {
             const n = desired[i]!;
             if (!n.isValid) {
@@ -112,6 +118,38 @@ export class WorldYSort extends Component {
                 return;
             }
             if (n.getSiblingIndex() !== i) n.setSiblingIndex(i);
+        }
+    }
+
+    /**
+     * When a mover stands in a door portal column but was sorted behind it
+     * (yard bias), splice them to just after the FX so the circle stays underfoot.
+     */
+    private promoteMoversPastDoorFx(desired: Node[]): void {
+        for (let i = 0; i < desired.length; i++) {
+            const door = desired[i]!;
+            if (!this.isDoorFx(door.name)) continue;
+
+            // Beam extends ~144px above the foot; include anyone the porch bias
+            // parked under the FX (north stand-in-circle or just south of the ring).
+            const realY = this.rawFootY(door);
+            const hi = realY + 160;
+            const promote: Node[] = [];
+            for (let j = 0; j < i; j++) {
+                const n = desired[j]!;
+                if (!this.isMover(n.name)) continue;
+                if (this.rawFootY(n) <= hi) promote.push(n);
+            }
+            if (!promote.length) continue;
+
+            for (let p = 0; p < promote.length; p++) {
+                const idx = desired.indexOf(promote[p]!);
+                if (idx >= 0) desired.splice(idx, 1);
+            }
+            const doorIdx = desired.indexOf(door);
+            if (doorIdx < 0) continue;
+            desired.splice(doorIdx + 1, 0, ...promote);
+            i = doorIdx + promote.length;
         }
     }
 
@@ -125,7 +163,7 @@ export class WorldYSort extends Component {
             if (this.isGround(child.name)) {
                 ground.push(child);
             } else {
-                staticActors.push({ node: child, y: this.footY(child) });
+                staticActors.push({ node: child, y: this.sortFootY(child) });
             }
         }
 
@@ -136,7 +174,7 @@ export class WorldYSort extends Component {
             const ra = this.groundRank(a.name);
             const rb = this.groundRank(b.name);
             if (ra !== rb) return ra - rb;
-            const dy = this.footY(b) - this.footY(a);
+            const dy = this.rawFootY(b) - this.rawFootY(a);
             if (dy !== 0) return dy;
             return a.name.localeCompare(b.name);
         });
@@ -160,6 +198,8 @@ export class WorldYSort extends Component {
     private groundRank(name: string): number {
         // Soft litter above fringe so flowers/weeds aren't buried under sod lips.
         if (this.isGroundLitter(name)) return 6;
+        // Quest aim ring: over soil/tiles, under weeds / flowers / actors.
+        if (name === 'guide_aim_ripple') return 5;
         if (name.startsWith('fringe_')) return 5;
         if (name === 'lake_bridge' || name.startsWith('pond_pier_')) return 4;
         if (name.startsWith('cliff_') || name.startsWith('pond_cliff_')) return 2;
@@ -167,13 +207,25 @@ export class WorldYSort extends Component {
         return 0;
     }
 
-    private footY(n: Node): number {
-        // Bottom-anchored art: position.y is already the foot.
-        // Center-anchored leftovers: approximate foot as y - half height.
+    private isDoorFx(name: string): boolean {
+        return name.startsWith('door_portal_') || name.startsWith('door_light_');
+    }
+
+    /** True world foot — no door-FX porch bias. */
+    private rawFootY(n: Node): number {
         const ui = n.getComponent(UITransform);
-        if (!ui) return n.position.y;
-        if (Math.abs(ui.anchorY) < 0.05) return n.position.y;
-        return n.position.y - ui.contentSize.height * ui.anchorY;
+        let y = n.position.y;
+        if (ui && Math.abs(ui.anchorY) >= 0.05) {
+            y = n.position.y - ui.contentSize.height * ui.anchorY;
+        }
+        return y;
+    }
+
+    /** Foot used when ranking statics — door FX biased south over porches/yards. */
+    private sortFootY(n: Node): number {
+        const y = this.rawFootY(n);
+        if (this.isDoorFx(n.name)) return y - 120;
+        return y;
     }
 
     /**
@@ -193,6 +245,8 @@ export class WorldYSort extends Component {
     }
 
     private isGround(name: string): boolean {
+        // Tutorial click ring — ground band so it sits on soil but under crops/props.
+        if (name === 'guide_aim_ripple') return true;
         // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
         if (name === 'lake_bridge_rail_s') return false;
         // Tall mine seal faces are props — must Y-sort with timber/ore/player.

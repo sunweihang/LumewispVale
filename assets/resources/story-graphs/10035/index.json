@@ -1,0 +1,7 @@
+{
+  "storyId": 10035,
+  "name": "露穗闲聊",
+  "description": "scriptId=girl_chat; Lock→StartChat(10035)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

@@ -1951,5 +1951,50 @@
     "texture": "11707a82-1c6b-4df5-b1d1-bc3b9f9b3cfa",
     "prefab": "",
     "spriteFrame": "11707a82-1c6b-4df5-b1d1-bc3b9f9b3cfa@f9941"
+  },
+  "prop-door-light-beam": {
+    "texture": "ec557618-3766-4c94-8924-b6f8821bcdc3",
+    "spriteFrame": "ec557618-3766-4c94-8924-b6f8821bcdc3@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-ring": {
+    "texture": "32aa231a-b5c7-4101-9985-fb25551046bd",
+    "spriteFrame": "32aa231a-b5c7-4101-9985-fb25551046bd@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-beam": {
+    "texture": "232ac3d7-b5a2-4f76-868a-e866527d6fd5",
+    "spriteFrame": "232ac3d7-b5a2-4f76-868a-e866527d6fd5@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal": {
+    "texture": "646bfc2e-e2a7-49b4-a483-28910cd64d3c",
+    "spriteFrame": "646bfc2e-e2a7-49b4-a483-28910cd64d3c@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-0": {
+    "texture": "298ea69c-c645-4c24-9db2-26549a77cc16",
+    "spriteFrame": "298ea69c-c645-4c24-9db2-26549a77cc16@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-1": {
+    "texture": "ee798a8f-b45d-469d-96de-aad94b41db00",
+    "spriteFrame": "ee798a8f-b45d-469d-96de-aad94b41db00@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-2": {
+    "texture": "5f7c915e-af97-42c9-bd52-fef2f108ae75",
+    "spriteFrame": "5f7c915e-af97-42c9-bd52-fef2f108ae75@f9941",
+    "prefab": ""
+  },
+  "prop-door-portal-3": {
+    "texture": "b41da8b1-596c-4f23-ac7c-e3908b4eeedd",
+    "spriteFrame": "b41da8b1-596c-4f23-ac7c-e3908b4eeedd@f9941",
+    "prefab": ""
+  },
+  "ic-recipe": {
+    "texture": "7918e9f4-330e-4a06-95ba-e98a74906d3f",
+    "prefab": "",
+    "spriteFrame": "7918e9f4-330e-4a06-95ba-e98a74906d3f@f9941"
   }
 }

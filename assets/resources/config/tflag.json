@@ -1,0 +1,67 @@
+[
+  {
+    "id": "enter_town",
+    "label": "抵达小镇",
+    "unlock_map": "town"
+  },
+  {
+    "id": "inspect_meteor",
+    "label": "察看陨石",
+    "unlock_map": "town"
+  },
+  {
+    "id": "visit_mayor",
+    "label": "拜访镇长府",
+    "unlock_map": ""
+  },
+  {
+    "id": "shop_buy",
+    "label": "商店购物",
+    "unlock_map": ""
+  },
+  {
+    "id": "shop_sell",
+    "label": "商店出售",
+    "unlock_map": ""
+  },
+  {
+    "id": "accept_board",
+    "label": "接取公告板",
+    "unlock_map": ""
+  },
+  {
+    "id": "visit_carpenter",
+    "label": "拜访木工坊",
+    "unlock_map": ""
+  },
+  {
+    "id": "visit_community",
+    "label": "探访社区中心",
+    "unlock_map": ""
+  },
+  {
+    "id": "accept_spring_pack",
+    "label": "春厅立项签字",
+    "unlock_map": ""
+  },
+  {
+    "id": "visit_clinic",
+    "label": "拜访微光诊所",
+    "unlock_map": ""
+  },
+  {
+    "id": "visit_oreshop",
+    "label": "取得矿脉通行证",
+    "unlock_map": "mine"
+  },
+  {
+    "id": "enter_mine",
+    "label": "进入浅层矿洞",
+    "unlock_map": "mine"
+  },
+  {
+    "id": "light_spring_hall",
+    "label": "点亮春厅",
+    "unlock_map": ""
+  }
+]

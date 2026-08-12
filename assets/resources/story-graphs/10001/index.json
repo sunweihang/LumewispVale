@@ -1,0 +1,7 @@
+{
+  "storyId": 10001,
+  "name": "序章插画",
+  "description": "scriptId=origin_story; Lock→StartChat(10001)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

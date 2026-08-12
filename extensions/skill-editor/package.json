@@ -1,0 +1,138 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "skill-editor",
+  "description": "技能图编辑器（依赖 node-graph，导出 TsAbility TS 代码）",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "browser": {
+      "title": "技能浏览器",
+      "type": "dockable",
+      "main": "./dist/panels/browser.js",
+      "size": {
+        "min-width": 360,
+        "min-height": 420,
+        "width": 480,
+        "height": 640
+      }
+    },
+    "create": {
+      "title": "创建技能",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 300
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "rebuild-and-reload": {
+        "methods": [
+          "rebuildAndReload"
+        ]
+      },
+      "reload-extension": {
+        "methods": [
+          "reloadExtension"
+        ]
+      },
+      "open-skill-debug-scene": {
+        "methods": [
+          "openSkillDebugScene"
+        ]
+      },
+      "browse-skills": {
+        "methods": [
+          "browseSkills"
+        ]
+      },
+      "create-skill": {
+        "methods": [
+          "createSkill"
+        ]
+      },
+      "edit-skill-graph": {
+        "methods": [
+          "editSkillGraph"
+        ]
+      },
+      "validate-skill-graph": {
+        "methods": [
+          "validateSkillGraph"
+        ]
+      },
+      "export-ts": {
+        "methods": [
+          "exportTs"
+        ]
+      },
+      "export-ts-batch": {
+        "methods": [
+          "exportTsBatch"
+        ]
+      },
+      "ensure-registered": {
+        "public": true,
+        "description": "向 node-graph 注册技能节点/端口",
+        "methods": [
+          "ensureRegistered"
+        ]
+      },
+      "open-skill": {
+        "public": true,
+        "description": "打开技能图 { skillId }",
+        "methods": [
+          "openSkill"
+        ]
+      },
+      "export-skill": {
+        "public": true,
+        "description": "导出单个技能 TS { skillId }",
+        "methods": [
+          "exportSkill"
+        ]
+      },
+      "list-skills": {
+        "public": true,
+        "methods": [
+          "listSkills"
+        ]
+      },
+      "create-skill-api": {
+        "public": true,
+        "methods": [
+          "createSkillApi"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 battle-manager 自动发现的模块契约",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      },
+      "validate-skill": {
+        "public": true,
+        "description": "校验单个技能 { skillId }",
+        "methods": [
+          "validateSkill"
+        ]
+      }
+    }
+  }
+}

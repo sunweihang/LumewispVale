@@ -1,0 +1,352 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "scene-editor",
+  "description": "场景管理（对齐 GameAsset SceneManager）：资源场景 / 阻挡种植 / 逻辑场景种植 / 类型配置，接入 Game编辑器宿主",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w",
+    "migrate-cli": "node scripts/migrate-cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "create-logic": {
+      "title": "创建逻辑场景",
+      "type": "simple",
+      "main": "./dist/panels/createLogic.js",
+      "size": {
+        "width": 420,
+        "height": 420
+      }
+    },
+    "spawn-editor": {
+      "title": "逻辑场景种植",
+      "type": "dockable",
+      "main": "./dist/panels/spawnEditor.js",
+      "size": {
+        "width": 720,
+        "height": 640
+      }
+    },
+    "block-plant-editor": {
+      "title": "资源场景阻挡种植",
+      "type": "dockable",
+      "main": "./dist/panels/blockPlantEditor.js",
+      "size": {
+        "width": 640,
+        "height": 420
+      }
+    },
+    "create-scene": {
+      "title": "创建资源场景",
+      "type": "simple",
+      "main": "./dist/panels/createScene.js",
+      "size": {
+        "width": 400,
+        "height": 340
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "open-host": {
+        "methods": [
+          "openHost"
+        ]
+      },
+      "browse-scenes": {
+        "methods": [
+          "browseScenes"
+        ]
+      },
+      "create-scene": {
+        "methods": [
+          "createScene"
+        ]
+      },
+      "create-scene-api": {
+        "public": true,
+        "methods": [
+          "createSceneApi"
+        ]
+      },
+      "delete-scene": {
+        "public": true,
+        "description": "删除资源场景目录 { sceneId }",
+        "methods": [
+          "deleteScene"
+        ]
+      },
+      "locate-scene": {
+        "public": true,
+        "description": "在资源管理器定位场景 Prefab { sceneId }",
+        "methods": [
+          "locateScene"
+        ]
+      },
+      "locate-logic-scene": {
+        "public": true,
+        "description": "在资源管理器定位逻辑场景 index.json { logicId }",
+        "methods": [
+          "locateLogicScene"
+        ]
+      },
+      "open-scene": {
+        "public": true,
+        "description": "打开资源场景 Prefab { sceneId }",
+        "methods": [
+          "openScene"
+        ]
+      },
+      "list-scenes": {
+        "public": true,
+        "methods": [
+          "listScenes"
+        ]
+      },
+      "list-logic-scenes": {
+        "public": true,
+        "methods": [
+          "listLogicScenes"
+        ]
+      },
+      "open-logic-scene": {
+        "public": true,
+        "description": "打开逻辑场景种植编辑器 { logicId }",
+        "methods": [
+          "openLogicScene"
+        ]
+      },
+      "open-logic-resource-prefab": {
+        "public": true,
+        "description": "打开逻辑场景绑定的资源 Prefab { logicId }",
+        "methods": [
+          "openLogicResourcePrefab"
+        ]
+      },
+      "create-logic-scene": {
+        "public": true,
+        "methods": [
+          "createLogicScene"
+        ]
+      },
+      "create-logic-scene-api": {
+        "public": true,
+        "methods": [
+          "createLogicSceneApi"
+        ]
+      },
+      "suggest-logic-id": {
+        "public": true,
+        "methods": [
+          "suggestLogicId"
+        ]
+      },
+      "query-spawn-editor-context": {
+        "public": true,
+        "methods": [
+          "querySpawnEditorContext"
+        ]
+      },
+      "save-logic-spawn": {
+        "public": true,
+        "methods": [
+          "saveLogicSpawn"
+        ]
+      },
+      "list-scene-categories": {
+        "public": true,
+        "methods": [
+          "listSceneCategories"
+        ]
+      },
+      "open-scene-category": {
+        "public": true,
+        "methods": [
+          "openSceneCategory"
+        ]
+      },
+      "validate-scene": {
+        "public": true,
+        "description": "校验单个资源场景 { sceneId }",
+        "methods": [
+          "validateScene"
+        ]
+      },
+      "validate-logic-scene": {
+        "public": true,
+        "description": "校验单个逻辑场景 { logicId }",
+        "methods": [
+          "validateLogicScene"
+        ]
+      },
+      "validate-scenes": {
+        "methods": [
+          "validateScenes"
+        ]
+      },
+      "sync-spawn": {
+        "public": true,
+        "description": "从 Prefab 导入刷怪到逻辑场景 { logicId | sceneId }",
+        "methods": [
+          "syncSpawn"
+        ]
+      },
+      "sync-spawn-batch": {
+        "public": true,
+        "methods": [
+          "syncSpawnBatch"
+        ]
+      },
+      "migrate-chapters": {
+        "public": true,
+        "description": "将 Prefabs/Chapter* 迁移到 scenes/{id}/",
+        "methods": [
+          "migrateChapters"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 Game编辑器宿主发现：场景管理分组",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      },
+      "preview-spawn-in-scene": {
+        "public": true,
+        "description": "在打开的资源 Prefab 场景中预览种植区域 { layers, layerIndex, assetsSceneId }",
+        "methods": [
+          "previewSpawnInScene"
+        ]
+      },
+      "query-spawn-preview-transforms": {
+        "public": true,
+        "description": "读取种植预览 Area/Point 节点位置（拖拽回写）",
+        "methods": [
+          "querySpawnPreviewTransforms"
+        ]
+      },
+      "list-plantables": {
+        "public": true,
+        "description": "种植可选：TbAvatar 模型及其绑定的 monster/hero 配置",
+        "methods": [
+          "listPlantables"
+        ]
+      },
+      "default-plantable": {
+        "public": true,
+        "methods": [
+          "defaultPlantable"
+        ]
+      },
+      "open-block-plant": {
+        "public": true,
+        "description": "打开资源场景阻挡种植编辑器 { sceneId }",
+        "methods": [
+          "openBlockPlant"
+        ]
+      },
+      "query-block-plant-context": {
+        "public": true,
+        "methods": [
+          "queryBlockPlantContext"
+        ]
+      },
+      "save-resource-blocks": {
+        "public": true,
+        "description": "保存资源场景阻挡种植 AABB { sceneId, cells, cellSize }",
+        "methods": [
+          "saveResourceBlocks"
+        ]
+      },
+      "preview-blocks-in-scene": {
+        "public": true,
+        "description": "在资源 Prefab 中预览阻挡格子",
+        "methods": [
+          "previewBlocksInScene"
+        ]
+      },
+      "sync-block-cells": {
+        "public": true,
+        "methods": [
+          "syncBlockCells"
+        ]
+      },
+      "apply-block-brush": {
+        "public": true,
+        "description": "按笔刷光标位置涂抹/擦除阻挡格子",
+        "methods": [
+          "applyBlockBrush"
+        ]
+      },
+      "start-mouse-brush": {
+        "public": true,
+        "description": "开启场景视图鼠标跟手阻挡笔刷",
+        "methods": [
+          "startMouseBrush"
+        ]
+      },
+      "stop-mouse-brush": {
+        "public": true,
+        "description": "关闭鼠标阻挡笔刷并返回格子",
+        "methods": [
+          "stopMouseBrush"
+        ]
+      },
+      "configure-mouse-brush": {
+        "public": true,
+        "description": "更新鼠标笔刷半径/擦除模式",
+        "methods": [
+          "configureMouseBrush"
+        ]
+      },
+      "query-mouse-brush-state": {
+        "public": true,
+        "description": "查询鼠标笔刷当前格子",
+        "methods": [
+          "queryMouseBrushState"
+        ]
+      },
+      "apply-block-brush-at-aim": {
+        "public": true,
+        "description": "镜头对准地面处涂抹阻挡",
+        "methods": [
+          "applyBlockBrushAtAim"
+        ]
+      },
+      "apply-block-brush-at-selection": {
+        "public": true,
+        "description": "在 Hierarchy 选中节点处涂抹阻挡",
+        "methods": [
+          "applyBlockBrushAtSelection"
+        ]
+      },
+      "nudge-block-brush": {
+        "public": true,
+        "description": "笔刷按格子平移，可选同时落笔",
+        "methods": [
+          "nudgeBlockBrush"
+        ]
+      },
+      "select-block-brush": {
+        "public": true,
+        "description": "选中场景中的阻挡笔刷光标",
+        "methods": [
+          "selectBlockBrush"
+        ]
+      }
+    },
+    "scene": {
+      "script": "./dist/scene.js"
+    }
+  }
+}

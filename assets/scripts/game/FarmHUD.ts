@@ -20,27 +20,44 @@ import {
     tween,
     view,
 } from 'cc';
-import { CraftItemId, CraftRecipe, getCraftRecipes } from './CraftRecipes';
+import { GotoAction } from '../cfg/schema';
+import {
+    CraftItemId,
+    CraftRecipe,
+    getCraftRecipes,
+    getUnlockedCraftRecipes,
+} from './CraftRecipes';
 import { FarmMaterial, FarmSystem, FarmTool } from './FarmSystem';
 import { FARM_FRAMES } from './FarmFrames';
 import { FishingMinigame } from './FishingMinigame';
+import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
 import { MATERIAL_FRAMES } from './MaterialFrames';
+import { QUEST_FRAMES } from './QuestFrames';
 import { QuestSystem } from './QuestSystem';
 import { TOOL_FRAMES } from './ToolFrames';
 import { clientToUiLocation, portraitVisibleSize } from './PortraitFit';
 import { playFarmTool, playUiClick } from './UiAudio';
-import { mountPanelCloseButton } from './UiChrome';
+import {
+    drawWoodButton,
+    drawWoodParchmentPanel,
+    mountPanelCloseButton,
+    UI_CREAM,
+    UI_INK,
+    UI_INK_MUTE,
+} from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass, property } = _decorator;
 
 /** Hotbar shortcut / backpack item ids. */
-export type InvItemId = FarmTool | 'parsnip' | FarmMaterial;
+export type InvItemId = FarmTool | 'parsnip' | FarmMaterial | 'recipeScroll';
 
 interface InvStack {
     id: InvItemId;
     count: number;
+    /** Set when `id === 'recipeScroll'`. */
+    recipeId?: string;
 }
 
 const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }> = {
@@ -60,6 +77,7 @@ const ITEM_TIP: Record<InvItemId, { title: string; kind: string; desc: string }>
     copper: { title: '铜矿石', kind: '矿石', desc: '浅层矿洞可采，也可在矿脉商会购买' },
     iron: { title: '铁矿石', kind: '矿石', desc: '矿洞深处的硬脉，锻造常用' },
     goldOre: { title: '金矿石', kind: '矿石', desc: '稀有闪光矿脉' },
+    recipeScroll: { title: '配方卷轴', kind: '配方', desc: '点按打开，学习后解锁工作台配方' },
 };
 
 const FIRST_HARVEST_QUEST = 1006;
@@ -152,15 +170,21 @@ const CRAFT_COST_ICON = Math.round(36 * UI_SCALE);
 const CRAFT_COST_CELL_W = Math.round(100 * UI_SCALE);
 const CRAFT_COST_SLOTS = 2;
 const CRAFT_COL_GAP = Math.round(14 * UI_SCALE);
-/** Ad chip sits at the right; progress shares the 制作 slot (tucks left when ad shows). */
+/** Ad chip sits at the right; progress stays 制作-width and shifts left when ad shows. */
 const CRAFT_AD_SZ = Math.round(52 * UI_SCALE);
 const CRAFT_BAR_H = Math.round(40 * UI_SCALE);
 /** Mock rewarded-ad watch (seconds), same cadence as crop boost. */
 const CRAFT_AD_WATCH_SEC = 1.2;
-/** Quest 1003 first seed — short guided craft, then force close before claim. */
+/** Quest 1003 first seed — short guided craft, then close / fly→bag before claim. */
 const FIRST_SEED_RECIPE = 'seed_from_grass';
-const FIRST_SEED_QUEST = 1003;
 const FIRST_SEED_CRAFT_SEC = 5;
+
+/** Bag recipe-scroll → secondary learn panel. */
+const LEARN_PANEL_W = Math.round(520 * UI_SCALE);
+const LEARN_PANEL_H = Math.round(360 * UI_SCALE);
+const LEARN_ICON = Math.round(72 * UI_SCALE);
+const LEARN_BTN_W = Math.round(220 * UI_SCALE);
+const LEARN_BTN_H = Math.round(72 * UI_SCALE);
 
 function isFarmTool(id: InvItemId): id is FarmTool {
     return (
@@ -172,6 +196,13 @@ function isFarmTool(id: InvItemId): id is FarmTool {
         id === 'rod' ||
         id === 'boost'
     );
+}
+
+function isRecipeScroll(stack: InvStack | null | undefined): stack is InvStack & {
+    id: 'recipeScroll';
+    recipeId: string;
+} {
+    return !!stack && stack.id === 'recipeScroll' && !!stack.recipeId;
 }
 
 function isHandHot(index: number): boolean {
@@ -190,6 +221,9 @@ export class FarmHUD extends Component {
     private _bar: Node | null = null;
     private _barBg: Node | null = null;
     private _bagBtn: Node | null = null;
+    /** Opens QuestPanel — sits left of the bag badge. */
+    private _questBtn: Node | null = null;
+    private _questBtnFrame: SpriteFrame | null = null;
     private _bagGlow: Graphics | null = null;
     private _closeBtn: Node | null = null;
     private _dimmer: Node | null = null;
@@ -256,10 +290,28 @@ export class FarmHUD extends Component {
     >();
     /** Mock rewarded-ad boost while a craft is running. */
     private _craftAdWait: { recipeId: string; left: number } | null = null;
-    /** First-seed tutorial: block close / ad / other recipes while crafting. */
-    private _tutorialCraftLock = false;
-    /** First-seed tutorial: after craft finishes, guide player to close panel. */
+    /** Forced craft-quest guide: panel still open after craft — point at close. */
     private _tutorialCraftAwaitClose = false;
+    /** Forced craft-quest guide: panel closed — wait for deliver fly to land. */
+    private _tutorialCraftAwaitFly = false;
+    /** Recipe id under forced craft guide (busy countdown / reopen aim). */
+    private _guidedCraftRecipeId: string | null = null;
+    /** Last built workbench row set — rebuild when unlocks change. */
+    private _craftPanelRecipeKey = '';
+
+    /** Secondary panel: study a bag recipe scroll before learning. */
+    private _learnOpen = false;
+    private _learnDimmer: Node | null = null;
+    private _learnPanel: Node | null = null;
+    private _learnCloseBtn: Node | null = null;
+    private _learnBtn: Node | null = null;
+    private _learnTitle: Label | null = null;
+    private _learnName: Label | null = null;
+    private _learnDesc: Label | null = null;
+    private _learnScrollIcon: Sprite | null = null;
+    private _learnOutIcon: Sprite | null = null;
+    private _learnBagIndex = -1;
+    private _learnRecipeId = '';
 
     private _drag: {
         /** Bag / chest / hotbar index depending on `from`. */
@@ -279,6 +331,12 @@ export class FarmHUD extends Component {
     /** Layer for loot-fly icons (above hotbar / tip). */
     private _lootFxRoot: Node | null = null;
     private _bagPulseGen = 0;
+    private _questPulseGen = 0;
+    /** While true, keep the matching badge hidden until its unlock fly lands. */
+    private _unlockFxHideQuest = false;
+    private _unlockFxHideBag = false;
+    /** Recipe-scroll fly in progress — TutorialGuide waits before aiming the bag. */
+    private _recipeLearnAwaitFly = false;
 
     onLoad() {
         this.initBackpack();
@@ -387,8 +445,15 @@ export class FarmHUD extends Component {
             return true;
         }
         if (this._craftOpen) {
-            if (this._tutorialCraftLock) {
-                // First-seed guide: swallow all taps while the 5s craft runs.
+            // Forced craft quest: only the objective「制作」is live before it starts.
+            // Once the countdown runs, close / ad stay free — no input lock.
+            // If mats are missing, still allow close so the player can gather.
+            const forcedPre = this.isForcedCraftInputLock();
+            if (forcedPre) {
+                if (this.hitCraftRow(uiX, uiY)) {
+                    playUiClick();
+                    return true;
+                }
                 return true;
             }
             // Close first — header X is small and the guide arrow sits above it.
@@ -417,9 +482,30 @@ export class FarmHUD extends Component {
             this.setCraftOpen(false);
             return true;
         }
+        if (this._learnOpen) {
+            if (this.hitLearnConfirm(uiX, uiY)) {
+                playUiClick();
+                this.confirmLearnRecipe();
+                return true;
+            }
+            if (this.hitLearnClose(uiX, uiY)) {
+                playUiClick();
+                this.setLearnOpen(false);
+                return true;
+            }
+            if (this.hitLearnPanel(uiX, uiY)) return true;
+            playUiClick();
+            this.setLearnOpen(false);
+            return true;
+        }
         if (this._bagOpen && this.hitCloseBtn(uiX, uiY)) {
             playUiClick();
             this.setBagOpen(false);
+            return true;
+        }
+        if (!this._bagOpen && this.hitQuestBtn(uiX, uiY)) {
+            playUiClick();
+            this.openQuestPanel();
             return true;
         }
         if (!this._bagOpen && this.hitBagBtn(uiX, uiY)) {
@@ -454,21 +540,27 @@ export class FarmHUD extends Component {
     private initBackpack() {
         this._backpack = new Array(BAG_SLOTS).fill(null);
         this._hotbar = new Array(SLOT_COUNT).fill(null);
-        // Tools live in the backpack; hotbar only holds shortcuts (hand is locked).
-        const starter: InvStack[] = [
-            { id: 'hoe', count: 1 },
-            { id: 'seeds', count: Math.max(1, this.farm?.seeds ?? 12) },
-            { id: 'can', count: 1 },
-            { id: 'axe', count: 1 },
-            { id: 'rod', count: 1 },
-        ];
+        // Hoe is granted on quest 1002 (fly→bag→hotbar); can / axe / rod from craft.
+        if (this.farm && !GameState.inventory) this.farm.seeds = 0;
+        const owned = this.farm?.ownedTools ?? { hoe: false, can: false, axe: false, rod: false };
+        const starter: InvStack[] = [];
+        if (owned.hoe) starter.push({ id: 'hoe', count: 1 });
+        if (owned.can) starter.push({ id: 'can', count: 1 });
+        if (owned.axe) starter.push({ id: 'axe', count: 1 });
+        if (owned.rod) starter.push({ id: 'rod', count: 1 });
         starter.forEach((s, i) => {
             this._backpack[i] = s;
         });
         this._hotbar[HAND_HOT] = 'hand';
-        starter.forEach((s, i) => {
-            this._hotbar[i + 1] = s.id;
-        });
+        // Travel / mid-session: restore dock shortcuts. First farm session keeps
+        // tools bag-only so TutorialGuide can teach bag → hotbar for each item.
+        const restoreDock = !!GameState.inventory;
+        let hot = 1;
+        for (const s of starter) {
+            if (!restoreDock) continue;
+            if (hot >= SLOT_COUNT) break;
+            this._hotbar[hot++] = s.id;
+        }
         this._chest = new Array(CHEST_SLOTS).fill(null);
         // A few yard leftovers so the chest feels lived-in on first open.
         this._chest[0] = { id: 'wood', count: 8 };
@@ -480,37 +572,101 @@ export class FarmHUD extends Component {
         return this._hotbar[i] ?? null;
     }
 
-    /** Bag / chest / craft modal covering the playfield. */
+    /** Bag / chest / craft / recipe-learn modal covering the playfield. */
     get isModalOpen() {
-        return this._bagOpen || this._chestOpen || this._craftOpen;
+        return this._bagOpen || this._chestOpen || this._craftOpen || this._learnOpen;
+    }
+
+    /** Recipe-scroll study panel open over bag/chest. */
+    get isRecipeLearnOpen() {
+        return this._learnOpen;
     }
 
     get isCraftOpen() {
         return this._craftOpen;
     }
 
-    /** First-seed guided craft is running — input locked except waiting. */
-    get isTutorialCraftLocked() {
-        return this._tutorialCraftLock;
+    /** Guided craft countdown still running (panel may be open or closed). */
+    get isTutorialCraftBusy() {
+        const id = this._guidedCraftRecipeId;
+        return !!id && this._craftJobs.has(id);
     }
 
-    /** First-seed craft done — TutorialGuide should point at the close button. */
+    /** @deprecated Use isTutorialCraftBusy — countdown no longer locks input. */
+    get isTutorialCraftLocked() {
+        return this.isTutorialCraftBusy;
+    }
+
+    /** Guided craft done with panel open — TutorialGuide should point at close. */
     get isTutorialCraftAwaitClose() {
         return this._tutorialCraftAwaitClose;
     }
 
-    /** GM: drop first-seed craft input locks so the player can leave the panel. */
-    clearTutorialCraftGuide() {
-        this._tutorialCraftLock = false;
-        this._tutorialCraftAwaitClose = false;
+    /** Guided craft done with panel closed — wait for bag fly before next guide. */
+    get isTutorialCraftAwaitFly() {
+        return this._tutorialCraftAwaitFly;
     }
 
-    /** True while quest 1003 still needs the in-panel craft / close guide. */
-    needsFirstSeedCraftGuide() {
+    /** New recipe scroll flying into the bag badge. */
+    get isRecipeLearnAwaitFly() {
+        return this._recipeLearnAwaitFly;
+    }
+
+    /** GM: drop forced craft guide state so the player can leave the panel. */
+    clearTutorialCraftGuide() {
+        this._tutorialCraftAwaitClose = false;
+        this._tutorialCraftAwaitFly = false;
+        this._guidedCraftRecipeId = null;
+    }
+
+    /** Recipe currently under forced craft guide (arrow / busy). */
+    get guidedCraftRecipeId(): string | null {
+        return this.liveGuidedCraftRecipeId();
+    }
+
+    /**
+     * Keep TutorialGuide arrows while the workbench is open:
+     * recipe point (can / seed / axe / rod) or close-after-craft for claim.
+     */
+    needsCraftQuestGuide() {
         if (!this._craftOpen) return false;
-        if (this._tutorialCraftLock || this._tutorialCraftAwaitClose) return true;
+        if (this.isTutorialCraftBusy || this._tutorialCraftAwaitClose) return true;
         const q = this._quests?.activeQuest;
-        return !!q && q.id === FIRST_SEED_QUEST && !this._quests!.isAwaitingClaim;
+        if (!q) return false;
+        // Craft finished but panel still open — guide to close, then claim.
+        if (this._quests!.isAwaitingClaim) return true;
+        return q.conditionId === 3 && !!q.param;
+    }
+
+    /** Active craft-quest recipe that must be the only clickable row. */
+    private liveGuidedCraftRecipeId(): string | null {
+        if (this._guidedCraftRecipeId) return this._guidedCraftRecipeId;
+        const q = this._quests?.activeQuest;
+        if (!q || this._quests!.isAwaitingClaim) return null;
+        if (q.conditionId === 3 && q.param) return q.param;
+        return null;
+    }
+
+    private guidedCraftRecipe(): CraftRecipe | null {
+        const id = this.liveGuidedCraftRecipeId();
+        if (!id) return null;
+        for (const row of this._craftRows) {
+            if (row.recipe.id === id) return row.recipe;
+        }
+        return getCraftRecipes().find((r) => r.id === id) ?? null;
+    }
+
+    /**
+     * Pre-craft only: objective recipe is affordable — only its「制作」accepts taps.
+     * Once that job is ticking (or done), lock lifts so the player can close freely.
+     * Missing mats: lock lifts so the player can close and gather.
+     */
+    private isForcedCraftInputLock(): boolean {
+        if (this._tutorialCraftAwaitClose) return false;
+        if (this.isTutorialCraftBusy) return false;
+        const recipe = this.guidedCraftRecipe();
+        if (!recipe) return false;
+        return this.canAfford(recipe);
     }
 
     /** Craft-row «制作» button for tutorial holes. */
@@ -557,16 +713,165 @@ export class FarmHUD extends Component {
     }
 
     /**
-     * Quest 1006: bag is open for drag-to-hotbar / close before using boost.
-     * Lets TutorialGuide keep the arrow over the bag modal.
+     * Which dockable item the live goto wants taught bag → hotbar.
+     * Null when no teach step is active.
      */
-    needsHarvestBoostGuide() {
+    teachHotbarItem(): InvItemId | null {
+        if (!this._quests?.activeQuest || this._quests.isAwaitingClaim) return null;
+        const action = this._quests.activeGotoAction();
+        switch (action) {
+            case GotoAction.SelectHoe:
+            case GotoAction.HintRock:
+                return 'hoe';
+            case GotoAction.HintFarm:
+                // Match TutorialGuide: till first, then plant.
+                if (this.farm?.hintPlotPos('soil') && !this.isHotbarBound('hoe')) return 'hoe';
+                if (this.farm?.hintPlotPos('tilled') && !this.isHotbarBound('seeds')) return 'seeds';
+                if (!this.isHotbarBound('hoe')) return 'hoe';
+                if (!this.isHotbarBound('seeds')) return 'seeds';
+                return null;
+            case GotoAction.SelectSeeds:
+                return 'seeds';
+            case GotoAction.SelectCan:
+                return 'can';
+            case GotoAction.SelectAxe:
+                return 'axe';
+            case GotoAction.SelectRod:
+            case GotoAction.HintFish:
+                return 'rod';
+            case GotoAction.SelectHand: {
+                // Quest 1006: boost before the crop is mature enough to harvest.
+                const q = this._quests.activeQuest;
+                if (!q || q.id !== FIRST_HARVEST_QUEST) return null;
+                if ((this.farm?.boosts ?? 0) <= 0) return null;
+                if (this.farm?.hintPlotPos('harvest')) return null;
+                return 'boost';
+            }
+            default:
+                return null;
+        }
+    }
+
+    /** Live goto still wants this item on the dock, and it isn't bound yet. */
+    shouldTeachHotbar(itemId?: string) {
+        const want = this.teachHotbarItem();
+        if (!want) return false;
+        if (itemId && itemId !== want) return false;
+        return !this.isHotbarBound(want);
+    }
+
+    /**
+     * Bag open while teaching any item → hotbar → close.
+     * Lets TutorialGuide keep the arrow over the bag modal (including close X
+     * after the drag lands).
+     */
+    needsBagHotbarGuide() {
         if (!this._bagOpen) return false;
-        const q = this._quests?.activeQuest;
-        if (!q || q.id !== FIRST_HARVEST_QUEST || this._quests!.isAwaitingClaim) return false;
-        if ((this.farm?.boosts ?? 0) <= 0) return false;
-        if (this.farm?.hintPlotPos('harvest')) return false;
-        return true;
+        if (!this._quests?.activeQuest || this._quests.isAwaitingClaim) return false;
+        const want = this.teachHotbarItem();
+        if (!want) return false;
+        if (this.shouldTeachHotbar(want)) return true;
+        // Drag done but panel still open — keep arrow for the close button.
+        return this.isHotbarBound(want);
+    }
+
+    /** Bag open with an unlearned recipe scroll — keep the learn arrow. */
+    needsRecipeLearnGuide() {
+        if (!this._bagOpen && !this._learnOpen) return false;
+        return (this._quests?.pendingCraftRecipeIds().length ?? 0) > 0;
+    }
+
+    /** Bag cell holding a pending recipe scroll (tutorial hole). */
+    recipeScrollSlotNode(recipeId: string): Node | null {
+        if (!this._bagOpen || !this._panel?.isValid || !recipeId) return null;
+        const idx = this._backpack.findIndex(
+            (s) => s?.id === 'recipeScroll' && s.recipeId === recipeId,
+        );
+        if (idx < 0) return null;
+        const cell = this._invCells[idx];
+        return cell?.root?.isValid ? cell.root : null;
+    }
+
+    /** 「学习」 button on the secondary recipe panel (tutorial hole). */
+    recipeLearnBtnNode(): Node | null {
+        if (!this._learnOpen || !this._learnBtn?.isValid) return null;
+        return this._learnBtn;
+    }
+
+    /**
+     * Put an earned recipe scroll in the bag and optionally fly its icon in.
+     * Idempotent per recipeId.
+     */
+    grantRecipeScroll(recipeId: string, opts?: { fly?: boolean }) {
+        if (!recipeId) return;
+        const recipe = getCraftRecipes().find((r) => r.id === recipeId);
+        if (!recipe) return;
+        const had = this._backpack.some(
+            (s) => s?.id === 'recipeScroll' && s.recipeId === recipeId,
+        );
+        if (!had) {
+            this.mergeOrPlaceInBag({ id: 'recipeScroll', count: 1, recipeId });
+            this.refreshInvIcons();
+        }
+        if (had || opts?.fly === false) return;
+        const sf = this.frameForStack({ id: 'recipeScroll', count: 1, recipeId });
+        if (!sf) return;
+        this._recipeLearnAwaitFly = true;
+        this.playCanvasLootFly(sf, 0, 80, 1, 'bag', () => {
+            this._recipeLearnAwaitFly = false;
+        });
+    }
+
+    /** @deprecated Use needsBagHotbarGuide — kept for call-site clarity during boost steps. */
+    needsHarvestBoostGuide() {
+        return this.needsBagHotbarGuide() && this.teachHotbarItem() === 'boost';
+    }
+
+    /** @deprecated Use needsBagHotbarGuide */
+    needsHoeHotbarGuide() {
+        return this.needsBagHotbarGuide();
+    }
+
+    /** @deprecated Use shouldTeachHotbar('hoe') */
+    shouldTeachHoeHotbar() {
+        return this.shouldTeachHotbar('hoe');
+    }
+
+    /**
+     * Quest 1002: put the borrowed hoe in the bag (not the dock) and optionally
+     * fly the icon into the backpack badge. Idempotent.
+     */
+    grantStoryHoe(opts?: { fly?: boolean }) {
+        const farm = this.farm;
+        if (!farm) return;
+        const had = farm.ownedTools.hoe && this.bagCount('hoe') > 0;
+        farm.ownedTools.hoe = true;
+        if (this.bagCount('hoe') <= 0) {
+            this.mergeOrPlaceInBag({ id: 'hoe', count: 1 });
+        }
+        // Never auto-bind during the bag→hotbar lesson / first farm session.
+        this.ensureHotbarShortcut('hoe');
+        this.refreshHotbarIcons();
+        this.refreshInvIcons();
+        farm.notifyInventoryChanged();
+        if (had || opts?.fly === false) return;
+        const sf = this.frameFor('hoe');
+        if (sf) this.playCanvasLootFly(sf, 0, 80, 1, 'bag');
+    }
+
+    /** Ensure hoe exists once the tilling quest line is live (dialogue already seen). */
+    ensureStoryHoe() {
+        if (!this.needsStoryHoe()) return;
+        if (this.farm?.ownedTools.hoe && this.bagCount('hoe') > 0) return;
+        this.grantStoryHoe({ fly: !this.farm?.ownedTools.hoe });
+    }
+
+    private needsStoryHoe(): boolean {
+        const q = this._quests;
+        if (!q) return false;
+        if (q.isCompleted(1002) || q.isCompleted(1030)) return true;
+        const id = q.activeQuest?.id ?? 0;
+        return id === 1002 || id === 1030 || id === 1026;
     }
 
     /** Dock slot node for an item — used by TutorialGuide arrows. */
@@ -624,7 +929,7 @@ export class FarmHUD extends Component {
     /** Assign a backpack item onto a hotkey slot (item stays in the bag). */
     private assignHotbar(hotIdx: number, item: InvItemId) {
         if (hotIdx < 0 || hotIdx >= this._hotbar.length || isHandHot(hotIdx)) return;
-        if (item === 'hand') return;
+        if (item === 'hand' || item === 'recipeScroll') return;
         this._hotbar[hotIdx] = item;
         this.ensureHandSlot();
     }
@@ -660,10 +965,29 @@ export class FarmHUD extends Component {
         for (const id of ALL_MATERIALS) {
             this.syncStackCount(id, this.farm.materialCount(id));
         }
+        this.ensureOwnedToolsInBag();
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         if (this._chestOpen) this.refreshChestIcons();
         if (this._craftOpen) this.refreshCraftRows();
+    }
+
+    /** Mirror FarmSystem.ownedTools into the bag (travel / GM skip). */
+    private ensureOwnedToolsInBag() {
+        const owned = this.farm?.ownedTools;
+        if (!owned) return;
+        const ids = [
+            ['hoe', owned.hoe],
+            ['can', owned.can],
+            ['axe', owned.axe],
+            ['rod', owned.rod],
+        ] as const;
+        for (const [id, on] of ids) {
+            if (!on || this.bagCount(id) > 0) continue;
+            this.mergeOrPlaceInBag({ id, count: 1 });
+            // First session / live teach: leave in bag for drag-to-hotbar guide.
+            this.ensureHotbarShortcut(id);
+        }
     }
 
     /** Mirror an absolute farm counter into the bag (0 removes the stack). */
@@ -672,6 +996,7 @@ export class FarmHUD extends Component {
             this.ensureHandSlot();
             return;
         }
+        if (id === 'recipeScroll') return;
         const n = Math.max(0, count | 0);
         const idx = this._backpack.findIndex((s) => s?.id === id);
         if (n > 0) {
@@ -687,6 +1012,20 @@ export class FarmHUD extends Component {
     private placeInBag(stack: InvStack) {
         if (stack.id === 'hand') {
             this.ensureHandSlot();
+            return;
+        }
+        if (stack.id === 'recipeScroll') {
+            const exist = this._backpack.findIndex(
+                (s) => s?.id === 'recipeScroll' && s.recipeId === stack.recipeId,
+            );
+            if (exist >= 0) {
+                this._backpack[exist] = { id: 'recipeScroll', count: 1, recipeId: stack.recipeId };
+                return;
+            }
+            const empty = this._backpack.findIndex((s) => !s);
+            if (empty >= 0) {
+                this._backpack[empty] = { id: 'recipeScroll', count: 1, recipeId: stack.recipeId };
+            }
             return;
         }
         const exist = this._backpack.findIndex((s) => s?.id === stack.id);
@@ -708,7 +1047,8 @@ export class FarmHUD extends Component {
             const uuid = MATERIAL_FRAME_UUID[id];
             if (uuid) extra.push({ key: id, uuid });
         }
-        let left = toolKeys.length + extra.length;
+        const questUuid = QUEST_FRAMES.questBtn;
+        let left = toolKeys.length + extra.length + (questUuid ? 1 : 0);
         if (!left) {
             done();
             return;
@@ -734,6 +1074,12 @@ export class FarmHUD extends Component {
                 finish();
             });
         });
+        if (questUuid) {
+            assetManager.loadAny({ uuid: questUuid }, (err, asset) => {
+                if (!err && asset) this._questBtnFrame = asset as SpriteFrame;
+                finish();
+            });
+        }
     }
 
     private build() {
@@ -805,9 +1151,11 @@ export class FarmHUD extends Component {
         }
 
         this.buildBagButton(bar);
+        this.buildQuestButton(bar);
         this.buildBagPanel();
         this.buildChestPanel();
-        this.buildCraftPanel();
+        this.ensureCraftPanel(true);
+        this.buildLearnPanel();
         this.buildGhost();
         this.buildTip();
 
@@ -823,11 +1171,19 @@ export class FarmHUD extends Component {
         this.setBagOpen(false);
         this.setChestOpen(false);
         this.setCraftOpen(false);
+        this.setLearnOpen(false);
         this.orderLayers();
     }
 
     /** Rebuild craft rows after Luban tables load. */
     reloadCraftRecipes() {
+        this.destroyCraftPanel();
+        this.ensureCraftPanel(true);
+        this.setCraftOpen(false);
+        this.orderLayers();
+    }
+
+    private destroyCraftPanel() {
         if (this._craftPanel?.isValid) this._craftPanel.destroy();
         if (this._craftDimmer?.isValid) this._craftDimmer.destroy();
         if (this._craftCloseBtn?.isValid) this._craftCloseBtn.destroy();
@@ -835,9 +1191,32 @@ export class FarmHUD extends Component {
         this._craftDimmer = null;
         this._craftCloseBtn = null;
         this._craftRows = [];
-        this.buildCraftPanel();
-        this.setCraftOpen(false);
-        this.orderLayers();
+        this._craftPanelRecipeKey = '';
+    }
+
+    private visibleCraftRecipes(): CraftRecipe[] {
+        const quests = this._quests;
+        if (!quests) return getCraftRecipes();
+        return getUnlockedCraftRecipes({
+            isCompleted: (id) => quests.isCompleted(id),
+            isActive: (id) => quests.isActive(id),
+            craftCount: (id) => quests.craftCount(id),
+            isLearned: (id) => quests.isCraftRecipeLearned(id),
+        });
+    }
+
+    /** Rebuild when unlock set changes (open craft / recipe tables reload). */
+    private ensureCraftPanel(force = false) {
+        const recipes = this.visibleCraftRecipes();
+        const key = recipes.map((r) => r.id).join('|') || '__empty__';
+        if (!force && this._craftPanel?.isValid && key === this._craftPanelRecipeKey) return;
+        const wasOpen = this._craftOpen;
+        this.destroyCraftPanel();
+        this.buildCraftPanel(recipes);
+        this._craftPanelRecipeKey = key;
+        if (this._craftDimmer) this._craftDimmer.active = wasOpen;
+        if (this._craftPanel) this._craftPanel.active = wasOpen;
+        if (this._craftCloseBtn) this._craftCloseBtn.active = wasOpen;
     }
 
     openCraftPanel() {
@@ -845,13 +1224,111 @@ export class FarmHUD extends Component {
     }
 
     openBagPanel() {
+        if (!this.isBagHudUnlocked()) return;
         this.setBagOpen(true);
     }
 
     private _quests: QuestSystem | null = null;
+    private _questPanelOpen: (() => boolean) | null = null;
+    private _openQuestPanelFn: (() => void) | null = null;
 
     bindQuests(quests: QuestSystem | null) {
         this._quests = quests;
+        this.syncQuestEntryVisible();
+        this.syncBagEntryVisible();
+    }
+
+    /** Wire journal open without importing QuestPanel (avoids circular deps). */
+    bindQuestPanel(opts: { isOpen: () => boolean; open: () => void } | null) {
+        this._questPanelOpen = opts?.isOpen ?? null;
+        this._openQuestPanelFn = opts?.open ?? null;
+        this.syncQuestEntryVisible();
+        this.syncBagEntryVisible();
+    }
+
+    /** Bag-adjacent quest journal entry (TutorialGuide spotlight). */
+    questBtnNode(): Node | null {
+        return this._questBtn?.isValid ? this._questBtn : null;
+    }
+
+    /** Backpack badge (TutorialGuide / unlock FX). */
+    bagBtnNode(): Node | null {
+        return this._bagBtn?.isValid ? this._bagBtn : null;
+    }
+
+    private isBagHudUnlocked(): boolean {
+        return this._quests?.isBagHudUnlocked() ?? false;
+    }
+
+    /** Hide while bag/craft/chest/quest modal open, or before 露穗 unlock. */
+    syncQuestEntryVisible() {
+        if (!this._questBtn?.isValid) return;
+        if (this._unlockFxHideQuest) {
+            this._questBtn.active = false;
+            return;
+        }
+        const modal =
+            this._bagOpen ||
+            this._chestOpen ||
+            this._craftOpen ||
+            !!this._questPanelOpen?.();
+        const unlocked = this._quests?.isQuestHudUnlocked() ?? false;
+        this._questBtn.active = unlocked && !modal;
+    }
+
+    /** Hide backpack badge while modal open, unlock fly playing, or before 露穗 talk. */
+    syncBagEntryVisible() {
+        if (!this._bagBtn?.isValid) return;
+        if (this._unlockFxHideBag) {
+            this._bagBtn.active = false;
+            return;
+        }
+        const modal = this._bagOpen || this._chestOpen || this._craftOpen;
+        this._bagBtn.active = this.isBagHudUnlocked() && !modal;
+    }
+
+    /**
+     * First 露穗 unlock: quest + bag icons pop at screen center, then arc into
+     * their hotbar badges. Real buttons stay hidden until each fly lands.
+     */
+    playHudUnlockFx() {
+        if (this._unlockFxHideQuest || this._unlockFxHideBag) return;
+        if (!this._quests?.isQuestHudUnlocked()) return;
+
+        this._unlockFxHideQuest = true;
+        this._unlockFxHideBag = true;
+        if (this._questBtn?.isValid) this._questBtn.active = false;
+        if (this._bagBtn?.isValid) this._bagBtn.active = false;
+
+        const questSf = this._questBtnFrame;
+        const bagSf = this._frames.bagBtn ?? this._frames.backpack ?? null;
+        const questTo = this.questFlyTarget();
+        const bagTo = this.bagFlyTarget();
+
+        const landQuest = () => {
+            this._unlockFxHideQuest = false;
+            this.syncQuestEntryVisible();
+            this.pulseQuestBtn();
+        };
+        const landBag = () => {
+            this._unlockFxHideBag = false;
+            this.syncBagEntryVisible();
+            this.pulseBagBtn();
+        };
+
+        this.spawnUnlockFlyIcon(questSf, 0, 40, questTo.x, questTo.y, 0, landQuest);
+        this.spawnUnlockFlyIcon(bagSf, 0, 40, bagTo.x, bagTo.y, 0.16, landBag);
+        if (this._lootFxRoot?.isValid) {
+            this._lootFxRoot.setSiblingIndex(this.node.children.length - 1);
+        }
+    }
+
+    private openQuestPanel() {
+        if (this._chestOpen) this.setChestOpen(false);
+        if (this._craftOpen) this.setCraftOpen(false);
+        if (this._bagOpen) this.setBagOpen(false);
+        this._openQuestPanelFn?.();
+        this.syncQuestEntryVisible();
     }
 
     /** Dimmer < panels < hotbar < tip < drag ghost < loot fly */
@@ -863,6 +1340,8 @@ export class FarmHUD extends Component {
             this._chestPanel,
             this._craftDimmer,
             this._craftPanel,
+            this._learnDimmer,
+            this._learnPanel,
             this._bar,
             this._tip,
             this._ghost,
@@ -900,10 +1379,15 @@ export class FarmHUD extends Component {
         fromY: number,
         count = 1,
         target: 'bag' | 'gold' = 'bag',
+        onLandExtra?: () => void,
     ) {
         if (!this._lootFxRoot?.isValid || !sf?.isValid) return;
         const to = target === 'gold' ? this.goldFlyTarget() : this.bagFlyTarget();
-        const onLand = target === 'gold' ? () => this.pulseGoldBar() : () => this.pulseBagBtn();
+        const onLand = () => {
+            if (target === 'gold') this.pulseGoldBar();
+            else this.pulseBagBtn();
+            onLandExtra?.();
+        };
         // Quest UI grants often show large counts (gold×20); a few icons read cleaner.
         const n = Math.max(1, Math.min(count, 3));
         for (let i = 0; i < n; i++) {
@@ -935,6 +1419,86 @@ export class FarmHUD extends Component {
             };
         }
         return { x: 420, y: BAR_Y + SLOT };
+    }
+
+    private questFlyTarget(): { x: number; y: number } {
+        if (this._bar?.isValid && this._questBtn?.isValid) {
+            return {
+                x: this._bar.position.x + this._questBtn.position.x,
+                y: this._bar.position.y + this._questBtn.position.y,
+            };
+        }
+        const bag = this.bagFlyTarget();
+        const gap = Math.round(10 * UI_SCALE);
+        return { x: bag.x - BAG_BTN - gap, y: bag.y };
+    }
+
+    /** Center-screen badge → HUD dock (feature unlock). */
+    private spawnUnlockFlyIcon(
+        sf: SpriteFrame | null | undefined,
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        delay: number,
+        onLand?: () => void,
+    ) {
+        const root = this._lootFxRoot;
+        if (!root?.isValid || !sf?.isValid) {
+            this.scheduleOnce(() => onLand?.(), delay + 0.05);
+            return;
+        }
+
+        const size = BAG_BTN;
+        const node = new Node('HudUnlockFly');
+        node.layer = root.layer;
+        node.setParent(root);
+        node.addComponent(UITransform).setContentSize(size, size);
+        const sp = node.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = true;
+        sp.spriteFrame = sf;
+        const op = node.addComponent(UIOpacity);
+        op.opacity = 255;
+
+        node.setPosition(fromX, fromY, 0);
+        node.setScale(0.15, 0.15, 1);
+
+        const popDur = 0.2;
+        const travel = 0.58;
+        const peak = new Vec3(
+            fromX + (toX - fromX) * 0.42,
+            Math.max(fromY, toY) + 140,
+            0,
+        );
+        const end = new Vec3(toX, toY, 0);
+
+        tween(node)
+            .delay(delay)
+            .to(popDur, { scale: new Vec3(1.28, 1.28, 1) }, { easing: 'backOut' })
+            .to(
+                travel * 0.42,
+                { position: peak, scale: new Vec3(1.08, 1.08, 1) },
+                { easing: 'sineOut' },
+            )
+            .to(
+                travel * 0.58,
+                { position: end, scale: new Vec3(1, 1, 1) },
+                { easing: 'quadIn' },
+            )
+            .call(() => {
+                if (node.isValid) node.destroy();
+                onLand?.();
+            })
+            .start();
+
+        // Soft fade only on the final approach so the dock badge can take over.
+        tween(op)
+            .delay(delay + popDur + travel * 0.75)
+            .to(travel * 0.25, { opacity: 0 }, { easing: 'sineIn' })
+            .start();
+
+        this.orderLayers();
     }
 
     private goldFlyTarget(): { x: number; y: number } {
@@ -1037,6 +1601,20 @@ export class FarmHUD extends Component {
             .start();
     }
 
+    private pulseQuestBtn() {
+        const btn = this._questBtn;
+        if (!btn?.isValid || !btn.active) return;
+        const gen = ++this._questPulseGen;
+        tween(btn)
+            .to(0.08, { scale: new Vec3(1.18, 1.18, 1) }, { easing: 'sineOut' })
+            .to(0.12, { scale: new Vec3(1, 1, 1) }, { easing: 'sineIn' })
+            .call(() => {
+                if (gen !== this._questPulseGen || !btn.isValid) return;
+                btn.setScale(1, 1, 1);
+            })
+            .start();
+    }
+
     private pulseGoldBar() {
         this._quests?.infoBoard?.pulseGold();
     }
@@ -1085,6 +1663,61 @@ export class FarmHUD extends Component {
         }
 
         this._bagBtn = btn;
+        this.syncBagEntryVisible();
+    }
+
+    /** Same footprint as bag — parked immediately to its left. */
+    private buildQuestButton(bar: Node) {
+        const canvas = this.node;
+        const old = bar.getChildByName('QuestBtn');
+        if (old) old.destroy();
+
+        const btn = new Node('QuestBtn');
+        btn.layer = canvas.layer;
+        btn.setParent(bar);
+        const edgePad = Math.round(6 * UI_SCALE);
+        const gap = Math.round(10 * UI_SCALE);
+        const bagX = BAR_BG_W * 0.5 - BAG_BTN * 0.5 - edgePad;
+        const x = bagX - BAG_BTN - gap;
+        const y = SLOT * 0.5 + BAG_BTN * 0.5;
+        btn.setPosition(x, y, 0);
+        btn.addComponent(UITransform).setContentSize(BAG_BTN, BAG_BTN);
+
+        const face = new Node('Face');
+        face.layer = canvas.layer;
+        face.setParent(btn);
+        face.addComponent(UITransform).setContentSize(BAG_BTN, BAG_BTN);
+        if (this._questBtnFrame) {
+            const sp = face.addComponent(Sprite);
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            sp.spriteFrame = this._questBtnFrame;
+        } else {
+            const g = face.addComponent(Graphics);
+            const half = BAG_BTN * 0.5;
+            const r = Math.round(22 * UI_SCALE);
+            g.fillColor = new Color(217, 155, 62, 255);
+            g.roundRect(-half, -half, BAG_BTN, BAG_BTN, r);
+            g.fill();
+            g.fillColor = new Color(116, 71, 20, 255);
+            const inset = Math.round(16 * UI_SCALE);
+            g.roundRect(
+                -half + inset,
+                -half + inset,
+                BAG_BTN - inset * 2,
+                BAG_BTN - inset * 2,
+                Math.round(14 * UI_SCALE),
+            );
+            g.fill();
+            g.fillColor = new Color(245, 228, 186, 255);
+            g.roundRect(-18, -28, 36, 56, 6);
+            g.fill();
+            g.fillColor = new Color(120, 62, 28, 255);
+            g.rect(-20, -4, 40, 10);
+            g.fill();
+        }
+
+        this._questBtn = btn;
+        this.syncQuestEntryVisible();
     }
 
     private buildBagPanel() {
@@ -1287,6 +1920,11 @@ export class FarmHUD extends Component {
         return this._frames[id] ?? null;
     }
 
+    /** Icon for a bag stack — recipe scrolls use the scroll glyph. */
+    private frameForStack(stack: InvStack): SpriteFrame | null {
+        return this.frameFor(stack.id);
+    }
+
     private refreshHotbarIcons() {
         this.pruneHotbar();
         for (let i = 0; i < this._slots.length; i++) {
@@ -1317,13 +1955,20 @@ export class FarmHUD extends Component {
         for (let i = 0; i < this._invCells.length; i++) {
             const cell = this._invCells[i]!;
             const stack = this._backpack[i] ?? null;
-            const sf = stack ? this.frameFor(stack.id) : null;
+            const sf = stack ? this.frameForStack(stack) : null;
             if (cell.icon) {
                 cell.icon.spriteFrame = sf;
                 cell.icon.node.active = !!sf;
             }
+            if (cell.root?.isValid) {
+                cell.root.name = isRecipeScroll(stack)
+                    ? `Inv_recipe_${stack.recipeId}`
+                    : stack
+                      ? `Inv_${stack.id}`
+                      : `Inv_empty_${i}`;
+            }
             if (cell.count) {
-                const show = !!stack && stack.count > 1;
+                const show = !!stack && stack.count > 1 && stack.id !== 'recipeScroll';
                 cell.count.string = show ? String(stack!.count) : '';
                 cell.count.node.active = show;
             }
@@ -1331,6 +1976,7 @@ export class FarmHUD extends Component {
     }
 
     private toggleBag() {
+        if (!this.isBagHudUnlocked()) return;
         if (this._chestOpen) this.setChestOpen(false);
         if (this._craftOpen) this.setCraftOpen(false);
         this.setBagOpen(!this._bagOpen);
@@ -1340,15 +1986,21 @@ export class FarmHUD extends Component {
         this._bagOpen = open;
         if (open && this._chestOpen) this.setChestOpen(false);
         if (open && this._craftOpen) this.setCraftOpen(false);
-        InputBridge.uiBlocking = open || this._chestOpen || this._craftOpen;
+        if (!open) this.setLearnOpen(false);
+        InputBridge.uiBlocking =
+            open || this._chestOpen || this._craftOpen || this._learnOpen;
         if (this._dimmer) this._dimmer.active = open;
         if (this._panel) this._panel.active = open;
         // Unified bag chrome covers the standalone hotbar plate + bag tab.
-        if (this._barBg) this._barBg.active = !open && !this._chestOpen && !this._craftOpen;
-        if (this._bagBtn) this._bagBtn.active = !open && !this._chestOpen && !this._craftOpen;
+        if (this._barBg) {
+            this._barBg.active =
+                !open && !this._chestOpen && !this._craftOpen && !this._learnOpen;
+        }
+        this.syncBagEntryVisible();
         if (this._closeBtn) this._closeBtn.active = open;
         if (!open) this.cancelDrag();
         this.refreshBagBtn();
+        this.syncQuestEntryVisible();
         if (open) {
             this.syncFromFarm();
             this.hideTip();
@@ -1602,15 +2254,21 @@ export class FarmHUD extends Component {
         this._chestOpen = open;
         if (open && this._bagOpen) this.setBagOpen(false);
         if (open && this._craftOpen) this.setCraftOpen(false);
-        InputBridge.uiBlocking = open || this._bagOpen || this._craftOpen;
+        if (!open) this.setLearnOpen(false);
+        InputBridge.uiBlocking =
+            open || this._bagOpen || this._craftOpen || this._learnOpen;
         if (this._chestDimmer) this._chestDimmer.active = open;
         if (this._chestPanel) this._chestPanel.active = open;
         if (this._chestCloseBtn) this._chestCloseBtn.active = open;
         if (this._takeAllBtn) this._takeAllBtn.active = open;
         // Hide standalone hotbar plate + bag tab; keep slot icons so they sit in the dock.
-        if (this._barBg) this._barBg.active = !open && !this._bagOpen && !this._craftOpen;
-        if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen && !this._craftOpen;
+        if (this._barBg) {
+            this._barBg.active =
+                !open && !this._bagOpen && !this._craftOpen && !this._learnOpen;
+        }
+        this.syncBagEntryVisible();
         if (this._bar) this._bar.active = true;
+        this.syncQuestEntryVisible();
         if (!open) this.cancelDrag();
         if (open) {
             this.syncFromFarm();
@@ -1622,7 +2280,7 @@ export class FarmHUD extends Component {
         }
     }
 
-    private buildCraftPanel() {
+    private buildCraftPanel(recipes: CraftRecipe[]) {
         const canvas = this.node;
         const dimmer = new Node('FarmCraftDimmer');
         dimmer.layer = canvas.layer;
@@ -1635,7 +2293,6 @@ export class FarmHUD extends Component {
         dG.fill();
         this._craftDimmer = dimmer;
 
-        const recipes = getCraftRecipes();
         const n = Math.max(1, recipes.length);
         const listH = n * CRAFT_ROW_H + Math.max(0, n - 1) * CRAFT_ROW_GAP;
         // out | name | costs | craft btn (→ progress+ad while busy) — single-line like图2
@@ -1775,7 +2432,7 @@ export class FarmHUD extends Component {
 
         // Idle: [out] [name] [cost…] …… [制作]
         // Busy (no ad): same right slot as 制作
-        // Busy (with ad): progress right-aligned before ad chip
+        // Busy (with ad): same-width progress, right-aligned just before ad chip
         const left = -rowW * 0.5 + Math.round(12 * UI_SCALE);
         const right = rowW * 0.5 - Math.round(12 * UI_SCALE);
         const outX = left + CRAFT_OUT_SZ * 0.5;
@@ -1784,8 +2441,9 @@ export class FarmHUD extends Component {
         const nameLeft = outX + CRAFT_OUT_SZ * 0.5 + CRAFT_COL_GAP;
         const costOrigin = nameLeft + CRAFT_NAME_COL_W + CRAFT_COL_GAP;
         const adX = right - CRAFT_AD_SZ * 0.5;
+        // Keep the bar as long as「制作」; right-align before the ad (extends left into row slack).
         const barRightWithAd = adX - CRAFT_AD_SZ * 0.5 - CRAFT_COL_GAP;
-        const barWWithAd = Math.min(CRAFT_BTN_W, Math.max(Math.round(48 * UI_SCALE), Math.round(barRightWithAd - actionLeft)));
+        const barWWithAd = CRAFT_BTN_W;
         const barXWithAd = barRightWithAd - barWWithAd * 0.5;
         const barXNoAd = btnX;
         const barW = CRAFT_BTN_W;
@@ -1960,7 +2618,7 @@ export class FarmHUD extends Component {
         };
     }
 
-    /** Place the craft countdown bar in the 制作 slot, or tuck it left of the ad chip. */
+    /** Place the craft countdown bar in the 制作 slot, or shift it left of the ad chip. */
     private layoutCraftProgress(
         row: {
             progressRoot: Node;
@@ -2038,17 +2696,27 @@ export class FarmHUD extends Component {
         this._craftOpen = open;
         if (open && this._bagOpen) this.setBagOpen(false);
         if (open && this._chestOpen) this.setChestOpen(false);
-        InputBridge.uiBlocking = open || this._bagOpen || this._chestOpen;
+        if (open) this.setLearnOpen(false);
+        InputBridge.uiBlocking =
+            open || this._bagOpen || this._chestOpen || this._learnOpen;
+        if (open) this.ensureCraftPanel();
         if (this._craftDimmer) this._craftDimmer.active = open;
         if (this._craftPanel) this._craftPanel.active = open;
         if (this._craftCloseBtn) this._craftCloseBtn.active = open;
-        if (this._barBg) this._barBg.active = !open && !this._bagOpen && !this._chestOpen;
-        if (this._bagBtn) this._bagBtn.active = !open && !this._bagOpen && !this._chestOpen;
+        if (this._barBg) {
+            this._barBg.active =
+                !open && !this._bagOpen && !this._chestOpen && !this._learnOpen;
+        }
+        this.syncBagEntryVisible();
         if (this._bar) this._bar.active = true;
+        this.syncQuestEntryVisible();
         if (!open) {
             this._tutorialCraftAwaitClose = false;
-            // Keep lock only while the guided job is still ticking (panel can stay closed).
-            if (!this._craftJobs.has(FIRST_SEED_RECIPE)) this._tutorialCraftLock = false;
+            // Keep guided id while the job ticks so reopen still aims the recipe.
+            const guidedId = this._guidedCraftRecipeId;
+            if (!guidedId || !this._craftJobs.has(guidedId)) {
+                this._guidedCraftRecipeId = null;
+            }
             return;
         }
         this.syncFromFarm();
@@ -2057,6 +2725,241 @@ export class FarmHUD extends Component {
         this.refreshSelection();
         this.hideTip();
         this.orderLayers();
+        this.applyTutorialCraftCloseVisual();
+    }
+
+    private buildLearnPanel() {
+        const canvas = this.node;
+        const dimmer = new Node('FarmLearnDimmer');
+        dimmer.layer = canvas.layer;
+        dimmer.setParent(canvas);
+        const vis = view.getVisibleSize();
+        dimmer.addComponent(UITransform).setContentSize(vis.width * 2, vis.height * 2);
+        const dG = dimmer.addComponent(Graphics);
+        dG.fillColor = new Color(0, 0, 0, 160);
+        dG.rect(-vis.width, -vis.height, vis.width * 2, vis.height * 2);
+        dG.fill();
+        dimmer.active = false;
+        this._learnDimmer = dimmer;
+
+        const panel = new Node('FarmLearnPanel');
+        panel.layer = canvas.layer;
+        panel.setParent(canvas);
+        panel.setPosition(0, Math.round(80 * UI_SCALE), 0);
+        panel.addComponent(UITransform).setContentSize(LEARN_PANEL_W, LEARN_PANEL_H);
+        panel.active = false;
+        this._learnPanel = panel;
+
+        const chrome = new Node('Chrome');
+        chrome.layer = canvas.layer;
+        chrome.setParent(panel);
+        chrome.addComponent(UITransform).setContentSize(LEARN_PANEL_W, LEARN_PANEL_H);
+        drawWoodParchmentPanel(chrome.addComponent(Graphics), LEARN_PANEL_W, LEARN_PANEL_H, {
+            radius: Math.round(22 * UI_SCALE),
+            lightInset: true,
+        });
+
+        const titleN = new Node('Title');
+        titleN.layer = canvas.layer;
+        titleN.setParent(panel);
+        titleN.setPosition(0, LEARN_PANEL_H * 0.5 - Math.round(56 * UI_SCALE), 0);
+        titleN
+            .addComponent(UITransform)
+            .setContentSize(LEARN_PANEL_W - CLOSE_BTN * 2.4, Math.round(40 * UI_SCALE));
+        const title = titleN.addComponent(Label);
+        title.string = '学习配方';
+        title.horizontalAlign = Label.HorizontalAlign.CENTER;
+        title.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(title, {
+            size: Math.round(28 * UI_SCALE),
+            color: UI_CREAM,
+            outline: true,
+        });
+        this._learnTitle = title;
+
+        this._learnCloseBtn = mountPanelCloseButton(panel, LEARN_PANEL_W, LEARN_PANEL_H, {
+            size: CLOSE_BTN,
+            frame: this._frames.close ?? null,
+        });
+
+        const iconRowY = Math.round(48 * UI_SCALE);
+        const scrollRoot = new Node('ScrollIcon');
+        scrollRoot.layer = canvas.layer;
+        scrollRoot.setParent(panel);
+        scrollRoot.setPosition(-Math.round(90 * UI_SCALE), iconRowY, 0);
+        scrollRoot.addComponent(UITransform).setContentSize(LEARN_ICON, LEARN_ICON);
+        this.addSlotPlate(scrollRoot, Math.round(LEARN_ICON * 0.95));
+        this._learnScrollIcon = this.addIcon(scrollRoot, null, Math.round(LEARN_ICON * 0.7));
+
+        const arrowN = new Node('Arrow');
+        arrowN.layer = canvas.layer;
+        arrowN.setParent(panel);
+        arrowN.setPosition(0, iconRowY, 0);
+        arrowN.addComponent(UITransform).setContentSize(Math.round(48 * UI_SCALE), Math.round(36 * UI_SCALE));
+        const arrow = arrowN.addComponent(Label);
+        arrow.string = '→';
+        arrow.horizontalAlign = Label.HorizontalAlign.CENTER;
+        arrow.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(arrow, {
+            size: Math.round(32 * UI_SCALE),
+            color: UI_INK,
+            outline: false,
+        });
+
+        const outRoot = new Node('OutIcon');
+        outRoot.layer = canvas.layer;
+        outRoot.setParent(panel);
+        outRoot.setPosition(Math.round(90 * UI_SCALE), iconRowY, 0);
+        outRoot.addComponent(UITransform).setContentSize(LEARN_ICON, LEARN_ICON);
+        this.addSlotPlate(outRoot, Math.round(LEARN_ICON * 0.95));
+        this._learnOutIcon = this.addIcon(outRoot, null, Math.round(LEARN_ICON * 0.7));
+
+        const nameN = new Node('Name');
+        nameN.layer = canvas.layer;
+        nameN.setParent(panel);
+        nameN.setPosition(0, Math.round(-20 * UI_SCALE), 0);
+        nameN
+            .addComponent(UITransform)
+            .setContentSize(LEARN_PANEL_W - Math.round(64 * UI_SCALE), Math.round(40 * UI_SCALE));
+        const name = nameN.addComponent(Label);
+        name.string = '';
+        name.horizontalAlign = Label.HorizontalAlign.CENTER;
+        name.verticalAlign = Label.VerticalAlign.CENTER;
+        name.overflow = Label.Overflow.CLAMP;
+        styleUiLabel(name, {
+            size: Math.round(26 * UI_SCALE),
+            color: UI_INK,
+            outline: false,
+        });
+        this._learnName = name;
+
+        const descN = new Node('Desc');
+        descN.layer = canvas.layer;
+        descN.setParent(panel);
+        descN.setPosition(0, Math.round(-72 * UI_SCALE), 0);
+        descN
+            .addComponent(UITransform)
+            .setContentSize(LEARN_PANEL_W - Math.round(80 * UI_SCALE), Math.round(72 * UI_SCALE));
+        const desc = descN.addComponent(Label);
+        desc.string = '';
+        desc.horizontalAlign = Label.HorizontalAlign.CENTER;
+        desc.verticalAlign = Label.VerticalAlign.TOP;
+        desc.overflow = Label.Overflow.CLAMP;
+        desc.enableWrapText = true;
+        styleUiLabel(desc, {
+            size: Math.round(20 * UI_SCALE),
+            color: UI_INK_MUTE,
+            outline: false,
+        });
+        this._learnDesc = desc;
+
+        const btn = new Node('LearnBtn');
+        btn.layer = canvas.layer;
+        btn.setParent(panel);
+        btn.setPosition(0, -LEARN_PANEL_H * 0.5 + Math.round(70 * UI_SCALE), 0);
+        btn.addComponent(UITransform).setContentSize(LEARN_BTN_W, LEARN_BTN_H);
+        drawWoodButton(btn.addComponent(Graphics), LEARN_BTN_W, LEARN_BTN_H, 'primary');
+        const btnLabN = new Node('Label');
+        btnLabN.layer = canvas.layer;
+        btnLabN.setParent(btn);
+        btnLabN.addComponent(UITransform).setContentSize(LEARN_BTN_W, LEARN_BTN_H);
+        const btnLab = btnLabN.addComponent(Label);
+        btnLab.string = '学习';
+        btnLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        btnLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(btnLab, {
+            size: Math.round(28 * UI_SCALE),
+            color: UI_CREAM,
+            outline: true,
+        });
+        this._learnBtn = btn;
+
+        if (this._learnCloseBtn?.isValid) {
+            this._learnCloseBtn.setSiblingIndex(panel.children.length - 1);
+        }
+    }
+
+    private openRecipeLearn(bagIndex: number) {
+        const stack = this._backpack[bagIndex];
+        if (!isRecipeScroll(stack)) return;
+        const recipe = getCraftRecipes().find((r) => r.id === stack.recipeId);
+        if (!recipe) return;
+        this._learnBagIndex = bagIndex;
+        this._learnRecipeId = stack.recipeId;
+        if (this._learnScrollIcon) {
+            const sf = this.frameFor('recipeScroll');
+            this._learnScrollIcon.spriteFrame = sf;
+            this._learnScrollIcon.node.active = !!sf;
+        }
+        if (this._learnOutIcon) {
+            const sf = this.frameFor(recipe.out.id as InvItemId);
+            this._learnOutIcon.spriteFrame = sf;
+            this._learnOutIcon.node.active = !!sf;
+        }
+        if (this._learnName) this._learnName.string = recipe.name;
+        if (this._learnDesc) {
+            this._learnDesc.string = recipe.desc || '学习后可在工作台制作';
+        }
+        this.hideTip();
+        this.cancelDrag();
+        this.setLearnOpen(true);
+    }
+
+    private setLearnOpen(open: boolean) {
+        this._learnOpen = open;
+        if (this._learnDimmer) this._learnDimmer.active = open;
+        if (this._learnPanel) this._learnPanel.active = open;
+        if (this._learnCloseBtn) this._learnCloseBtn.active = open;
+        InputBridge.uiBlocking =
+            open || this._bagOpen || this._chestOpen || this._craftOpen;
+        if (!open) {
+            this._learnBagIndex = -1;
+            this._learnRecipeId = '';
+            return;
+        }
+        this.orderLayers();
+    }
+
+    private confirmLearnRecipe() {
+        const index = this._learnBagIndex;
+        const recipeId = this._learnRecipeId;
+        const stack = index >= 0 ? this._backpack[index] : null;
+        if (!isRecipeScroll(stack) || stack.recipeId !== recipeId) {
+            this.setLearnOpen(false);
+            return;
+        }
+        const ok = this._quests?.learnCraftRecipe(recipeId) ?? false;
+        if (!ok) {
+            this.setLearnOpen(false);
+            return;
+        }
+        this._backpack[index] = null;
+        this.setLearnOpen(false);
+        this.refreshInvIcons();
+        this.refreshChestIcons();
+        this.pulseBagBtn();
+    }
+
+    private hitLearnPanel(uiX: number, uiY: number): boolean {
+        if (!this._learnOpen || !this._learnPanel?.isValid) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const ui = this._learnPanel.getComponent(UITransform);
+        const w = ui?.contentSize.width ?? 0;
+        const h = ui?.contentSize.height ?? 0;
+        const p = this._learnPanel.position;
+        return Math.abs(x - p.x) <= w * 0.5 && Math.abs(y - p.y) <= h * 0.5;
+    }
+
+    private hitLearnClose(uiX: number, uiY: number): boolean {
+        if (!this._learnOpen || !this._learnCloseBtn?.isValid || !this._learnCloseBtn.active) {
+            return false;
+        }
+        return this.hitNodeOnCanvas(this._learnCloseBtn, uiX, uiY, 28);
+    }
+
+    private hitLearnConfirm(uiX: number, uiY: number): boolean {
+        if (!this._learnOpen || !this._learnBtn?.isValid) return false;
+        return this.hitNodeOnCanvas(this._learnBtn, uiX, uiY, 8);
     }
 
     private bagCount(id: CraftItemId | InvItemId): number {
@@ -2083,10 +2986,13 @@ export class FarmHUD extends Component {
     }
 
     private refreshCraftRows() {
+        const guided = this.liveGuidedCraftRecipeId();
         for (const row of this._craftRows) {
             const job = this._craftJobs.get(row.recipe.id);
             const busy = !!job;
-            const can = !busy && this.canAfford(row.recipe);
+            // Forced craft quest: only the objective recipe stays clickable.
+            const forcedOff = !!guided && row.recipe.id !== guided && !busy;
+            const can = !busy && !forcedOff && this.canAfford(row.recipe);
             row.recipe.cost.forEach((c, i) => {
                 const lab = row.costLabs[i];
                 if (!lab) return;
@@ -2098,14 +3004,14 @@ export class FarmHUD extends Component {
             row.craftBtn.active = !busy;
             row.progressRoot.active = busy;
 
+            let rootOp = row.root.getComponent(UIOpacity);
+            if (!rootOp) rootOp = row.root.addComponent(UIOpacity);
+            rootOp.opacity = forcedOff ? 110 : 255;
+
             if (busy && job) {
-                // Guided first-seed craft: hide skip-ad so the 5s lock is mandatory.
-                const guideLock =
-                    this._tutorialCraftLock && row.recipe.id === FIRST_SEED_RECIPE;
-                const showAd = !guideLock;
-                row.adBtn.active = showAd;
+                row.adBtn.active = true;
                 const t01 = 1 - Math.max(0, job.remain) / Math.max(0.001, job.total);
-                this.layoutCraftProgress(row, showAd, t01, job.remain);
+                this.layoutCraftProgress(row, true, t01, job.remain);
                 if (row.adOp) row.adOp.opacity = this._craftAdWait ? 120 : 255;
             } else {
                 row.adBtn.active = false;
@@ -2124,13 +3030,10 @@ export class FarmHUD extends Component {
     }
 
     private tryCraftRecipe(recipe: CraftRecipe) {
-        if (this._tutorialCraftLock) return;
         if (this._craftJobs.has(recipe.id)) return;
-        const quest = this._quests?.activeQuest;
-        const guidingFirstSeed =
-            quest?.id === FIRST_SEED_QUEST && !this._quests!.isAwaitingClaim;
-        // Keep the first-seed quest on the grass→seed recipe only.
-        if (guidingFirstSeed && recipe.id !== FIRST_SEED_RECIPE) return;
+        const guided = this.liveGuidedCraftRecipeId();
+        // Forced craft quest: reject every other recipe.
+        if (guided && recipe.id !== guided) return;
         if (!this.canAfford(recipe)) return;
         for (const c of recipe.cost) {
             if (!this.consumeFromBag(c.id, c.count)) {
@@ -2138,14 +3041,18 @@ export class FarmHUD extends Component {
                 return;
             }
         }
-        const guidedFirstSeed = guidingFirstSeed && recipe.id === FIRST_SEED_RECIPE;
+        const isGuided = !!guided && recipe.id === guided;
         const total = Math.max(
             1,
-            guidedFirstSeed ? FIRST_SEED_CRAFT_SEC : recipe.craftSeconds,
+            isGuided && recipe.id === FIRST_SEED_RECIPE
+                ? FIRST_SEED_CRAFT_SEC
+                : recipe.craftSeconds,
         );
-        if (guidedFirstSeed) {
-            this._tutorialCraftLock = true;
+        if (isGuided) {
+            // Countdown is free — player may close; guide resumes after done.
             this._tutorialCraftAwaitClose = false;
+            this._tutorialCraftAwaitFly = false;
+            this._guidedCraftRecipeId = recipe.id;
         }
         this._craftJobs.set(recipe.id, {
             remain: total,
@@ -2186,17 +3093,27 @@ export class FarmHUD extends Component {
     private completeCraftJob(recipeId: string) {
         const job = this._craftJobs.get(recipeId);
         if (!job) return;
-        const wasTutorialLock =
-            this._tutorialCraftLock && recipeId === FIRST_SEED_RECIPE;
+        const wasGuided = recipeId === this._guidedCraftRecipeId;
         this._craftJobs.delete(recipeId);
         if (this._craftAdWait?.recipeId === recipeId) this._craftAdWait = null;
         playFarmTool();
-        this.mergeOrPlaceInBag({ id: job.out.id, count: job.out.count });
+        const outId = job.out.id as InvItemId;
+        this.mergeOrPlaceInBag({ id: outId, count: job.out.count });
+        this.noteOwnedTool(outId);
+        this.ensureHotbarShortcut(outId);
         this.syncFarmFromBag();
         this._quests?.noteCraft(recipeId, 1);
-        if (wasTutorialLock) {
-            this._tutorialCraftLock = false;
-            if (this._craftOpen) this._tutorialCraftAwaitClose = true;
+        if (wasGuided) {
+            this._guidedCraftRecipeId = null;
+            if (this._craftOpen) {
+                // Panel still open → guide close, then claim.
+                this._tutorialCraftAwaitClose = true;
+                this._tutorialCraftAwaitFly = false;
+            } else {
+                // Panel already closed → fly into bag, then claim.
+                this._tutorialCraftAwaitClose = false;
+                this.playGuidedCraftDeliverFly(outId, job.out.count);
+            }
         }
         this.refreshHotbarIcons();
         this.refreshInvIcons();
@@ -2205,21 +3122,53 @@ export class FarmHUD extends Component {
         this.applyTutorialCraftCloseVisual();
     }
 
+    /**
+     * Guided craft finished while the workbench was closed: arc the product
+     * into the bag badge, then release TutorialGuide for the claim step.
+     */
+    private playGuidedCraftDeliverFly(itemId: InvItemId, count: number) {
+        this._tutorialCraftAwaitFly = true;
+        const sf = this.frameFor(itemId);
+        if (!sf || !this._lootFxRoot?.isValid) {
+            this._tutorialCraftAwaitFly = false;
+            return;
+        }
+        const from = this.guidedCraftFlyOrigin();
+        const to = this.bagFlyTarget();
+        const n = Math.max(1, Math.min(count, 3));
+        for (let i = 0; i < n; i++) {
+            this.spawnLootFlyIcon(sf, from.x, from.y, to.x, to.y, i, n, () => {
+                this.pulseBagBtn();
+                this._tutorialCraftAwaitFly = false;
+            });
+        }
+        this._lootFxRoot.setSiblingIndex(this.node.children.length - 1);
+    }
+
+    /** Canvas start for closed-panel craft deliver (bench → bag). */
+    private guidedCraftFlyOrigin(): { x: number; y: number } {
+        const bench = this.farm?.findWorldNode('prop_craftbench');
+        if (bench?.isValid) {
+            return this.worldToCanvas(bench.position.x, bench.position.y + 42);
+        }
+        return { x: 0, y: 80 };
+    }
+
     private requestCraftAdBoost(recipeId: string) {
-        if (this._tutorialCraftLock) return;
         if (this._craftAdWait) return;
         if (!this._craftJobs.has(recipeId)) return;
         this._craftAdWait = { recipeId, left: CRAFT_AD_WATCH_SEC };
         this.refreshCraftRows();
     }
 
-    /** Dim the X while locked; restore when the close-window guide is active. */
+    /** Dim the X only while pre-craft force aims the recipe row. */
     private applyTutorialCraftCloseVisual() {
         const btn = this._craftCloseBtn;
         if (!btn?.isValid) return;
         let op = btn.getComponent(UIOpacity);
         if (!op) op = btn.addComponent(UIOpacity);
-        op.opacity = this._tutorialCraftLock ? 90 : 255;
+        const dimClose = this.isForcedCraftInputLock();
+        op.opacity = dimClose ? 90 : 255;
     }
 
     private finishCraftAdBoost(recipeId: string) {
@@ -2230,7 +3179,9 @@ export class FarmHUD extends Component {
     }
 
     private hitCraftClose(uiX: number, uiY: number): boolean {
-        if (this._tutorialCraftLock) return false;
+        // Forced craft quest: no dismiss while the objective can be crafted now.
+        // Countdown / await-close both allow the X.
+        if (this.isForcedCraftInputLock()) return false;
         if (!this._craftCloseBtn?.isValid || !this._craftCloseBtn.active || !this._craftPanel?.isValid) {
             return false;
         }
@@ -2312,7 +3263,6 @@ export class FarmHUD extends Component {
 
     private hitCraftRow(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
-        if (this._tutorialCraftLock) return false;
         const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (this._craftJobs.has(row.recipe.id)) continue;
@@ -2336,7 +3286,6 @@ export class FarmHUD extends Component {
 
     private hitCraftAd(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
-        if (this._tutorialCraftLock) return false;
         const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (!row.adBtn.active || !this._craftJobs.has(row.recipe.id)) continue;
@@ -2404,6 +3353,10 @@ export class FarmHUD extends Component {
     /** Merge stack into backpack storage. */
     private mergeOrPlaceInBag(stack: InvStack) {
         if (stack.id === 'hand') return;
+        if (stack.id === 'recipeScroll') {
+            this.placeInBag(stack);
+            return;
+        }
         const exist = this._backpack.findIndex((s) => s?.id === stack.id);
         if (exist >= 0 && this._backpack[exist]) {
             this._backpack[exist]!.count += stack.count;
@@ -2411,6 +3364,30 @@ export class FarmHUD extends Component {
         }
         const empty = this._backpack.findIndex((s) => !s);
         if (empty >= 0) this._backpack[empty] = { id: stack.id, count: stack.count };
+    }
+
+    /** Bind a newly crafted / granted item onto the first empty hotkey slot. */
+    private ensureHotbarShortcut(id: InvItemId) {
+        if (id === 'hand' || id === 'recipeScroll' || this.isHotbarBound(id)) return;
+        // Tools + seeds / boost are the ones players expect on the dock.
+        if (!isFarmTool(id) && id !== 'seeds' && id !== 'boost') return;
+        for (let i = 0; i < this._hotbar.length; i++) {
+            if (isHandHot(i)) continue;
+            if (!this._hotbar[i]) {
+                this._hotbar[i] = id;
+                return;
+            }
+        }
+    }
+
+    /** Persist crafted tools on FarmSystem so map travel keeps them. */
+    private noteOwnedTool(id: InvItemId) {
+        const farm = this.farm;
+        if (!farm) return;
+        if (id === 'hoe') farm.ownedTools.hoe = true;
+        else if (id === 'can') farm.ownedTools.can = true;
+        else if (id === 'axe') farm.ownedTools.axe = true;
+        else if (id === 'rod') farm.ownedTools.rod = true;
     }
 
     /** Push material/seed/crop counts from bag stacks back into FarmSystem. */
@@ -2604,6 +3581,14 @@ export class FarmHUD extends Component {
         return Math.abs(x - bx) < BAG_BTN * 0.52 && Math.abs(y - by) < BAG_BTN * 0.52;
     }
 
+    private hitQuestBtn(uiX: number, uiY: number): boolean {
+        if (!this._questBtn?.isValid || !this._questBtn.active || !this._bar?.isValid) return false;
+        const { x, y } = this.toDesignLocal(uiX, uiY);
+        const bx = this._bar.position.x + this._questBtn.position.x;
+        const by = this._bar.position.y + this._questBtn.position.y;
+        return Math.abs(x - bx) < BAG_BTN * 0.52 && Math.abs(y - by) < BAG_BTN * 0.52;
+    }
+
     private hitCloseBtn(uiX: number, uiY: number): boolean {
         if (!this._closeBtn?.isValid || !this._closeBtn.active || !this._panel?.isValid) return false;
         const { x, y } = this.toDesignLocal(uiX, uiY);
@@ -2695,7 +3680,11 @@ export class FarmHUD extends Component {
             if (Math.abs(x - cx) < CHEST_SLOT * 0.5 && Math.abs(y - cy) < CHEST_SLOT * 0.5) {
                 const stack = this._backpack[i];
                 if (showTipOnTap && stack) {
-                    this.showBagItemTip(stack.id, cx, cy + CHEST_SLOT * 0.55);
+                    if (isRecipeScroll(stack)) {
+                        this.openRecipeLearn(i);
+                    } else {
+                        this.showBagItemTip(stack.id, cx, cy + CHEST_SLOT * 0.55);
+                    }
                 }
                 return i;
             }
@@ -2765,7 +3754,11 @@ export class FarmHUD extends Component {
             if (Math.abs(x - cx) < INV_SLOT * 0.5 && Math.abs(y - cy) < INV_SLOT * 0.5) {
                 const stack = this._backpack[i];
                 if (showTipOnTap && stack) {
-                    this.showBagItemTip(stack.id, cx, cy + INV_SLOT * 0.55);
+                    if (isRecipeScroll(stack)) {
+                        this.openRecipeLearn(i);
+                    } else {
+                        this.showBagItemTip(stack.id, cx, cy + INV_SLOT * 0.55);
+                    }
                 }
                 return i;
             }
@@ -2844,6 +3837,7 @@ export class FarmHUD extends Component {
     };
 
     private beginPtr(uiX: number, uiY: number) {
+        if (this._learnOpen) return;
         if (!this._chestOpen && !this._bagOpen) return;
         this._ptrDown = true;
         this._ptrX = uiX;
@@ -2924,7 +3918,9 @@ export class FarmHUD extends Component {
             this._drag.active = true;
             this.hideTip();
             if (this._ghost && this._ghostSp) {
-                const sf = this.frameFor(this._drag.item);
+                const bagStack =
+                    this._drag.from === 'bag' ? this._backpack[this._drag.index] : null;
+                const sf = bagStack ? this.frameForStack(bagStack) : this.frameFor(this._drag.item);
                 this._ghostSp.spriteFrame = sf;
                 // Show ghost even without a frame (tinted plate) so drag is visible.
                 this._ghost.active = true;
@@ -2960,9 +3956,7 @@ export class FarmHUD extends Component {
                     this._suppressTap = true;
                 }
             } else if (this._craftOpen) {
-                if (this._tutorialCraftLock) {
-                    this._suppressTap = true;
-                } else if (
+                if (
                     this.hitCraftClose(dropX, dropY) ||
                     this.hitCraftAd(dropX, dropY) ||
                     this.hitCraftRow(dropX, dropY)
@@ -3017,13 +4011,18 @@ export class FarmHUD extends Component {
         const inv = this.hitInvSlot(uiX, uiY, false);
         let equipId: InvItemId | null = null;
         if (drag.from === 'bag') {
-            // Prefer dock; bottom inv row sits flush above it — tools snap to hotkey.
-            if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
-            if (hot > 0) {
-                this.assignHotbar(hot, drag.item);
-                if (isFarmTool(drag.item)) equipId = drag.item;
-            } else if (inv >= 0 && inv !== drag.index) {
-                this.swapBag(drag.index, inv);
+            // Recipe scrolls: rearrange in bag only — never bind to the dock.
+            if (drag.item === 'recipeScroll') {
+                if (inv >= 0 && inv !== drag.index) this.swapBag(drag.index, inv);
+            } else {
+                // Prefer dock; bottom inv row sits flush above it — tools snap to hotkey.
+                if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
+                if (hot > 0) {
+                    this.assignHotbar(hot, drag.item);
+                    if (isFarmTool(drag.item)) equipId = drag.item;
+                } else if (inv >= 0 && inv !== drag.index) {
+                    this.swapBag(drag.index, inv);
+                }
             }
         } else if (drag.from === 'hotbar') {
             if (hot <= 0) hot = this.nearestHotbarInDockBand(uiX, uiY);
@@ -3104,7 +4103,10 @@ export class FarmHUD extends Component {
                 this.syncFarmFromBag();
             }
         } else if (drag.from === 'bag') {
-            if (chestDest >= 0) {
+            // Keep recipe scrolls out of the chest / hotbar.
+            if (drag.item === 'recipeScroll') {
+                if (bagDest >= 0) this.swapBag(drag.index, bagDest);
+            } else if (chestDest >= 0) {
                 const moved = this._backpack[drag.index];
                 this._backpack[drag.index] = this._chest[chestDest];
                 this._chest[chestDest] = moved;
@@ -3166,7 +4168,7 @@ export class FarmHUD extends Component {
             if (InputBridge.gmPanelOpen) return;
             if (this._chestOpen) this.setChestOpen(false);
             else if (this._craftOpen) {
-                if (this._tutorialCraftLock) return;
+                if (this.isForcedCraftInputLock()) return;
                 this.setCraftOpen(false);
             } else if (this._bagOpen) this.setBagOpen(false);
         }

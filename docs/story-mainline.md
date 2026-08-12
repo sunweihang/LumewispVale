@@ -88,7 +88,7 @@
 - **旗标**由 `QuestSystem.noteFlag` 写入，并经 `GameState` 跨场景保留。
 - **地图锁**：`GameState.unlocked.town`；未解锁时路牌只提示，不切场景。
 - **切场景**：`MapTravel`（`Main` ↔ `Town` ↔ `MayorHouse` ↔ `Mine`），切前把背包/金币/任务进度写入 `GameState`。
-- **配置**：无 Excel 时直接改 `assets/resources/config/tquest.json` 等；若恢复 Luban Datas，改完需 `npm run gen:config`。
+- **配置**：权威源为 Luban Excel `SourceData/Datas/`（`quest.xlsx` / `craft_recipe.xlsx` 等）。改完跑 `npm run gen:config`。运行时只读 `assets/resources/config/t*.json`，勿手改 JSON。
 
 ## 接入进度
 

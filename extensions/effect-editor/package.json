@@ -1,0 +1,123 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "effect-editor",
+  "description": "特效管理器（对齐 GameAsset EffectManager）：接入 Game编辑器宿主，与单位/场景管理同级",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w",
+    "migrate-cli": "node scripts/migrate-cli.js",
+    "migrate-res-cli": "node scripts/migrate-res-cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "open-host": {
+        "methods": [
+          "openHost"
+        ]
+      },
+      "browse-effects": {
+        "methods": [
+          "browseEffects"
+        ]
+      },
+      "create-effect": {
+        "methods": [
+          "createEffect"
+        ]
+      },
+      "create-effect-api": {
+        "public": true,
+        "methods": [
+          "createEffectApi"
+        ]
+      },
+      "delete-effect": {
+        "public": true,
+        "description": "删除特效配置目录 { effectId }",
+        "methods": [
+          "deleteEffect"
+        ]
+      },
+      "locate-effect": {
+        "public": true,
+        "description": "在资源管理器定位特效 Prefab { effectId }",
+        "methods": [
+          "locateEffect"
+        ]
+      },
+      "open-effect": {
+        "public": true,
+        "description": "打开特效 Prefab { effectId }",
+        "methods": [
+          "openEffect"
+        ]
+      },
+      "list-effects": {
+        "public": true,
+        "methods": [
+          "listEffects"
+        ]
+      },
+      "list-effect-categories": {
+        "public": true,
+        "methods": [
+          "listEffectCategories"
+        ]
+      },
+      "open-effect-category": {
+        "public": true,
+        "methods": [
+          "openEffectCategory"
+        ]
+      },
+      "validate-effect": {
+        "public": true,
+        "description": "校验单个特效 { effectId }",
+        "methods": [
+          "validateEffect"
+        ]
+      },
+      "validate-effects": {
+        "methods": [
+          "validateEffects"
+        ]
+      },
+      "migrate-effects": {
+        "public": true,
+        "description": "将 Prefabs/SFX_*|VFX_* 迁移到 effects/{id}/",
+        "methods": [
+          "migrateEffects"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 Game编辑器宿主发现：特效管理器分组",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      }
+    }
+  },
+  "panels": {
+    "create": {
+      "title": "创建特效",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 340
+      }
+    }
+  }
+}

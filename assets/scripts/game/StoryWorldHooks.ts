@@ -198,11 +198,35 @@ export class StoryWorldHooks extends Component {
             return { x: p.x - 40, y: p.y };
         }
         // Indoor south door — stand just inside (north of threshold) before leave.
-        if (target.name === 'door_exit' || target.name === 'exit_floor_glow') {
+        if (
+            target.name === 'door_exit' ||
+            target.name === 'exit_floor_glow' ||
+            target.name === 'door_light_beam' ||
+            target.name === 'door_portal_ring' ||
+            target.name === 'door_portal_beam'
+        ) {
             return { x: p.x, y: p.y + 36 };
         }
-        const biasX = target.name === 'bld_police' ? -40 : 0;
-        return { x: p.x + biasX, y: p.y + 20 };
+        // Outdoor buildings: stand south of the door (foot solid covers facade).
+        // Door X offsets match bake_town_scene.place_enter_door_beams.
+        const doorX: Record<string, number> = {
+            bld_mayor: 22,
+            bld_carpenter: 48,
+            bld_police: -40,
+        };
+        if (
+            target.name.startsWith('bld_') ||
+            target.name.startsWith('cottage_') ||
+            target.name.startsWith('home_') ||
+            target.name.startsWith('shed') ||
+            target.name === 'community' ||
+            target.name === 'shop' ||
+            target.name === 'fountain'
+        ) {
+            const dx = doorX[target.name] ?? 0;
+            return { x: p.x + dx, y: p.y - 28 };
+        }
+        return { x: p.x, y: p.y + 20 };
     }
 
     portalHint(_px: number, _py: number): string {

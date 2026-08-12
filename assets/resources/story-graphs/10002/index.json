@@ -1,0 +1,7 @@
+{
+  "storyId": 10002,
+  "name": "露穗唤醒",
+  "description": "scriptId=wake_farm; Lock→StartChat(10002)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

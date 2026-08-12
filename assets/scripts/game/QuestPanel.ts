@@ -20,18 +20,17 @@ import {
     view,
 } from 'cc';
 import { CQuest } from '../cfg/schema';
+import type { BoardCommissionSnapshot } from './GameState';
 import { InputBridge } from './InputBridge';
-import { MATERIAL_FRAMES } from './MaterialFrames';
 import { QUEST_FRAMES, QUEST_LAYOUT, QUEST_PANEL_PREFAB_UUID } from './QuestFrames';
 import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
-import { REWARD_FRAMES } from './RewardFrames';
-import { TOOL_FRAMES } from './ToolFrames';
 import { playUiClick } from './UiAudio';
 import {
     PANEL_CLOSE_BTN,
     PANEL_CLOSE_HIT,
     PANEL_CLOSE_PAD,
+    UI_CREAM,
     UI_GOLD as GOLD,
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
@@ -39,6 +38,7 @@ import {
     UI_STROKE as STROKE,
     UI_WOOD as WOOD,
     UI_WOOD_DARK as WOOD_DARK,
+    drawWoodButton,
     drawWoodParchmentPanel,
     loadPanelCloseFrame,
     paintPanelCloseVisual,
@@ -106,10 +106,15 @@ export class QuestPanel extends Component {
     btnGoto: Node | null = null;
 
     private _tracker: Node | null = null;
-    private _questBtn: Node | null = null;
     private _trackerTitle: Label | null = null;
     private _trackerProg: Label | null = null;
     private _trackerCount: Label | null = null;
+    /** Journal tabs — 主线 / 委托. */
+    private _tab: 'main' | 'board' = 'main';
+    private _mainTab: Node | null = null;
+    private _boardTab: Node | null = null;
+    private _mainTabLab: Label | null = null;
+    private _boardTabLab: Label | null = null;
     private _prefabRoot: Node | null = null;
     private _listContent: Node | null = null;
     private _listScroll = 0;
@@ -124,12 +129,19 @@ export class QuestPanel extends Component {
     private static readonly SCROLL_THUMB_MIN = 48;
     private static readonly SCROLL_THUMB_MAX = 90;
     private static readonly SCROLL_FADE_DELAY = 0.85;
-    private static readonly ICON_WELL = 56;
-    private static readonly REWARD_ICON = 30;
-    /** Right rail — progress / 完成 / 可领 only (no 前往 button). */
-    private static readonly PROG_RAIL_W = 100;
+    /** Claim / 交付 pill on the objective row. */
     private static readonly PROG_BADGE_W = 84;
     private static readonly PROG_BADGE_H = 44;
+    /** 详情 / 收起 on the description row. */
+    private static readonly DESC_BADGE_W = 72;
+    private static readonly DESC_BADGE_H = 40;
+    /** Collapsed preview length (CJK chars). */
+    private static readonly DESC_PREVIEW_CHARS = 10;
+    /** Card: 标题 / 描述 / 目标 / 奖励 — no icon column. */
+    private static readonly ROW_H = 210;
+    private static readonly ROW_GAP = 16;
+    private static readonly ROW_PAD_X = 28;
+    private static readonly CONTENT_W = L.panelW - 80;
     /** 'thumb' = drag knob; 'list' = finger-drag the rows; null = idle. */
     private _scrollDrag: 'thumb' | 'list' | null = null;
     private _scrollMoved = false;
@@ -140,21 +152,27 @@ export class QuestPanel extends Component {
     private _scrollListening = false;
     /** Claimable-row progress badges (tap to 领奖). */
     private _rowActions = new Map<number, Node>();
+    /** Board commission「交付」badges. */
+    private _boardActions = new Map<string, Node>();
+    /** Expanded full-description keys: `m:{questId}` / `b:{boardId}`. */
+    private _descExpanded = new Set<string>();
+    /** 详情 / 收起 hit targets. */
+    private _descButtons = new Map<string, Node>();
 
-    /** Match FarmHUD bag badge size (UI_SCALE 1.5 → 120). */
-    private static readonly HUD_BTN = 120;
-    /** FarmHUD BAR_Y / BAR_H — keep quest HUD fully above the hotbar. */
+    /** FarmHUD BAR_Y / BAR_H — keep claim chip fully above the hotbar. */
     private static readonly HUD_BAR_Y = -860;
     private static readonly HUD_BAR_H = 150 + 30;
     /** Same BAR_BG_W as FarmHUD — 7×150 slots + gaps + pad. */
     private static readonly HUD_BAR_W = 7 * 150 + 6 * 4 + 6;
-    /** Gap between hotbar top and quest dock bottom. */
+    /** Gap between hotbar top and claim chip bottom. */
     private static readonly HUD_CLEARANCE = 28;
+    private static readonly TAB_W = 168;
+    private static readonly TAB_H = 48;
+    private static readonly TAB_GAP = 20;
     private _open = false;
     private _prevBlocking = false;
     private _frames = new Map<FrameKey, SpriteFrame>();
     private _closeFrame: SpriteFrame | null = null;
-    private _iconCache = new Map<string, SpriteFrame>();
     private _framesReady = false;
     private _mounted = false;
 
@@ -185,7 +203,6 @@ export class QuestPanel extends Component {
     onDestroy() {
         if (this._open) InputBridge.uiBlocking = this._prevBlocking;
         this._tracker?.destroy();
-        this._questBtn?.destroy();
         if (this._prefabRoot && this._prefabRoot !== this.node) {
             this._prefabRoot.destroy();
         }
@@ -224,9 +241,19 @@ export class QuestPanel extends Component {
         this.quests = quests;
         quests.onChange(() => {
             this.refreshTracker();
+            this.quests?.hud?.syncQuestEntryVisible();
             if (this._open) this.refreshPanel();
         });
         this.refreshTracker();
+        this.quests?.hud?.syncQuestEntryVisible();
+    }
+
+    /** After first 露穗 talk marks guide_wake_yard — unlock quest + bag badges. */
+    revealQuestHud() {
+        this.refreshTracker();
+        this.quests?.hud?.syncQuestEntryVisible();
+        this.quests?.hud?.syncBagEntryVisible();
+        if (this._open) this.refreshPanel();
     }
 
     get isOpen(): boolean {
@@ -256,13 +283,16 @@ export class QuestPanel extends Component {
                 this.setHudVisible(false);
                 // Graphics must paint while active — inactive bake often drops the frame.
                 this.paintChrome();
+                this.ensureTabs();
                 this.ensureListViewport(true);
                 this.refreshPanel();
+                this.quests?.hud?.syncQuestEntryVisible();
             } else {
                 InputBridge.uiBlocking = this._prevBlocking;
                 if (this._prefabRoot) this._prefabRoot.active = false;
                 this.setHudVisible(true);
                 this.refreshTracker();
+                this.quests?.hud?.syncQuestEntryVisible();
             }
         };
         if (open && !this._mounted) {
@@ -290,13 +320,10 @@ export class QuestPanel extends Component {
 
     handleTap(uiX: number, uiY: number): boolean {
         if (!this._open) {
-            if (this.hitHud(uiX, uiY)) {
+            // Claim chip only — journal opens from the bag-side quest icon.
+            if (this.hitHud(uiX, uiY) && this.quests?.isAwaitingClaim) {
                 playUiClick();
-                if (this.quests?.isAwaitingClaim) {
-                    this.openRewardPopup();
-                    return true;
-                }
-                this.setOpen(true);
+                this.openRewardPopup();
                 return true;
             }
             return false;
@@ -314,7 +341,19 @@ export class QuestPanel extends Component {
             this.setOpen(false);
             return true;
         }
+        if (this.handleTabTap(local.x, local.y)) {
+            playUiClick();
+            return true;
+        }
+        if (this.handleDescDetailTap(local.x, local.y)) {
+            playUiClick();
+            return true;
+        }
         if (this.handleRowActionTap(local.x, local.y)) {
+            playUiClick();
+            return true;
+        }
+        if (this.handleBoardActionTap(local.x, local.y)) {
             playUiClick();
             return true;
         }
@@ -381,7 +420,7 @@ export class QuestPanel extends Component {
     private beginScrollPtr(uiX: number, uiY: number) {
         if (!this._open || !this.panelRoot) return;
         const local = this.uiToCanvasLocal(uiX, uiY);
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         if (maxScroll <= 0) return;
 
         // Only grab the overlay thumb while it's visible — otherwise rows keep full hit area.
@@ -415,12 +454,12 @@ export class QuestPanel extends Component {
         if (Math.abs(dy) < 0.5) return;
         this._scrollMoved = true;
 
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         if (maxScroll <= 0) return;
 
         if (this._scrollDrag === 'thumb') {
             // Finger down → thumb down → more negative scroll.
-            const trackH = L.listH - QuestPanel.SCROLL_PAD * 2;
+            const trackH = this.listH() - QuestPanel.SCROLL_PAD * 2;
             const thumbH = this.scrollThumbH(trackH);
             const travel = Math.max(1, trackH - thumbH);
             const dt = -dy / travel;
@@ -450,11 +489,11 @@ export class QuestPanel extends Component {
     /** Jump scroll so the thumb centers on the pointer's track Y. */
     private scrollToTrackY(canvasLy: number) {
         if (!this._scrollBar || !this.panelRoot) return;
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         if (maxScroll <= 0) return;
         const barPy = this.panelRoot.position.y + this._scrollBar.position.y;
         const localY = canvasLy - barPy;
-        const trackH = L.listH - QuestPanel.SCROLL_PAD * 2;
+        const trackH = this.listH() - QuestPanel.SCROLL_PAD * 2;
         const thumbH = this.scrollThumbH(trackH);
         const travel = Math.max(1, trackH - thumbH);
         const yFromTop = trackH * 0.5 - localY;
@@ -470,18 +509,18 @@ export class QuestPanel extends Component {
 
     private applyListScroll() {
         if (!this._listContent) return;
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         // scroll: 0 = top, -maxScroll = bottom (thumb). Content must move OPPOSITE the thumb.
         this._listScroll = Math.max(-maxScroll, Math.min(0, this._listScroll));
-        const baseY = L.listH * 0.5 - this._listContentH * 0.5;
+        const baseY = this.listH() * 0.5 - this._listContentH * 0.5;
         // Minus scroll: thumb down (more negative) → content moves up → lower rows enter view.
         this._listContent.setPosition(0, baseY - this._listScroll, 0);
         // Hard cull — Graphics can ignore Mask on some builds.
-        const half = L.listH * 0.5;
+        const half = this.listH() * 0.5;
         const contentY = this._listContent.position.y;
         for (const row of this._listContent.children) {
             const y = contentY + row.position.y;
-            const rh = L.rowH * 0.5;
+            const rh = this.rowH() * 0.5;
             row.active = y + rh > -half + 1 && y - rh < half - 1;
         }
         this.paintScrollBar();
@@ -499,9 +538,9 @@ export class QuestPanel extends Component {
     }
 
     private scrollThumbH(trackH: number): number {
-        if (this._listContentH <= L.listH) return trackH;
+        if (this._listContentH <= this.listH()) return trackH;
         // Cap height so the thumb stays a short wood knob (not a full-height sausage).
-        const raw = trackH * (L.listH / this._listContentH);
+        const raw = trackH * (this.listH() / this._listContentH);
         return Math.max(
             QuestPanel.SCROLL_THUMB_MIN,
             Math.min(QuestPanel.SCROLL_THUMB_MAX, raw),
@@ -510,7 +549,31 @@ export class QuestPanel extends Component {
 
     /** Full content width — scrollbar overlays the right edge. */
     private listW(): number {
-        return L.contentW;
+        return QuestPanel.CONTENT_W;
+    }
+
+    /** Header + list band: title → tabs → scroll list with even margins. */
+    private panelMetrics() {
+        const halfH = L.panelH * 0.5;
+        const titleY = halfH - 78;
+        const tabY = titleY - 70;
+        const listTop = tabY - QuestPanel.TAB_H * 0.5 - 22;
+        const listBottom = -halfH + 40;
+        const listH = Math.max(200, listTop - listBottom);
+        const listY = (listTop + listBottom) * 0.5;
+        return { titleY, tabY, listY, listH };
+    }
+
+    private rowH(): number {
+        return QuestPanel.ROW_H;
+    }
+
+    private rowGap(): number {
+        return QuestPanel.ROW_GAP;
+    }
+
+    private listH(): number {
+        return this.panelMetrics().listH;
     }
 
     private resolveRefs(root: Node) {
@@ -568,13 +631,16 @@ export class QuestPanel extends Component {
         this.paintDimmer();
         this.paintCloseButton();
         this.paintButtons();
+        this.ensureTabs();
         // List Mask must wait until the panel is active — see ensureListViewport.
         this.ensureListViewport(false);
         this.ensureScrollBar();
         if (this.heroNode) this.heroNode.active = false;
         if (this.sectionLab) this.sectionLab.node.active = false;
         if (this.titleLab) {
+            const { titleY } = this.panelMetrics();
             // Same title language as FarmHUD bag / craft.
+            this.titleLab.string = '旅途日志';
             styleUiLabel(this.titleLab, {
                 size: FONT_TITLE,
                 color: new Color(255, 244, 214, 255),
@@ -583,7 +649,7 @@ export class QuestPanel extends Component {
                 outlineColor: new Color(62, 34, 16, 230),
             });
             applyUiFont(this.titleLab);
-            this.titleLab.node.setPosition(0, L.titleY, 0);
+            this.titleLab.node.setPosition(0, titleY, 0);
             const tut = this.titleLab.node.getComponent(UITransform);
             // Side gutters so title never sits under the close hit plate (craft uses ~2.8×).
             if (tut) tut.setContentSize(Math.max(200, L.panelW - PANEL_CLOSE_BTN * 2.8), 48);
@@ -595,9 +661,105 @@ export class QuestPanel extends Component {
         if (this.btnGoto) this.btnGoto.active = false;
         // Close / scrollbar above list chrome.
         if (this.panelRoot) {
+            if (this._mainTab) this._mainTab.setSiblingIndex(this.panelRoot.children.length - 1);
+            if (this._boardTab) this._boardTab.setSiblingIndex(this.panelRoot.children.length - 1);
             if (this.btnClose) this.btnClose.setSiblingIndex(this.panelRoot.children.length - 1);
             if (this._scrollBar) this._scrollBar.setSiblingIndex(this.panelRoot.children.length - 1);
         }
+    }
+
+    private ensureTabs() {
+        if (!this.panelRoot) return;
+        const tw = QuestPanel.TAB_W;
+        const th = QuestPanel.TAB_H;
+        const { tabY } = this.panelMetrics();
+        const gap = QuestPanel.TAB_GAP;
+        const leftX = -(tw + gap) * 0.5;
+        const rightX = (tw + gap) * 0.5;
+        if (!this._mainTab) {
+            const main = new Node('TabMain');
+            main.layer = this.panelRoot.layer;
+            main.setParent(this.panelRoot);
+            main.addComponent(UITransform).setContentSize(tw, th);
+            main.addComponent(Graphics);
+            const labN = new Node('Lab');
+            labN.layer = main.layer;
+            labN.setParent(main);
+            labN.addComponent(UITransform).setContentSize(tw, th);
+            const lab = labN.addComponent(Label);
+            lab.string = '主线';
+            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            lab.verticalAlign = Label.VerticalAlign.CENTER;
+            styleUiLabel(lab, { size: FONT_BODY, color: INK, outline: false });
+            applyUiFont(lab);
+            this._mainTab = main;
+            this._mainTabLab = lab;
+        }
+        if (!this._boardTab) {
+            const board = new Node('TabBoard');
+            board.layer = this.panelRoot.layer;
+            board.setParent(this.panelRoot);
+            board.addComponent(UITransform).setContentSize(tw, th);
+            board.addComponent(Graphics);
+            const labN = new Node('Lab');
+            labN.layer = board.layer;
+            labN.setParent(board);
+            labN.addComponent(UITransform).setContentSize(tw, th);
+            const lab = labN.addComponent(Label);
+            lab.string = '委托';
+            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            lab.verticalAlign = Label.VerticalAlign.CENTER;
+            styleUiLabel(lab, { size: FONT_BODY, color: INK, outline: false });
+            applyUiFont(lab);
+            this._boardTab = board;
+            this._boardTabLab = lab;
+        }
+        this._mainTab.setPosition(leftX, tabY, 0);
+        this._boardTab.setPosition(rightX, tabY, 0);
+        this.paintTabs();
+    }
+
+    private paintTabs() {
+        this.paintTab(this._mainTab, this._mainTabLab, this._tab === 'main');
+        this.paintTab(this._boardTab, this._boardTabLab, this._tab === 'board');
+    }
+
+    private paintTab(node: Node | null, lab: Label | null, on: boolean) {
+        if (!node) return;
+        const gfx = node.getComponent(Graphics);
+        if (gfx) drawWoodButton(gfx, QuestPanel.TAB_W, QuestPanel.TAB_H, on ? 'on' : 'off');
+        if (lab) lab.color = on ? UI_CREAM : INK;
+    }
+
+    private handleTabTap(lx: number, ly: number): boolean {
+        if (!this.panelRoot) return false;
+        const py = this.panelRoot.position.y;
+        const px = this.panelRoot.position.x;
+        const hit = (node: Node | null) => {
+            if (!node?.isValid || !node.active) return false;
+            const ui = node.getComponent(UITransform);
+            if (!ui) return false;
+            const hw = ui.contentSize.width * 0.5 + 6;
+            const hh = ui.contentSize.height * 0.5 + 6;
+            const x = px + node.position.x;
+            const y = py + node.position.y;
+            return Math.abs(lx - x) <= hw && Math.abs(ly - y) <= hh;
+        };
+        if (hit(this._mainTab)) {
+            if (this._tab !== 'main') {
+                this._tab = 'main';
+                this.refreshPanel();
+            }
+            return true;
+        }
+        if (hit(this._boardTab)) {
+            if (this._tab !== 'board') {
+                this._tab = 'board';
+                this.refreshPanel();
+            }
+            return true;
+        }
+        return false;
     }
 
     /** Same wood + parchment chrome as FarmHUD — dedicated Chrome child behind content. */
@@ -655,9 +817,10 @@ export class QuestPanel extends Component {
     private ensureListViewport(attachMask = true) {
         if (!this.listHost) return;
         const lw = this.listW();
+        const { listY, listH } = this.panelMetrics();
         const ut = this.listHost.getComponent(UITransform) ?? this.listHost.addComponent(UITransform);
-        ut.setContentSize(lw, L.listH);
-        this.listHost.setPosition(0, L.listY, 0);
+        ut.setContentSize(lw, listH);
+        this.listHost.setPosition(0, listY, 0);
         // Drop legacy loose rows from before the scroll viewport existed.
         for (const child of [...this.listHost.children]) {
             if (child.name !== 'Content') child.destroy();
@@ -667,7 +830,7 @@ export class QuestPanel extends Component {
             content = new Node('Content');
             content.layer = this.listHost.layer;
             content.setParent(this.listHost);
-            content.addComponent(UITransform).setContentSize(lw, L.listH);
+            content.addComponent(UITransform).setContentSize(lw, listH);
         }
         this._listContent = content;
 
@@ -694,12 +857,13 @@ export class QuestPanel extends Component {
         }
 
         const w = QuestPanel.SCROLL_W;
+        const { listY, listH } = this.panelMetrics();
         let bar = this.panelRoot.getChildByName('ScrollBar');
         if (!bar) {
             bar = new Node('ScrollBar');
             bar.layer = this.panelRoot.layer;
             bar.setParent(this.panelRoot);
-            bar.addComponent(UITransform).setContentSize(w, L.listH);
+            bar.addComponent(UITransform).setContentSize(w, listH);
             bar.addComponent(Graphics);
             bar.addComponent(UIOpacity);
 
@@ -713,14 +877,14 @@ export class QuestPanel extends Component {
         this._scrollThumb = bar.getChildByName('Thumb');
         this._scrollBarOp = bar.getComponent(UIOpacity) ?? bar.addComponent(UIOpacity);
         // Sit on the list's right edge without shrinking rows.
-        bar.setPosition(L.contentW * 0.5 - w * 0.5 - 2, L.listY, 0);
-        bar.getComponent(UITransform)?.setContentSize(w, L.listH);
+        bar.setPosition(this.listW() * 0.5 - w * 0.5 - 2, listY, 0);
+        bar.getComponent(UITransform)?.setContentSize(w, listH);
         this.paintScrollBar();
     }
 
     private flashScrollBar() {
         if (!this._scrollBar || !this._scrollBarOp) return;
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         if (maxScroll <= 1) return;
         this._scrollBar.active = true;
         this._scrollBarLit = true;
@@ -737,7 +901,7 @@ export class QuestPanel extends Component {
 
     private paintScrollBar() {
         if (!this._scrollBar || !this._scrollThumb) return;
-        const maxScroll = Math.max(0, this._listContentH - L.listH);
+        const maxScroll = Math.max(0, this._listContentH - this.listH());
         const need = maxScroll > 1;
         this._scrollBar.active = need;
         if (!need) {
@@ -749,7 +913,7 @@ export class QuestPanel extends Component {
 
         const w = QuestPanel.SCROLL_W;
         const pad = QuestPanel.SCROLL_PAD;
-        const trackH = L.listH - pad * 2;
+        const trackH = this.listH() - pad * 2;
         const thumbH = this.scrollThumbH(trackH);
         const travel = Math.max(1, trackH - thumbH);
         const t = -this._listScroll / maxScroll;
@@ -799,90 +963,210 @@ export class QuestPanel extends Component {
     }
 
     private refreshTracker() {
+        this.syncQuestHudVisibility();
         if (!this._trackerTitle || !this._trackerProg) return;
         const q = this.quests?.activeQuest;
-        if (!q || this.quests?.isFinished) {
-            this._trackerTitle.string = '旅途日志';
-            this._trackerProg.string = this.quests?.isFinished ? '主线已完成' : '加载中…';
-            if (this._trackerCount) {
-                this._trackerCount.string = '';
-                styleUiLabel(this._trackerCount, { size: FONT_BODY, color: INK, outline: false });
-            }
+        if (!q || !this.quests?.isAwaitingClaim) {
+            this._trackerTitle.string = '';
+            this._trackerProg.string = '';
+            if (this._trackerCount) this._trackerCount.string = '';
             return;
         }
         this._trackerTitle.string = q.name;
-        if (this.quests!.isAwaitingClaim) {
-            this._trackerProg.string = '点击领奖';
-            if (this._trackerCount) {
-                this._trackerCount.string = '✓';
-                styleUiLabel(this._trackerCount, {
-                    size: FONT_TITLE,
-                    color: new Color(70, 140, 50, 255),
-                    outline: false,
-                });
-                applyUiFont(this._trackerCount);
-            }
-            return;
-        }
-        const prog = this.quests!.progressOf(q);
-        this._trackerProg.string = this.quests!.objectiveLabel(q);
+        this._trackerProg.string = '点击领奖';
         if (this._trackerCount) {
-            this._trackerCount.string = `${prog.current} / ${prog.target}`;
-            styleUiLabel(this._trackerCount, { size: FONT_BODY, color: INK, outline: false });
+            this._trackerCount.string = '✓';
+            styleUiLabel(this._trackerCount, {
+                size: FONT_TITLE,
+                color: new Color(70, 140, 50, 255),
+                outline: false,
+            });
             applyUiFont(this._trackerCount);
         }
     }
 
     private refreshPanel() {
         if (!this.listHost || !this.quests) return;
-        const q = this.quests.activeQuest;
-
+        this.ensureTabs();
+        this.paintTabs();
         this.ensureListViewport();
         const content = this._listContent;
         if (!content) return;
         content.removeAllChildren();
         this._rowActions.clear();
+        this._boardActions.clear();
+        this._descButtons.clear();
+
+        if (this._tab === 'board') {
+            this.refreshBoardList(content);
+            return;
+        }
 
         // Current quest only — completed / locked steps stay out of the journal.
+        const q = this.quests.activeQuest;
         const quests = this.quests.visibleQuests();
         const activeId = q?.id ?? -1;
         const n = quests.length;
-        const totalH = n > 0 ? n * L.rowH + Math.max(0, n - 1) * L.rowGap : L.listH;
+        const heights = quests.map((quest) => this.rowHForDesc(quest.desc || '', `m:${quest.id}`));
+        const totalH =
+            n > 0
+                ? heights.reduce((a, b) => a + b, 0) + Math.max(0, n - 1) * this.rowGap()
+                : this.listH();
         this._listContentH = totalH;
         const lw = this.listW();
         content.getComponent(UITransform)?.setContentSize(lw, totalH);
 
-        let y = totalH * 0.5 - L.rowH * 0.5;
-        let activeIndex = 0;
+        let y = totalH * 0.5;
+        let activeOffset = 0;
         for (let i = 0; i < n; i++) {
-            const quest = quests[i];
-            if (quest.id === activeId) activeIndex = i;
+            const quest = quests[i]!;
+            const rh = heights[i]!;
+            y -= rh * 0.5;
+            if (quest.id === activeId) {
+                activeOffset = totalH * 0.5 - (y + rh * 0.5);
+            }
             this.addQuestRow(
                 content,
                 quest,
                 quest.id === activeId,
                 this.quests.isCompleted(quest.id),
                 y,
+                rh,
             );
-            y -= L.rowH + L.rowGap;
+            y -= rh * 0.5 + this.rowGap();
         }
 
-        const rowPitch = L.rowH + L.rowGap;
-        const maxScroll = Math.max(0, totalH - L.listH);
-        this._listScroll = -Math.min(maxScroll, activeIndex * rowPitch);
+        const maxScroll = Math.max(0, totalH - this.listH());
+        this._listScroll = -Math.min(maxScroll, activeOffset);
         this.applyListScroll();
     }
 
-    /**
-     * Quest card (no 前往 button):
-     *   [icon]  title                         ║
-     *           desc (up to two lines)        ║  [0/3]
-     *           奖励  💰 ×20                   ║
-     * Left column shares one edge; progress sits in a right rail, vertically centered.
-     */
-    private addQuestRow(host: Node, q: CQuest, active: boolean, done: boolean, y: number) {
+    private refreshBoardList(content: Node) {
+        const boards = this.quests?.activeBoardQuests() ?? [];
+        const n = boards.length;
+        const heights = boards.map((b) => this.rowHForDesc(b.desc || '', `b:${b.id}`));
+        const totalH =
+            n > 0
+                ? heights.reduce((a, b) => a + b, 0) + Math.max(0, n - 1) * this.rowGap()
+                : this.listH();
+        this._listContentH = totalH;
+        const lw = this.listW();
+        content.getComponent(UITransform)?.setContentSize(lw, totalH);
+
+        if (n <= 0) {
+            this.addEmptyBoardRow(content);
+            this._listScroll = 0;
+            this.applyListScroll();
+            return;
+        }
+
+        let y = totalH * 0.5;
+        for (let i = 0; i < n; i++) {
+            const rh = heights[i]!;
+            y -= rh * 0.5;
+            this.addBoardRow(content, boards[i]!, y, rh);
+            y -= rh * 0.5 + this.rowGap();
+        }
+        this._listScroll = 0;
+        this.applyListScroll();
+    }
+
+    private addEmptyBoardRow(host: Node) {
         const rw = this.listW();
-        const rh = L.rowH;
+        const rh = this.rowH();
+        const row = new Node('BoardEmpty');
+        row.layer = host.layer;
+        row.setParent(host);
+        row.setPosition(0, 0, 0);
+        row.addComponent(UITransform).setContentSize(rw, rh);
+        const g = row.addComponent(Graphics);
+        this.paintRowPlate(g, rw, rh, false, false);
+        const labN = new Node('Lab');
+        labN.layer = host.layer;
+        labN.setParent(row);
+        labN.setPosition(0, 0, 0);
+        labN.addComponent(UITransform).setContentSize(rw - QuestPanel.ROW_PAD_X * 2, rh - 24);
+        const lab = labN.addComponent(Label);
+        lab.string = '还没有委托\n去镇上警察局或邮局接取吧';
+        lab.overflow = Label.Overflow.CLAMP;
+        lab.enableWrapText = true;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, { size: FONT_DESC, color: INK_MUTE, outline: false });
+        applyUiFont(lab);
+    }
+
+    private addBoardRow(host: Node, q: BoardCommissionSnapshot, y: number, rh = this.rowH()) {
+        const rw = this.listW();
+        const row = new Node(`B_${q.id}`);
+        row.layer = host.layer;
+        row.setParent(host);
+        row.setPosition(0, y, 0);
+        row.addComponent(UITransform).setContentSize(rw, rh);
+
+        const g = row.addComponent(Graphics);
+        this.paintRowPlate(g, rw, rh, true, false);
+
+        const padX = QuestPanel.ROW_PAD_X;
+        const actionW = QuestPanel.PROG_BADGE_W + 12;
+        const textLeft = -rw * 0.5 + padX;
+        const bodyW = Math.max(160, rw - padX * 2 - actionW);
+        const actionX = rw * 0.5 - padX - QuestPanel.PROG_BADGE_W * 0.5;
+        const src = q.source === 'police' ? '警察局' : '邮局';
+        const title = (q.title || '委托').trim();
+        const fullDesc = (q.desc || '').trim();
+        const { yTitle, y2, y3 } = this.layoutDescBlock(
+            row,
+            `b:${q.id}`,
+            fullDesc,
+            textLeft,
+            bodyW,
+            rh,
+            INK,
+        );
+
+        this.addRowLine(row, 'Title', title, textLeft, yTitle, bodyW, {
+            size: FONT_BODY,
+            color: INK,
+        });
+        this.addRowLine(row, 'Goal', `目标  来自${src}`, textLeft, y2, bodyW, {
+            size: FONT_DESC,
+            color: INK_MUTE,
+        });
+        this.addRowLine(row, 'Reward', `奖励  金币 x ${q.rewardGold}`, textLeft, y3, bodyW, {
+            size: FONT_DESC,
+            color: new Color(168, 108, 36, 255),
+        });
+
+        const badge = this.addActionBadge(row, actionX, y2, '交付', true);
+        this._boardActions.set(q.id, badge);
+    }
+
+    private handleBoardActionTap(lx: number, ly: number): boolean {
+        if (!this.quests || this._tab !== 'board') return false;
+        for (const [id, node] of this._boardActions) {
+            if (!this.hitNodeNested(node, lx, ly)) continue;
+            this.quests.completeBoardQuest(id);
+            this.refreshPanel();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Quest card — four text rows, no icon:
+     *   1 标题  2 描述（可截断 + 详情展开）  3 目标+进度  4 奖励
+     * Claimable rows put「领奖」on the objective line.
+     */
+    private addQuestRow(
+        host: Node,
+        q: CQuest,
+        active: boolean,
+        done: boolean,
+        y: number,
+        rh = this.rowH(),
+    ) {
+        const rw = this.listW();
         const row = new Node(`Q_${q.id}`);
         row.layer = host.layer;
         row.setParent(host);
@@ -892,129 +1176,178 @@ export class QuestPanel extends Component {
         const g = row.addComponent(Graphics);
         this.paintRowPlate(g, rw, rh, active, done);
 
-        const padL = 20;
-        const padR = 14;
-        const gap = 16;
-        const well = QuestPanel.ICON_WELL;
-        const showProg = active || done;
-        // Reserve badge width only — extra rail padding was eating desc space.
-        const railW = showProg ? QuestPanel.PROG_BADGE_W + 8 : 0;
-        const railX = rw * 0.5 - padR - railW * 0.5;
-        const bodyRight = (showProg ? railX - railW * 0.5 : rw * 0.5 - padR) - gap;
-        const wellX = -rw * 0.5 + padL + well * 0.5;
-        const textLeft = wellX + well * 0.5 + gap;
-        const bodyW = Math.max(180, bodyRight - textLeft);
+        const claimable = active && !!this.quests?.isAwaitingClaim;
+        const padX = QuestPanel.ROW_PAD_X;
+        const actionW = claimable ? QuestPanel.PROG_BADGE_W + 12 : 0;
+        const textLeft = -rw * 0.5 + padX;
+        const bodyW = Math.max(160, rw - padX * 2 - actionW);
 
         const ink = done ? INK_DONE : INK;
         const mute = done ? new Color(70, 100, 58, 255) : INK_MUTE;
+        const title = (q.name || '任务').trim();
+        const fullDesc = (q.desc || '').trim();
+        const { yTitle, y2, y3 } = this.layoutDescBlock(
+            row,
+            `m:${q.id}`,
+            fullDesc,
+            textLeft,
+            bodyW,
+            rh,
+            ink,
+        );
 
-        // Icon — vertically centered with the whole card.
-        this.paintIconWell(g, wellX, 0, well, done);
-        const iconUuid = this.iconUuidFor(q);
-        if (iconUuid) {
-            const iconN = new Node('Icon');
-            iconN.layer = host.layer;
-            iconN.setParent(row);
-            iconN.setPosition(wellX, 0, 0);
-            iconN.addComponent(UITransform).setContentSize(L.icon, L.icon);
-            const isp = iconN.addComponent(Sprite);
-            isp.sizeMode = Sprite.SizeMode.CUSTOM;
-            if (done) isp.color = new Color(230, 230, 230, 230);
-            this.loadIcon(iconUuid, isp);
-        }
+        this.addRowLine(row, 'Title', title, textLeft, yTitle, bodyW, {
+            size: FONT_BODY,
+            color: ink,
+        });
 
-        // Text stack — title / wrapped desc / rewards.
-        const titleY = 44;
-        const descY = 10;
-        const rewardY = -48;
-        const descH = 58;
-
-        const nameN = new Node('Name');
-        nameN.layer = host.layer;
-        nameN.setParent(row);
-        nameN.setPosition(textLeft, titleY, 0);
-        const nameUt = nameN.addComponent(UITransform);
-        nameUt.setContentSize(bodyW, 34);
-        nameUt.setAnchorPoint(0, 0.5);
-        const name = nameN.addComponent(Label);
-        name.string = q.name;
-        name.overflow = Label.Overflow.CLAMP;
-        name.horizontalAlign = Label.HorizontalAlign.LEFT;
-        name.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(name, { size: FONT_BODY, color: ink, outline: false });
-        applyUiFont(name);
-
-        const descN = new Node('Desc');
-        descN.layer = host.layer;
-        descN.setParent(row);
-        descN.setPosition(textLeft, descY, 0);
-        const dUt = descN.addComponent(UITransform);
-        dUt.setContentSize(bodyW, descH);
-        dUt.setAnchorPoint(0, 1);
-        const desc = descN.addComponent(Label);
-        desc.string = q.desc;
-        desc.overflow = Label.Overflow.CLAMP;
-        desc.enableWrapText = true;
-        desc.horizontalAlign = Label.HorizontalAlign.LEFT;
-        desc.verticalAlign = Label.VerticalAlign.TOP;
-        styleUiLabel(desc, { size: FONT_DESC, color: mute, outline: false });
-        desc.lineHeight = FONT_DESC + 4;
-        applyUiFont(desc);
-
-        this.addRewardChips(row, q, textLeft, rewardY, done);
-
-        if (showProg) {
-            const badge = this.addProgBadge(row, q, railX, 0, active, done);
-            // Only claimable rows are tappable — 前往 removed.
-            if (active && this.quests?.isAwaitingClaim && badge) {
-                this._rowActions.set(q.id, badge);
-            }
-        }
-    }
-
-    private paintIconWell(g: Graphics, cx: number, cy: number, size: number, done: boolean) {
-        const x0 = cx - size * 0.5;
-        const y0 = cy - size * 0.5;
-        g.fillColor = done ? new Color(120, 140, 80, 255) : WOOD_DARK;
-        g.roundRect(x0, y0, size, size, 12);
-        g.fill();
-        g.fillColor = done ? new Color(200, 214, 150, 255) : new Color(232, 204, 148, 255);
-        g.roundRect(x0 + 4, y0 + 4, size - 8, size - 8, 9);
-        g.fill();
-        g.strokeColor = done ? new Color(70, 110, 50, 255) : STROKE;
-        g.lineWidth = 2;
-        g.roundRect(x0, y0, size, size, 12);
-        g.stroke();
-        if (!done) {
-            g.strokeColor = GOLD;
-            g.lineWidth = 2;
-            g.roundRect(x0 + 3, y0 + 3, size - 6, size - 6, 10);
-            g.stroke();
-        }
-    }
-
-    /** Progress / 完成 / 可领 pill — right rail, vertically centered. */
-    private addProgBadge(
-        row: Node,
-        q: CQuest,
-        cx: number,
-        cy: number,
-        active: boolean,
-        done: boolean,
-    ): Node | null {
-        const claimable = active && !!this.quests?.isAwaitingClaim;
-        let text = '';
-        if (done) text = '完成';
-        else if (claimable) text = '领奖';
-        else if (active && this.quests) {
+        let goal = '目标  —';
+        if (done) goal = '目标  已完成';
+        else if (this.quests) {
             const p = this.quests.progressOf(q);
-            text = `${p.current}/${p.target}`;
+            const obj = this.quests.objectiveLabel(q);
+            goal = obj
+                ? `目标  ${obj}  ${p.current}/${p.target}`
+                : `目标  ${p.current}/${p.target}`;
         }
-        if (!text) return null;
+        this.addRowLine(row, 'Goal', goal, textLeft, y2, bodyW, {
+            size: FONT_DESC,
+            color: mute,
+        });
 
-        const w = QuestPanel.PROG_BADGE_W;
-        const h = QuestPanel.PROG_BADGE_H;
-        const badge = new Node('Prog');
+        const rewardText = this.rewardTextOf(q);
+        this.addRowLine(row, 'Reward', rewardText || '奖励  —', textLeft, y3, bodyW, {
+            size: FONT_DESC,
+            color: done ? new Color(90, 120, 60, 255) : new Color(168, 108, 36, 255),
+        });
+
+        if (claimable) {
+            const actionX = rw * 0.5 - padX - QuestPanel.PROG_BADGE_W * 0.5;
+            const badge = this.addActionBadge(row, actionX, y2, '领奖', true);
+            this._rowActions.set(q.id, badge);
+        }
+    }
+
+    /** Title band + collapsed / expanded description + optional 详情 button. */
+    private layoutDescBlock(
+        row: Node,
+        key: string,
+        fullDesc: string,
+        textLeft: number,
+        bodyW: number,
+        rh: number,
+        color: Color,
+    ): { yTitle: number; y2: number; y3: number } {
+        const expanded = this._descExpanded.has(key);
+        const preview = this.truncateDesc(fullDesc, QuestPanel.DESC_PREVIEW_CHARS);
+        const showBtn = !!fullDesc && (preview.needsMore || expanded);
+        const btnW = showBtn ? QuestPanel.DESC_BADGE_W + 10 : 0;
+        const textW = Math.max(120, bodyW - btnW);
+        const lineH = 34;
+        const bottomPad = 18;
+        const y3 = -rh * 0.5 + bottomPad + 18;
+        const y2 = y3 + 44;
+        const yTitle = rh * 0.5 - 28;
+        const descTop = yTitle - 34;
+        const descBottom = y2 + 28;
+        const descCenterY = (descTop + descBottom) * 0.5;
+        const descText = fullDesc || '—';
+
+        if (expanded && fullDesc) {
+            const descH = Math.max(lineH, descTop - descBottom);
+            this.addRowLine(row, 'Desc', `描述  ${fullDesc}`, textLeft, descCenterY, textW, {
+                size: FONT_BODY,
+                color,
+                wrap: true,
+                height: descH,
+            });
+        } else {
+            const y1 = descTop - 16;
+            this.addRowLine(
+                row,
+                'Desc',
+                `描述  ${fullDesc ? preview.short : descText}`,
+                textLeft,
+                y1,
+                textW,
+                {
+                    size: FONT_BODY,
+                    color,
+                },
+            );
+        }
+
+        if (showBtn) {
+            const btnX = textLeft + textW + QuestPanel.DESC_BADGE_W * 0.5 + 4;
+            const btnY = expanded ? descTop - QuestPanel.DESC_BADGE_H * 0.5 : descTop - 16;
+            const badge = this.addDetailBadge(row, btnX, btnY, expanded ? '收起' : '详情');
+            this._descButtons.set(key, badge);
+        }
+        return { yTitle, y2, y3 };
+    }
+
+    private truncateDesc(text: string, maxChars: number): { short: string; needsMore: boolean } {
+        const t = text.replace(/\s+/g, ' ').trim();
+        if (t.length <= maxChars) return { short: t, needsMore: false };
+        return { short: `${t.slice(0, maxChars)}…`, needsMore: true };
+    }
+
+    private rowHForDesc(fullDesc: string, key: string): number {
+        if (!this._descExpanded.has(key)) return QuestPanel.ROW_H;
+        const rw = this.listW();
+        const padX = QuestPanel.ROW_PAD_X;
+        const textW = Math.max(120, rw - padX * 2 - QuestPanel.DESC_BADGE_W - 10);
+        const charsPerLine = Math.max(8, Math.floor(textW / (FONT_BODY * 0.95)));
+        const lines = Math.max(1, Math.ceil((`描述  ${fullDesc}`.length) / charsPerLine));
+        const descH = lines * 34 + 8;
+        // title + desc + goal + reward
+        return Math.max(QuestPanel.ROW_H, descH + 40 + 44 + 44 + 36);
+    }
+
+    private handleDescDetailTap(lx: number, ly: number): boolean {
+        for (const [key, node] of this._descButtons) {
+            if (!this.hitNodeNested(node, lx, ly)) continue;
+            if (this._descExpanded.has(key)) this._descExpanded.delete(key);
+            else this._descExpanded.add(key);
+            this.refreshPanel();
+            return true;
+        }
+        return false;
+    }
+
+    private addRowLine(
+        row: Node,
+        name: string,
+        text: string,
+        left: number,
+        y: number,
+        w: number,
+        style: { size: number; color: Color; wrap?: boolean; height?: number },
+    ) {
+        const n = new Node(name);
+        n.layer = row.layer;
+        n.setParent(row);
+        n.setPosition(left, y, 0);
+        const ut = n.addComponent(UITransform);
+        const h = style.height ?? 36;
+        ut.setContentSize(w, h);
+        ut.setAnchorPoint(0, 0.5);
+        const lab = n.addComponent(Label);
+        lab.string = text;
+        // CLAMP + wrap keeps multi-line text inside the card; RESIZE_HEIGHT can blow past the plate.
+        lab.overflow = Label.Overflow.CLAMP;
+        lab.enableWrapText = !!style.wrap;
+        lab.horizontalAlign = Label.HorizontalAlign.LEFT;
+        lab.verticalAlign = style.wrap ? Label.VerticalAlign.TOP : Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, { size: style.size, color: style.color, outline: false });
+        applyUiFont(lab);
+        return lab;
+    }
+
+    private addDetailBadge(row: Node, cx: number, cy: number, text: string): Node {
+        const w = QuestPanel.DESC_BADGE_W;
+        const h = QuestPanel.DESC_BADGE_H;
+        const badge = new Node('DescDetail');
         badge.layer = row.layer;
         badge.setParent(row);
         badge.setPosition(cx, cy, 0);
@@ -1022,7 +1355,42 @@ export class QuestPanel extends Component {
         const bg = badge.addComponent(Graphics);
         const x0 = -w * 0.5;
         const y0 = -h * 0.5;
-        if (done || claimable) {
+        bg.fillColor = WOOD_DARK;
+        bg.roundRect(x0, y0, w, h, 10);
+        bg.fill();
+        bg.fillColor = PARCHMENT;
+        bg.roundRect(x0 + 2, y0 + 2, w - 4, h - 4, 8);
+        bg.fill();
+        bg.strokeColor = STROKE;
+        bg.lineWidth = 2;
+        bg.roundRect(x0, y0, w, h, 10);
+        bg.stroke();
+
+        const labN = new Node('Lab');
+        labN.layer = row.layer;
+        labN.setParent(badge);
+        labN.addComponent(UITransform).setContentSize(w, h);
+        const lab = labN.addComponent(Label);
+        lab.string = text;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, { size: FONT_DESC, color: INK, outline: false });
+        applyUiFont(lab);
+        return badge;
+    }
+
+    private addActionBadge(row: Node, cx: number, cy: number, text: string, lit: boolean): Node {
+        const w = QuestPanel.PROG_BADGE_W;
+        const h = QuestPanel.PROG_BADGE_H;
+        const badge = new Node('Action');
+        badge.layer = row.layer;
+        badge.setParent(row);
+        badge.setPosition(cx, cy, 0);
+        badge.addComponent(UITransform).setContentSize(w, h);
+        const bg = badge.addComponent(Graphics);
+        const x0 = -w * 0.5;
+        const y0 = -h * 0.5;
+        if (lit) {
             bg.fillColor = new Color(86, 140, 54, 255);
             bg.roundRect(x0, y0, w, h, 12);
             bg.fill();
@@ -1049,16 +1417,15 @@ export class QuestPanel extends Component {
         const labN = new Node('Lab');
         labN.layer = row.layer;
         labN.setParent(badge);
-        labN.setPosition(0, 0, 0);
         labN.addComponent(UITransform).setContentSize(w, h);
         const lab = labN.addComponent(Label);
         lab.string = text;
         lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(lab, {
-            size: claimable ? FONT_BODY : FONT_DESC,
-            color: done || claimable ? new Color(255, 252, 230, 255) : INK,
-            outline: done || claimable,
+            size: FONT_BODY,
+            color: lit ? new Color(255, 252, 230, 255) : INK,
+            outline: lit,
             outlineWidth: 3,
             outlineColor: new Color(40, 24, 12, 220),
         });
@@ -1066,99 +1433,13 @@ export class QuestPanel extends Component {
         return badge;
     }
 
-    /**
-     * Reward line — no chip plate:
-     *   奖励  🪙 ×20  [item] ×1
-     * Caption + gold-tinted ×count make it read as a prize, not body copy.
-     */
-    private addRewardChips(row: Node, q: CQuest, left: number, cy: number, muted: boolean) {
-        const rewards = this.listRewards(q);
-        if (rewards.length <= 0) return;
-
-        const iconS = QuestPanel.REWARD_ICON;
-        const gapIcon = 6;
-        const numW = 110;
-        const itemGap = 18;
-        const itemH = Math.max(iconS, 34);
-        const captionW = 72;
-        const captionColor = muted ? new Color(90, 120, 60, 255) : new Color(168, 108, 36, 255);
-        const numColor = muted ? new Color(70, 110, 50, 255) : new Color(176, 96, 24, 255);
-
-        let x = left;
-
-        const capN = new Node('RewardCap');
-        capN.layer = row.layer;
-        capN.setParent(row);
-        capN.setPosition(x, cy, 0);
-        const capUt = capN.addComponent(UITransform);
-        capUt.setContentSize(captionW, itemH);
-        capUt.setAnchorPoint(0, 0.5);
-        const cap = capN.addComponent(Label);
-        cap.string = '奖励';
-        cap.horizontalAlign = Label.HorizontalAlign.LEFT;
-        cap.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(cap, { size: FONT_DESC, color: captionColor, outline: false });
-        applyUiFont(cap);
-        x += captionW;
-
-        for (const r of rewards) {
-            const itemW = (r.uuid ? iconS + gapIcon : 0) + numW;
-            const chip = new Node('Reward');
-            chip.layer = row.layer;
-            chip.setParent(row);
-            chip.setPosition(x, cy, 0);
-            const cut = chip.addComponent(UITransform);
-            cut.setContentSize(itemW, itemH);
-            cut.setAnchorPoint(0, 0.5);
-
-            let numX = 0;
-            if (r.uuid) {
-                const iconN = new Node('Icon');
-                iconN.layer = row.layer;
-                iconN.setParent(chip);
-                iconN.setPosition(iconS * 0.5, 0, 0);
-                iconN.addComponent(UITransform).setContentSize(iconS, iconS);
-                const isp = iconN.addComponent(Sprite);
-                isp.sizeMode = Sprite.SizeMode.CUSTOM;
-                isp.trim = false;
-                if (muted) isp.color = new Color(210, 210, 210, 230);
-                this.loadIcon(r.uuid, isp);
-                numX = iconS + gapIcon;
-            }
-
-            const labN = new Node('Num');
-            labN.layer = row.layer;
-            labN.setParent(chip);
-            labN.setPosition(numX, 0, 0);
-            const lut = labN.addComponent(UITransform);
-            lut.setContentSize(numW, itemH);
-            lut.setAnchorPoint(0, 0.5);
-            const lab = labN.addComponent(Label);
-            lab.string = r.label;
-            lab.horizontalAlign = Label.HorizontalAlign.LEFT;
-            lab.verticalAlign = Label.VerticalAlign.CENTER;
-            styleUiLabel(lab, { size: FONT_BODY, color: numColor, outline: false });
-            applyUiFont(lab);
-
-            x += itemW + itemGap;
-        }
-    }
-
-    private listRewards(q: CQuest): { uuid: string | null; label: string }[] {
-        const out: { uuid: string | null; label: string }[] = [];
-        if (q.rewardGold > 0) {
-            out.push({
-                uuid: this.rewardIconUuid('gold'),
-                label: `金币 x ${q.rewardGold}`,
-            });
-        }
+    private rewardTextOf(q: CQuest): string {
+        const parts: string[] = [];
+        if (q.rewardGold > 0) parts.push(`金币 x ${q.rewardGold}`);
         if (q.rewardItem && q.rewardCount > 0) {
-            out.push({
-                uuid: this.rewardIconUuid(q.rewardItem),
-                label: `${this.rewardItemName(q.rewardItem)} x ${q.rewardCount}`,
-            });
+            parts.push(`${this.rewardItemName(q.rewardItem)} x ${q.rewardCount}`);
         }
-        return out;
+        return parts.length > 0 ? `奖励  ${parts.join('　')}` : '';
     }
 
     private rewardItemName(kind: string): string {
@@ -1182,34 +1463,6 @@ export class QuestPanel extends Component {
             parsnip: '防风草',
         };
         return map[k] ?? kind;
-    }
-
-    /**
-     * Resolve a reward chip icon. Prefer REWARD_FRAMES (dedicated AI icons),
-     * then material / tool frames. Add new kinds in reward-frames.json.
-     */
-    private rewardIconUuid(kind: string): string | null {
-        const k = (kind || '').toLowerCase().replace(/[\s-]+/g, '_');
-        if (!k) return null;
-
-        const reward = REWARD_FRAMES as Record<string, string | undefined>;
-        if (reward[k]) return reward[k] ?? null;
-
-        if (k === 'gold' || k === 'coin' || k === 'money') {
-            return REWARD_FRAMES.gold ?? MATERIAL_FRAMES.gold ?? null;
-        }
-        if (k === 'seeds' || k.includes('seed')) return TOOL_FRAMES.seeds ?? null;
-        if (k === 'boost') return TOOL_FRAMES.boost ?? null;
-        if (k === 'grass') return MATERIAL_FRAMES.grass ?? null;
-        if (k === 'wood') return MATERIAL_FRAMES.wood ?? null;
-        if (k === 'dirt') return MATERIAL_FRAMES.dirt ?? null;
-        if (k === 'stone') return MATERIAL_FRAMES.stone ?? null;
-        if (k === 'fish') return MATERIAL_FRAMES.fish ?? null;
-        if (k === 'copper') return MATERIAL_FRAMES.copper ?? null;
-        if (k === 'iron') return MATERIAL_FRAMES.iron ?? null;
-        if (k === 'goldore' || k === 'gold_ore') return MATERIAL_FRAMES.goldOre ?? null;
-        if (k === 'parsnip') return MATERIAL_FRAMES.parsnip ?? null;
-        return null;
     }
 
     private openRewardPopup() {
@@ -1305,17 +1558,30 @@ export class QuestPanel extends Component {
     }
 
     private setHudVisible(visible: boolean) {
+        // Journal modal hides the claim chip; when restoring, only if awaiting claim.
+        const show =
+            visible &&
+            (this.quests?.isQuestHudUnlocked() ?? true) &&
+            !!this.quests?.isAwaitingClaim;
         const dock = this.node.getChildByName('QuestHud');
-        if (dock) dock.active = visible;
-        else {
-            if (this._questBtn) this._questBtn.active = visible;
-            if (this._tracker) this._tracker.active = visible;
-        }
+        if (dock) dock.active = show;
+        else if (this._tracker) this._tracker.active = show;
         // Action cue sits under the panel in Y but often above it in sibling order.
         const hint = this.node.getChildByName('FarmActionHint');
         if (hint) hint.active = visible;
     }
 
+    /** Claim chip only when mainline objective is done and unlocked. */
+    private syncQuestHudVisibility() {
+        if (this._open) return;
+        const show =
+            (this.quests?.isQuestHudUnlocked() ?? true) && !!this.quests?.isAwaitingClaim;
+        const dock = this.node.getChildByName('QuestHud');
+        if (dock) dock.active = show;
+        else if (this._tracker) this._tracker.active = show;
+    }
+
+    /** Quick-claim bar above the hotbar — no journal badge (that sits beside the bag). */
     private buildTracker() {
         const canvas = this.node;
         for (const name of ['QuestHud', 'QuestTracker', 'QuestBtn']) {
@@ -1323,55 +1589,20 @@ export class QuestPanel extends Component {
             if (old) old.destroy();
         }
 
-        const btnSize = QuestPanel.HUD_BTN;
         const edgePad = 16;
-        const gap = 14;
         const tw = 420;
         const th = 120;
-        // Sit fully above the hotbar (bag badge can sit on the dock; this chip cannot).
         const hotbarTop = QuestPanel.HUD_BAR_Y + QuestPanel.HUD_BAR_H * 0.5;
-        const dockH = Math.max(btnSize, th);
-        const dockY = hotbarTop + QuestPanel.HUD_CLEARANCE + dockH * 0.5;
+        const dockY = hotbarTop + QuestPanel.HUD_CLEARANCE + th * 0.5;
         const barHalf = QuestPanel.HUD_BAR_W * 0.5;
-        const btnX = -barHalf + btnSize * 0.5 + edgePad;
-        const barX = btnX + btnSize * 0.5 + gap + tw * 0.5;
+        const barX = -barHalf + tw * 0.5 + edgePad;
 
-        // Parent dock so z-order stays together above world, below modal panels.
         const dock = new Node('QuestHud');
         dock.layer = canvas.layer;
         dock.setParent(canvas);
         dock.setPosition(0, 0, 0);
         dock.addComponent(UITransform).setContentSize(1, 1);
 
-        // --- Quest badge: same 120px footprint as bag button ---
-        const btn = new Node('QuestBtn');
-        btn.layer = canvas.layer;
-        btn.setParent(dock);
-        btn.setPosition(btnX, dockY, 0);
-        btn.addComponent(UITransform).setContentSize(btnSize, btnSize);
-
-        const face = new Node('Face');
-        face.layer = canvas.layer;
-        face.setParent(btn);
-        face.setPosition(0, 0, 0);
-        const faceUt = face.addComponent(UITransform);
-        faceUt.setContentSize(btnSize, btnSize);
-        const sf = this._frames.get('questBtn');
-        if (sf) {
-            const sp = face.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.type = Sprite.Type.SIMPLE;
-            sp.spriteFrame = sf;
-            faceUt.setContentSize(btnSize, btnSize);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        } else {
-            // Visible fallback so a missing frame never "hides" the badge.
-            const g = face.addComponent(Graphics);
-            this.paintQuestBadgeFallback(g, btnSize);
-        }
-        this._questBtn = btn;
-
-        // --- Tracker chip beside the badge ---
         const bar = new Node('QuestTracker');
         bar.layer = canvas.layer;
         bar.setParent(dock);
@@ -1403,8 +1634,6 @@ export class QuestPanel extends Component {
         const textRight = -x0 - 24;
         const objW = tw - 48 - 110;
         const countW = 100;
-
-        // Title left; objective left + progress right on the second row.
         const titleY = 18;
         const rowY = -22;
 
@@ -1458,82 +1687,14 @@ export class QuestPanel extends Component {
         applyUiFont(prog);
         applyUiFont(count);
 
-        // Above hotbar / world chrome so the full 120px badge stays visible.
         dock.setSiblingIndex(canvas.children.length - 1);
-    }
-
-    private paintQuestBadgeFallback(g: Graphics, size: number) {
-        const half = size * 0.5;
-        g.clear();
-        g.fillColor = new Color(217, 155, 62, 255);
-        g.roundRect(-half, -half, size, size, 22);
-        g.fill();
-        g.fillColor = new Color(116, 71, 20, 255);
-        g.roundRect(-half + 16, -half + 16, size - 32, size - 32, 16);
-        g.fill();
-        g.fillColor = new Color(245, 228, 186, 255);
-        g.roundRect(-18, -28, 36, 56, 6);
-        g.fill();
-        g.fillColor = new Color(120, 62, 28, 255);
-        g.rect(-20, -4, 40, 10);
-        g.fill();
-        g.fillColor = new Color(90, 150, 60, 255);
-        g.circle(16, 12, 6);
-        g.fill();
-        g.strokeColor = new Color(28, 20, 14, 255);
-        g.lineWidth = 4;
-        g.roundRect(-half, -half, size, size, 22);
-        g.stroke();
-    }
-
-    private iconUuidFor(q: CQuest): string | null {
-        const p = (q.param || '').toLowerCase();
-        if (p === 'grass' || q.id === 1001) return MATERIAL_FRAMES.grass ?? null;
-        if (p === 'wood') return MATERIAL_FRAMES.wood ?? null;
-        if (p === 'dirt') return MATERIAL_FRAMES.dirt ?? null;
-        if (p === 'stone') return MATERIAL_FRAMES.stone ?? null;
-        if (p === 'fish' || q.id === 1007) return MATERIAL_FRAMES.fish ?? null;
-        if (p.includes('seed') || q.id === 1003 || q.id === 1004) return TOOL_FRAMES.seeds ?? null;
-        if (q.id === 1002) return TOOL_FRAMES.hoe ?? null;
-        if (q.id === 1005) return TOOL_FRAMES.can ?? null;
-        if (q.id === 1006) return TOOL_FRAMES.boost ?? TOOL_FRAMES.hand ?? null;
-        return null;
-    }
-
-    private loadIcon(uuid: string, sp: Sprite) {
-        const cached = this._iconCache.get(uuid);
-        if (cached) {
-            sp.spriteFrame = cached;
-            return;
-        }
-        assetManager.loadAny({ uuid }, (err, asset) => {
-            if (err || !asset || !sp.isValid) return;
-            const sf = asset as SpriteFrame;
-            this._iconCache.set(uuid, sf);
-            sp.spriteFrame = sf;
-        });
-    }
-
-    private paintBar(g: Graphics | null, ratio: number, w: number, h: number) {
-        if (!g?.isValid) return;
-        g.clear();
-        const x0 = -w * 0.5;
-        const y0 = -h * 0.5;
-        g.fillColor = new Color(70, 48, 28, 200);
-        g.roundRect(x0, y0, w, h, h * 0.45);
-        g.fill();
-        const fillW = Math.max(0, Math.min(1, ratio)) * (w - 4);
-        if (fillW > 1) {
-            g.fillColor = new Color(110, 180, 70, 255);
-            g.roundRect(x0 + 2, y0 + 2, fillW, h - 4, (h - 4) * 0.45);
-            g.fill();
-        }
+        this.syncQuestHudVisibility();
     }
 
     private hitHud(uiX: number, uiY: number): boolean {
         const dock = this.node.getChildByName('QuestHud');
         if (dock && !dock.active) return false;
-        return this.hitNodeLocal(this._questBtn, uiX, uiY) || this.hitNodeLocal(this._tracker, uiX, uiY);
+        return this.hitNodeLocal(this._tracker, uiX, uiY);
     }
 
     private hitNodeLocal(node: Node | null, uiX: number, uiY: number): boolean {
@@ -1541,7 +1702,7 @@ export class QuestPanel extends Component {
         const local = this.uiToCanvasLocal(uiX, uiY);
         const ui = node.getComponent(UITransform);
         if (!ui) return false;
-        // QuestBtn/Tracker are parented under QuestHud at (0,0) — world = local pos.
+        // Tracker is parented under QuestHud at (0,0) — world = local pos.
         const p = node.position;
         const hw = ui.contentSize.width * 0.5;
         const hh = ui.contentSize.height * 0.5;

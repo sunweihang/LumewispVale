@@ -59,6 +59,8 @@ export class FarmInfoBoard extends Component {
     needle: Node | null = null;
 
     private _toastHideAt = 0;
+    /** Pending toasts while one is on screen (recipe unlocks, claim hints…). */
+    private _toastQueue: string[] = [];
     private _day = 2;
     private _season = 0;
     private _weekday = 2;
@@ -110,10 +112,10 @@ export class FarmInfoBoard extends Component {
         }
         if (this.toastLab) {
             styleUiLabel(this.toastLab, {
-                size: this.toastLab.fontSize || 28,
+                size: 44,
                 color: new Color(255, 244, 214, 255),
                 outline: true,
-                outlineWidth: 4,
+                outlineWidth: 6,
             });
             this.toastLab.node.active = false;
         }
@@ -142,8 +144,12 @@ export class FarmInfoBoard extends Component {
                 this.advanceMinute();
             }
         }
-        if (this.toastLab?.node.active && this._toastHideAt > 0 && Date.now() >= this._toastHideAt) {
-            this.toastLab.node.active = false;
+        if (this.toastLab?.node.active) {
+            // Stay above TutorialGuide arrow / other canvas chrome while visible.
+            this.pinToastFront();
+            if (this._toastHideAt > 0 && Date.now() >= this._toastHideAt) {
+                this.toastLab.node.active = false;
+            }
         }
     }
 
@@ -373,9 +379,44 @@ export class FarmInfoBoard extends Component {
         return this.goldLab?.node.parent ?? this.node.getChildByName('Gold');
     }
 
-    /** Mid-screen toast retired — bottom FarmActionHint / guide already cover tips. */
-    showToast(_msg: string) {
-        if (this.toastLab) this.toastLab.node.active = false;
+    /** Upper-screen toast (quest progress, claim hints, GM) — above guide/world. */
+    showToast(msg: string) {
+        if (!this.toastLab || !msg) return;
+        const toast = this.toastLab.node;
+        // Reparent to Canvas so we can sit above TutorialGuideRoot / characters.
+        const canvas = this.node.parent;
+        if (canvas?.isValid && toast.parent !== canvas) {
+            toast.setParent(canvas, false);
+        }
+        styleUiLabel(this.toastLab, {
+            size: 44,
+            color: new Color(255, 244, 214, 255),
+            outline: true,
+            outlineWidth: 6,
+        });
+        this.toastLab.overflow = Label.Overflow.SHRINK;
+        this.toastLab.string = msg;
+        const { halfW, halfH } = this.canvasHalf();
+        // Upper band (~78% up) — clear of hotbar / character / guide arrow.
+        const uiY = halfH * 2 * 0.78;
+        if (toast.parent === canvas) {
+            toast.setPosition(0, uiY - halfH, 0);
+        } else {
+            const local = this.uiToLocal(halfW, uiY);
+            if (local) toast.setPosition(local.x, local.y, 0);
+        }
+        const ut = toast.getComponent(UITransform);
+        if (ut) ut.setContentSize(Math.min(720, halfW * 1.7), 56);
+        this.pinToastFront();
+        toast.active = true;
+        this._toastHideAt = Date.now() + 1800;
+    }
+
+    private pinToastFront() {
+        const toast = this.toastLab?.node;
+        const parent = toast?.parent;
+        if (!toast?.isValid || !parent?.isValid) return;
+        toast.setSiblingIndex(parent.children.length - 1);
     }
 
     private canvasHalf(): { halfW: number; halfH: number } {

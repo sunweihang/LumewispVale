@@ -16739,7 +16739,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "exit_floor_glow",
+    "_name": "door_portal_beam",
     "_objFlags": 0,
     "_parent": {
       "__id__": 11
@@ -16758,7 +16758,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0.0,
-      "y": -260,
+      "y": -278,
       "z": 0
     },
     "_lrot": {
@@ -16794,13 +16794,13 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 112,
-      "height": 64
+      "width": 80,
+      "height": 144
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 0.5
+      "y": 0.0
     },
     "_id": "uMayor_477"
   },
@@ -16824,7 +16824,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "a1e0fe5b-8bc4-4fc5-adfe-0e621206059e@f9941",
+      "__uuid__": "646bfc2e-e2a7-49b4-a483-28910cd64d3c@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,

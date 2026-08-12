@@ -11,6 +11,10 @@
     "gen:config": "bash tools/luban/gen.sh",
     "gen:quest-prefab": "python3 tools/ui/generate_quest_panel_prefab.py",
     "gen:uuid-deps": "python tools/ui/generate_uuid_build_deps.py",
-    "optimize:webmobile": "python tools/optimize_webmobile.py"
+    "optimize:webmobile": "python tools/optimize_webmobile.py",
+    "dialogue:status": "python3 tools/dialogue/dialogue_cli.py status",
+    "dialogue:apply": "python3 tools/dialogue/dialogue_cli.py apply",
+    "dialogue:verify": "python3 tools/dialogue/dialogue_cli.py verify",
+    "dialogue:template": "python3 tools/dialogue/dialogue_cli.py template"
   }
 }

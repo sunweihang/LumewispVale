@@ -1,0 +1,7 @@
+{
+  "storyId": 10022,
+  "name": "第一章信件",
+  "description": "scriptId=ch1_done; Lock→StartChat(10022)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

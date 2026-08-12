@@ -1894,6 +1894,21 @@
         "parsnip",
         "ai"
       ]
+    },
+    {
+      "id": "ic-recipe",
+      "kind": "icon",
+      "group": "tool",
+      "path": "assets/textures/ui/ic-recipe.png",
+      "spriteFrame": "7918e9f4-330e-4a06-95ba-e98a74906d3f@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "recipe",
+        "scroll"
+      ]
     }
   ],
   "assets": [

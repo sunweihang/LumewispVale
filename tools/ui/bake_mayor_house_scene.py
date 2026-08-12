@@ -269,9 +269,12 @@ class MayorHouseBake:
         if self.sf("prop-barrel"):
             self._prop("barrel", 3.5 * TILE, 0.5 * TILE, "prop_barrel_corner")
 
-        # South exit: subtle floor sheen only (walk-in auto-travel via door_exit).
+        # South exit: portal marker (tap door_exit to leave).
         exit_y = ROOM_BOTTOM + 8
-        if self.sf("prop-exit-floor-glow"):
+        portal_sf = self.sf("prop-door-portal") or self.sf("prop-door-portal-beam")
+        if portal_sf:
+            self.add_actor("door_portal_beam", portal_sf, 0.0, exit_y + 2, 80, 144, 0.0)
+        elif self.sf("prop-exit-floor-glow"):
             self.add_actor(
                 "exit_floor_glow",
                 self.sf("prop-exit-floor-glow"),

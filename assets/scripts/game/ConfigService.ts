@@ -7,6 +7,10 @@ const TABLE_FILES = [
     'tcraftcost',
     'tquest',
     'tgoto',
+    'tflag',
+    'titem',
+    'tdialogue',
+    'tchat',
 ] as const;
 
 let _tables: Tables | null = null;

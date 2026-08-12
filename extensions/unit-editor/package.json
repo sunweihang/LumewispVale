@@ -1,0 +1,137 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "unit-editor",
+  "description": "单位管理器（对齐 GameAsset）：接入 Game编辑器宿主，与战斗管理器同级分组",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "create": {
+      "title": "创建单位",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 380
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "open-host": {
+        "methods": [
+          "openHost"
+        ]
+      },
+      "browse-units": {
+        "methods": [
+          "browseUnits"
+        ]
+      },
+      "create-unit": {
+        "methods": [
+          "createUnit"
+        ]
+      },
+      "create-unit-api": {
+        "public": true,
+        "methods": [
+          "createUnitApi"
+        ]
+      },
+      "delete-unit": {
+        "public": true,
+        "description": "删除单位配置目录 { unitId }",
+        "methods": [
+          "deleteUnit"
+        ]
+      },
+      "locate-unit": {
+        "public": true,
+        "description": "在资源管理器定位单位 Prefab { unitId }",
+        "methods": [
+          "locateUnit"
+        ]
+      },
+      "open-unit": {
+        "public": true,
+        "description": "打开单位 Prefab { unitId }",
+        "methods": [
+          "openUnit"
+        ]
+      },
+      "list-units": {
+        "public": true,
+        "methods": [
+          "listUnits"
+        ]
+      },
+      "list-unit-categories": {
+        "public": true,
+        "methods": [
+          "listUnitCategories"
+        ]
+      },
+      "open-unit-category": {
+        "public": true,
+        "methods": [
+          "openUnitCategory"
+        ]
+      },
+      "validate-unit": {
+        "public": true,
+        "description": "校验单个单位挂点 { unitId }",
+        "methods": [
+          "validateUnit"
+        ]
+      },
+      "validate-unit-graph": {
+        "methods": [
+          "validateUnitGraph"
+        ]
+      },
+      "scan-unit-mounts": {
+        "public": true,
+        "description": "自动扫描并写入挂点（Prefab）{ unitId }",
+        "methods": [
+          "scanUnitMounts"
+        ]
+      },
+      "scan-unit-mounts-batch": {
+        "public": true,
+        "methods": [
+          "scanUnitMountsBatch"
+        ]
+      },
+      "save-unit-collision": {
+        "public": true,
+        "description": "将 Prefab 上 UnitCollisionVolume 写回 index.json { unitId }",
+        "methods": [
+          "saveUnitCollision"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 Game编辑器宿主发现：单位管理器分组（与战斗管理器同级）",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      }
+    },
+    "scene": {
+      "script": "./dist/scene.js"
+    }
+  }
+}

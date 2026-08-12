@@ -1,0 +1,150 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "node-graph",
+  "description": "通用节点图编辑引擎（供技能等业务扩展复用）",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "default": {
+      "title": "节点图",
+      "type": "dockable",
+      "main": "./dist/panels/default.js",
+      "size": {
+        "min-width": 720,
+        "min-height": 480,
+        "width": 1100,
+        "height": 720
+      }
+    }
+  },
+  "contributions": {
+    "messages": {
+      "open-panel": {
+        "methods": [
+          "openPanel"
+        ]
+      },
+      "open-sandbox": {
+        "methods": [
+          "openSandbox"
+        ]
+      },
+      "open-graph": {
+        "public": true,
+        "description": "打开图：{ path?, graph?, profile? }",
+        "methods": [
+          "openGraph"
+        ]
+      },
+      "register-nodes": {
+        "public": true,
+        "description": "注册节点定义数组",
+        "methods": [
+          "registerNodes"
+        ]
+      },
+      "register-port-types": {
+        "public": true,
+        "description": "注册端口类型",
+        "methods": [
+          "registerPortTypes"
+        ]
+      },
+      "unregister-nodes": {
+        "public": true,
+        "description": "按 typeName 卸载节点",
+        "methods": [
+          "unregisterNodes"
+        ]
+      },
+      "get-graph": {
+        "public": true,
+        "description": "获取当前图 JSON",
+        "methods": [
+          "getGraph"
+        ]
+      },
+      "set-graph": {
+        "public": true,
+        "description": "替换当前图内容",
+        "methods": [
+          "setGraph"
+        ]
+      },
+      "save-graph": {
+        "public": true,
+        "description": "保存当前图到 path",
+        "methods": [
+          "saveGraph"
+        ]
+      },
+      "query-node-defs": {
+        "public": true,
+        "description": "查询已注册节点定义",
+        "methods": [
+          "queryNodeDefs"
+        ]
+      },
+      "query-port-types": {
+        "public": true,
+        "description": "查询已注册端口类型",
+        "methods": [
+          "queryPortTypes"
+        ]
+      },
+      "panel-ready": {
+        "methods": [
+          "onPanelReady"
+        ]
+      },
+      "panel-closed": {
+        "methods": [
+          "onPanelClosed"
+        ]
+      },
+      "node-graph:graph-changed": {
+        "public": true,
+        "description": "图被编辑（broadcast）"
+      },
+      "node-graph:graph-saved": {
+        "public": true,
+        "description": "图已保存（broadcast）"
+      },
+      "load-into-panel": {
+        "methods": [
+          "default.loadIntoPanel"
+        ]
+      },
+      "panel-get-graph": {
+        "methods": [
+          "default.panelGetGraph"
+        ]
+      },
+      "panel-set-graph": {
+        "methods": [
+          "default.panelSetGraph"
+        ]
+      },
+      "panel-save-graph": {
+        "methods": [
+          "default.panelSaveGraph"
+        ]
+      },
+      "panel-refresh-registry": {
+        "methods": [
+          "default.panelRefreshRegistry"
+        ]
+      }
+    }
+  }
+}

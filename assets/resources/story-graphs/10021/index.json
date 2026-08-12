@@ -1,0 +1,7 @@
+{
+  "storyId": 10021,
+  "name": "社区钟楼",
+  "description": "scriptId=community_bell; Lock→StartChat(10021)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

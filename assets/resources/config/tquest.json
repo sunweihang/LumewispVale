@@ -2,30 +2,74 @@
   {
     "id": 1001,
     "name": "清理院子",
-    "desc": "用手拔除院子里的杂草，收集草料。",
+    "desc": "用手拔除院子里的杂草，多收集一些草料。",
     "condition_id": 1,
     "param": "grass",
-    "num": 3,
+    "num": 8,
     "goto_id": 9,
     "reward_gold": 20,
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1002,
-    "sort": 10
+    "sort": 10,
+    "intro_script": "",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1002,
     "name": "开垦田地",
-    "desc": "选中锄头，把一块荒地开垦成可播种的田。",
+    "desc": "把锄头拖进快捷栏，多翻几块荒地，攒点泥土。",
     "condition_id": 2,
     "param": "",
-    "num": 1,
+    "num": 3,
     "goto_id": 2,
-    "reward_gold": 20,
+    "reward_gold": 25,
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1003,
-    "sort": 20
+    "sort": 20,
+    "intro_script": "quest_1002",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
+  },
+  {
+    "id": 1030,
+    "name": "采集石料",
+    "desc": "打开背包把锄头拖到快捷栏，挖开院子里的石子与岩石。",
+    "condition_id": 1,
+    "param": "stone",
+    "num": 4,
+    "goto_id": 26,
+    "reward_gold": 25,
+    "reward_item": "",
+    "reward_count": 0,
+    "next_id": 1031,
+    "sort": 30,
+    "intro_script": "quest_1030",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
+  },
+  {
+    "id": 1031,
+    "name": "打造水壶",
+    "desc": "走到工作台，用石料与泥土制作水壶。",
+    "condition_id": 3,
+    "param": "can_basic",
+    "num": 1,
+    "goto_id": 11,
+    "reward_gold": 30,
+    "reward_item": "",
+    "reward_count": 0,
+    "next_id": 1005,
+    "sort": 35,
+    "intro_script": "quest_1031",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1003,
@@ -37,37 +81,49 @@
     "goto_id": 11,
     "reward_gold": 30,
     "reward_item": "seeds",
-    "reward_count": 1,
+    "reward_count": 2,
     "next_id": 1004,
-    "sort": 30
+    "sort": 25,
+    "intro_script": "quest_1003",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1004,
     "name": "播种希望",
-    "desc": "选中种子，在翻好的田地上播种。",
+    "desc": "打开背包把种子拖到快捷栏，在翻好的田地上多种几棵。",
     "condition_id": 4,
     "param": "",
-    "num": 1,
+    "num": 2,
     "goto_id": 3,
-    "reward_gold": 20,
+    "reward_gold": 25,
     "reward_item": "",
     "reward_count": 0,
-    "next_id": 1005,
-    "sort": 40
+    "next_id": 1030,
+    "sort": 28,
+    "intro_script": "quest_1004",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1005,
     "name": "浇灌作物",
-    "desc": "选中水壶，给刚种下的作物浇水。完成后获得催熟剂。",
+    "desc": "打开背包把水壶拖到快捷栏，给种下的作物浇水。完成后获得催熟剂。",
     "condition_id": 5,
     "param": "",
-    "num": 1,
+    "num": 2,
     "goto_id": 4,
-    "reward_gold": 20,
+    "reward_gold": 25,
     "reward_item": "boost",
-    "reward_count": 1,
+    "reward_count": 2,
     "next_id": 1006,
-    "sort": 50
+    "sort": 50,
+    "intro_script": "quest_1005",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1006,
@@ -75,18 +131,76 @@
     "desc": "把催熟剂拖到快捷栏，点作物催熟，再空手收获。",
     "condition_id": 6,
     "param": "",
-    "num": 1,
+    "num": 2,
     "goto_id": 5,
     "reward_gold": 40,
     "reward_item": "parsnip",
     "reward_count": 1,
+    "next_id": 1032,
+    "sort": 60,
+    "intro_script": "quest_1006",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
+  },
+  {
+    "id": 1032,
+    "name": "打造斧头",
+    "desc": "走到工作台，用石料与草料制作斧头。",
+    "condition_id": 3,
+    "param": "axe_basic",
+    "num": 1,
+    "goto_id": 11,
+    "reward_gold": 35,
+    "reward_item": "",
+    "reward_count": 0,
+    "next_id": 1033,
+    "sort": 65,
+    "intro_script": "quest_1032",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
+  },
+  {
+    "id": 1033,
+    "name": "伐木练手",
+    "desc": "打开背包把斧头拖到快捷栏，砍伐松树或橡树，收集木料。",
+    "condition_id": 1,
+    "param": "wood",
+    "num": 6,
+    "goto_id": 27,
+    "reward_gold": 40,
+    "reward_item": "",
+    "reward_count": 0,
+    "next_id": 1034,
+    "sort": 68,
+    "intro_script": "quest_1033",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
+  },
+  {
+    "id": 1034,
+    "name": "编织鱼竿",
+    "desc": "走到工作台，用木料与草料制作鱼竿。",
+    "condition_id": 3,
+    "param": "rod_basic",
+    "num": 1,
+    "goto_id": 11,
+    "reward_gold": 35,
+    "reward_item": "",
+    "reward_count": 0,
     "next_id": 1007,
-    "sort": 60
+    "sort": 69,
+    "intro_script": "quest_1034",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   },
   {
     "id": 1007,
     "name": "湖边垂钓",
-    "desc": "先选鱼竿，跟着箭头走到西边码头，点击湖面抛竿钓一条鱼。",
+    "desc": "打开背包把鱼竿拖到快捷栏，跟着箭头走到西边码头抛竿钓一条鱼。",
     "condition_id": 7,
     "param": "",
     "num": 1,
@@ -95,7 +209,11 @@
     "reward_item": "fish",
     "reward_count": 1,
     "next_id": 1009,
-    "sort": 70
+    "sort": 70,
+    "intro_script": "quest_1007",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": "town"
   },
   {
     "id": 1009,
@@ -109,7 +227,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1010,
-    "sort": 90
+    "sort": 90,
+    "intro_script": "quest_1009",
+    "outro_script": "",
+    "chapter": "town",
+    "unlock_map": "town"
   },
   {
     "id": 1010,
@@ -123,7 +245,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1011,
-    "sort": 100
+    "sort": 100,
+    "intro_script": "",
+    "outro_script": "",
+    "chapter": "town",
+    "unlock_map": "town"
   },
   {
     "id": 1011,
@@ -137,7 +263,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1012,
-    "sort": 110
+    "sort": 110,
+    "intro_script": "quest_1011",
+    "outro_script": "",
+    "chapter": "town",
+    "unlock_map": "town"
   },
   {
     "id": 1012,
@@ -151,7 +281,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1013,
-    "sort": 120
+    "sort": 120,
+    "intro_script": "quest_1012",
+    "outro_script": "",
+    "chapter": "town",
+    "unlock_map": "town"
   },
   {
     "id": 1013,
@@ -165,7 +299,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1020,
-    "sort": 130
+    "sort": 130,
+    "intro_script": "quest_1013",
+    "outro_script": "ch1_done",
+    "chapter": "town",
+    "unlock_map": "town"
   },
   {
     "id": 1020,
@@ -179,7 +317,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1021,
-    "sort": 140
+    "sort": 140,
+    "intro_script": "quest_1020",
+    "outro_script": "",
+    "chapter": "market",
+    "unlock_map": "town"
   },
   {
     "id": 1021,
@@ -193,7 +335,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1022,
-    "sort": 150
+    "sort": 150,
+    "intro_script": "quest_1021",
+    "outro_script": "",
+    "chapter": "market",
+    "unlock_map": "town"
   },
   {
     "id": 1022,
@@ -207,7 +353,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1023,
-    "sort": 160
+    "sort": 160,
+    "intro_script": "quest_1022",
+    "outro_script": "",
+    "chapter": "spring",
+    "unlock_map": "town"
   },
   {
     "id": 1023,
@@ -221,7 +371,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1024,
-    "sort": 170
+    "sort": 170,
+    "intro_script": "quest_1023",
+    "outro_script": "",
+    "chapter": "spring",
+    "unlock_map": "town"
   },
   {
     "id": 1024,
@@ -235,7 +389,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1025,
-    "sort": 180
+    "sort": 180,
+    "intro_script": "quest_1024",
+    "outro_script": "",
+    "chapter": "spring",
+    "unlock_map": "mine"
   },
   {
     "id": 1025,
@@ -249,7 +407,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1026,
-    "sort": 190
+    "sort": 190,
+    "intro_script": "quest_1025",
+    "outro_script": "",
+    "chapter": "spring",
+    "unlock_map": "mine"
   },
   {
     "id": 1026,
@@ -263,7 +425,11 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 1027,
-    "sort": 200
+    "sort": 200,
+    "intro_script": "quest_1026",
+    "outro_script": "",
+    "chapter": "spring",
+    "unlock_map": "mine"
   },
   {
     "id": 1027,
@@ -277,6 +443,10 @@
     "reward_item": "",
     "reward_count": 0,
     "next_id": 0,
-    "sort": 210
+    "sort": 210,
+    "intro_script": "quest_1027",
+    "outro_script": "ch2_done",
+    "chapter": "spring",
+    "unlock_map": "mine"
   }
 ]

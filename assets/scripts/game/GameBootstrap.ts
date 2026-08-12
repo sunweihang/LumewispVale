@@ -230,8 +230,10 @@ export class GameBootstrap extends Component {
                 ? townIndoor
                 : 'farm';
         const player = this.spawnPlayer(world, bootMap);
-        if (isTown) TownWorldLayout.spawnNpcs(world);
-        else if (townIndoor) TOWN_INDOOR[townIndoor].api.spawnNpcs(world);
+        if (isTown) {
+            TownWorldLayout.spawnNpcs(world);
+            TownWorldLayout.mountDoorFx(world);
+        } else if (townIndoor) TOWN_INDOOR[townIndoor].api.spawnNpcs(world);
         else if (!isMine) FarmWorldLayout.spawnNpcs(world);
         const stick = this.spawnTouchControls(canvas);
         const clickMove = ClickMoveMarker.mount(canvas);
@@ -331,6 +333,10 @@ export class GameBootstrap extends Component {
             hud.farm = farm;
             quests.hud = hud;
             hud.bindQuests(quests);
+            hud.bindQuestPanel({
+                isOpen: () => questPanel.isOpen,
+                open: () => questPanel.setOpen(true),
+            });
 
             story.bind({
                 world,
@@ -449,6 +455,10 @@ export class GameBootstrap extends Component {
             hud.farm = farm;
             quests.hud = hud;
             hud.bindQuests(quests);
+            hud.bindQuestPanel({
+                isOpen: () => questPanel.isOpen,
+                open: () => questPanel.setOpen(true),
+            });
             farm.onQuestStat((kind, param, n) => {
                 const count = n ?? 1;
                 if (kind === 'gather' && param) quests.noteGather(param, count);
@@ -539,6 +549,10 @@ export class GameBootstrap extends Component {
             hud.farm = farm;
             quests.hud = hud;
             hud.bindQuests(quests);
+            hud.bindQuestPanel({
+                isOpen: () => questPanel.isOpen,
+                open: () => questPanel.setOpen(true),
+            });
 
             const oldShop = canvas.getComponent(TownShopPanel);
             if (oldShop) canvas.removeComponent(oldShop);
@@ -684,6 +698,10 @@ export class GameBootstrap extends Component {
             hud.farm = farm;
             quests.hud = hud;
             hud.bindQuests(quests);
+            hud.bindQuestPanel({
+                isOpen: () => questPanel.isOpen,
+                open: () => questPanel.setOpen(true),
+            });
             farm.onQuestStat((kind, param, n) => {
                 const count = n ?? 1;
                 switch (kind) {

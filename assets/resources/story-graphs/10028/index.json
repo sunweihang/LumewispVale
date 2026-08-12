@@ -1,0 +1,7 @@
+{
+  "storyId": 10028,
+  "name": "诊所叮嘱",
+  "description": "scriptId=clinic_advice; Lock→StartChat(10028)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

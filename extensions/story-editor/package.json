@@ -1,0 +1,116 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "story-editor",
+  "description": "剧情图编辑器：浏览/创建剧情资产，导出 TsStory，供 StoryRuntime 驱动",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "browser": {
+      "title": "剧情浏览器",
+      "type": "dockable",
+      "main": "./dist/panels/browser.js",
+      "size": {
+        "min-width": 360,
+        "min-height": 420,
+        "width": 480,
+        "height": 640
+      }
+    },
+    "create": {
+      "title": "创建剧情",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 300
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "browse-stories": {
+        "methods": [
+          "browseStories"
+        ]
+      },
+      "create-story": {
+        "methods": [
+          "createStory"
+        ]
+      },
+      "ensure-registered": {
+        "public": true,
+        "description": "向 node-graph 注册剧情节点/端口",
+        "methods": [
+          "ensureRegistered"
+        ]
+      },
+      "list-stories": {
+        "public": true,
+        "methods": [
+          "listStories"
+        ]
+      },
+      "open-story": {
+        "public": true,
+        "description": "打开剧情图 { storyId }",
+        "methods": [
+          "openStory"
+        ]
+      },
+      "export-story": {
+        "public": true,
+        "description": "导出单个剧情 TS { storyId }",
+        "methods": [
+          "exportStory"
+        ]
+      },
+      "export-ts-batch": {
+        "public": true,
+        "methods": [
+          "exportTsBatch"
+        ]
+      },
+      "create-story-api": {
+        "public": true,
+        "methods": [
+          "createStoryApi"
+        ]
+      },
+      "validate-story": {
+        "public": true,
+        "description": "校验单个剧情 { storyId }",
+        "methods": [
+          "validateStory"
+        ]
+      },
+      "delete-story": {
+        "public": true,
+        "description": "删除剧情图与导出类 { storyId }",
+        "methods": [
+          "deleteStory"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 battle-manager 自动发现的模块契约",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      }
+    }
+  }
+}

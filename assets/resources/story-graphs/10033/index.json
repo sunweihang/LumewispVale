@@ -1,0 +1,7 @@
+{
+  "storyId": 10033,
+  "name": "春厅点亮",
+  "description": "scriptId=spring_light; Lock→StartChat(10033)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

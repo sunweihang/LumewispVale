@@ -1,0 +1,152 @@
+{
+  "package_version": 2,
+  "version": "1.0.2",
+  "name": "battle-manager",
+  "description": "Game编辑器宿主（对齐 GameAsset MainEditorWindow）：单位/场景/战斗管理器同级，技能/弹道/Buff 挂在战斗下",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "host": {
+      "title": "Game编辑器",
+      "type": "dockable",
+      "main": "./dist/panels/host.js",
+      "size": {
+        "min-width": 520,
+        "min-height": 480,
+        "width": 640,
+        "height": 720
+      }
+    },
+    "progress": {
+      "title": "编译进度",
+      "type": "simple",
+      "main": "./dist/panels/progress.js",
+      "size": {
+        "width": 420,
+        "height": 280
+      }
+    }
+  },
+  "contributions": {
+    "menu": [
+      {
+        "path": "扩展/Game编辑器",
+        "label": "打开",
+        "message": "open-host"
+      },
+      {
+        "path": "扩展/Game编辑器",
+        "label": "一键编译并刷新全部扩展",
+        "message": "rebuild-and-reload-all"
+      },
+      {
+        "path": "扩展/Game编辑器",
+        "label": "仅刷新全部扩展",
+        "message": "reload-all-extensions"
+      },
+      {
+        "path": "扩展/Game编辑器",
+        "label": "重新扫描模块",
+        "message": "rescan-modules"
+      }
+    ],
+    "messages": {
+      "rebuild-and-reload-all": {
+        "public": true,
+        "description": "编译并刷新 extensions/ 下全部扩展",
+        "methods": [
+          "rebuildAndReloadAll"
+        ]
+      },
+      "reload-all-extensions": {
+        "public": true,
+        "description": "仅刷新全部扩展（不编译）",
+        "methods": [
+          "reloadAllExtensions"
+        ]
+      },
+      "open-host": {
+        "public": true,
+        "description": "打开 Game编辑器宿主（展示全部模块）",
+        "methods": [
+          "openHost"
+        ]
+      },
+      "rescan-modules": {
+        "public": true,
+        "description": "重新扫描单位/场景/战斗等子模块",
+        "methods": [
+          "rescanModules"
+        ]
+      },
+      "query-modules": {
+        "public": true,
+        "description": "返回已扫描的战斗子模块列表",
+        "methods": [
+          "queryModules"
+        ]
+      },
+      "query-host-state": {
+        "public": true,
+        "methods": [
+          "queryHostState"
+        ]
+      },
+      "select-module": {
+        "public": true,
+        "description": "打开宿主并选中模块 { moduleId }",
+        "methods": [
+          "selectModule"
+        ]
+      },
+      "panel-set-module": {
+        "methods": [
+          "host.panelSetModule"
+        ]
+      },
+      "panel-query-active": {
+        "methods": [
+          "host.panelQueryActive"
+        ]
+      },
+      "panel-progress-update": {
+        "methods": [
+          "progress.panelProgressUpdate"
+        ]
+      },
+      "query-progress": {
+        "methods": [
+          "queryProgress"
+        ]
+      },
+      "remember-module": {
+        "methods": [
+          "rememberModule"
+        ]
+      },
+      "delete-unit": {
+        "public": true,
+        "description": "删除单位配置目录 { unitId }（宿主兜底）",
+        "methods": [
+          "deleteUnit"
+        ]
+      },
+      "locate-unit": {
+        "public": true,
+        "description": "在资源管理器定位单位 Prefab { unitId }",
+        "methods": [
+          "locateUnit"
+        ]
+      }
+    }
+  }
+}

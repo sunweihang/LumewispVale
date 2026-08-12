@@ -52,5 +52,41 @@
     "recipe_id": "fish_bait_seed",
     "item_id": "grass",
     "count": 2
+  },
+  {
+    "id": 10,
+    "recipe_id": "can_basic",
+    "item_id": "stone",
+    "count": 2
+  },
+  {
+    "id": 11,
+    "recipe_id": "can_basic",
+    "item_id": "dirt",
+    "count": 3
+  },
+  {
+    "id": 12,
+    "recipe_id": "axe_basic",
+    "item_id": "stone",
+    "count": 2
+  },
+  {
+    "id": 13,
+    "recipe_id": "axe_basic",
+    "item_id": "grass",
+    "count": 3
+  },
+  {
+    "id": 14,
+    "recipe_id": "rod_basic",
+    "item_id": "wood",
+    "count": 3
+  },
+  {
+    "id": 15,
+    "recipe_id": "rod_basic",
+    "item_id": "grass",
+    "count": 2
   }
 ]

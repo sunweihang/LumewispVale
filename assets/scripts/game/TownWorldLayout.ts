@@ -1,4 +1,5 @@
-import { Node, Sprite, UITransform, Vec3 } from 'cc';
+import { Node, Sprite, UIOpacity, UITransform, Vec3, tween } from 'cc';
+import { DoorPortalAnimator } from './DoorPortalAnimator';
 import { NPC_FRAMES } from './NpcFrames';
 import { NpcAnimator, NpcDir } from './NpcAnimator';
 import { shopByBuilding } from './TownCatalog';
@@ -33,6 +34,28 @@ export class TownWorldLayout {
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__town_baked');
+    }
+
+    /** Play portal frame loop + soft opacity breathe (idempotent). */
+    static mountDoorFx(world: Node): void {
+        if ((world as Node & { __townDoorFx?: boolean }).__townDoorFx) return;
+        (world as Node & { __townDoorFx?: boolean }).__townDoorFx = true;
+        DoorPortalAnimator.mountAll(world);
+        for (const child of world.children) {
+            if (!child.name.startsWith('door_portal_') && !child.name.startsWith('door_light_')) {
+                continue;
+            }
+            let op = child.getComponent(UIOpacity);
+            if (!op) op = child.addComponent(UIOpacity);
+            op.opacity = 255;
+            tween(op)
+                .repeatForever(
+                    tween(op)
+                        .to(1.6, { opacity: 200 }, { easing: 'sineInOut' })
+                        .to(1.6, { opacity: 255 }, { easing: 'sineInOut' }),
+                )
+                .start();
+        }
     }
 
     /** Spawn idle town NPCs once (idempotent). */

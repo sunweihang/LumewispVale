@@ -1,8 +1,9 @@
 # 微光溪谷 · 对话稿（序章 + 第一章 + 第二章）
 
-> 运行时由 `StoryDialogue` + `DialoguePanel` / `StoryIntroPanel` 播放；`GameState.seenDialogue` 去重。  
-> 点击屏幕推进；对话中锁定移动。开场插画为打字机旁白（打印字）。  
-> **农场新手引导全部由露穗口述**（甜蜜、陪伴感）；箭头镂空仍由 `TutorialGuide` 负责。
+> 运行时：`StoryDialogue` 队列 → `StoryRuntime.play(storyId)` → 剧情图 `StartChat(chatId)` → `DialoguePanel` / `StoryIntroPanel`。  
+> **台词权威源**：Luban `dialogue.xlsx` + `chat.xlsx`（`npm run gen:config`）。`DialogueScripts` 只查表。  
+> `GameState.seenDialogue` 仍按 **scriptId** 去重。点击推进；开场插画为打字机旁白。  
+> **农场新手引导全部由露穗口述**（温暖、具体）；箭头镂空仍由 `TutorialGuide` 负责。
 
 ## 流程
 
@@ -55,7 +56,9 @@
 - 露穗帧：`assets/textures/chars/girl/` ← `tools/ui/slice_npc_walk_sheet.py girl`
 - 农场生成：`FarmWorldLayout.spawnNpcs`（小屋前廊南侧）
 - 日常对话 UI：`assets/scripts/game/DialoguePanel.ts`
-- 编排：`assets/scripts/game/StoryDialogue.ts`（`tryFarmNpc`）
+- 对白表：`dialogue.xlsx`（脚本目录）· `chat.xlsx`（台词行；序章 `image`=插画 UUID）
+- 编排：`StoryDialogue`（触发/队列）+ `assets/scripts/story/`（图运行时 / 查表）
+- 剧情图：`assets/resources/story-graphs/{10001…10035}/`；生成类 `assets/scripts/story/generated/TsStory*.ts`
 - 接线：`GameBootstrap`（农场点击优先露穗）/ `StoryWorldHooks`（路牌）/ 小镇建筑 `tryBuilding`
 - 商店买卖：`TownShopPanel`（购买 / 出售页签；出售记 `shop_sell`）
 

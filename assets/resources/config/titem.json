@@ -1,0 +1,62 @@
+[
+  {
+    "id": "grass",
+    "name": "草料"
+  },
+  {
+    "id": "wood",
+    "name": "木料"
+  },
+  {
+    "id": "dirt",
+    "name": "泥土"
+  },
+  {
+    "id": "stone",
+    "name": "石料"
+  },
+  {
+    "id": "fish",
+    "name": "鱼"
+  },
+  {
+    "id": "seeds",
+    "name": "种子"
+  },
+  {
+    "id": "parsnip",
+    "name": "防风草"
+  },
+  {
+    "id": "boost",
+    "name": "催熟剂"
+  },
+  {
+    "id": "copper",
+    "name": "铜矿石"
+  },
+  {
+    "id": "iron",
+    "name": "铁矿石"
+  },
+  {
+    "id": "goldOre",
+    "name": "金矿石"
+  },
+  {
+    "id": "can",
+    "name": "水壶"
+  },
+  {
+    "id": "axe",
+    "name": "斧头"
+  },
+  {
+    "id": "rod",
+    "name": "鱼竿"
+  },
+  {
+    "id": "hoe",
+    "name": "锄头"
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "storyId": 10015,
+  "name": "抵达小镇",
+  "description": "scriptId=arrive_town; Lock→StartChat(10015)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

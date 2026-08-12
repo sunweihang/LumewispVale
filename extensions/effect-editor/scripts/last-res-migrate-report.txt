@@ -1,0 +1,46 @@
+MOVED 0 exclusive assets into effects/*/Res/
+
+
+SHARED across effects (left in place): 28
+  Art/SFX/Textures/Noise447.png  effects=[209,211,212]
+  Art/SFX/Textures/zhezhao.jpg  effects=[209,210,211,212,213,215,221,222,223]
+  Art/SFX/Textures/zhezhao02.png  effects=[209,212]
+  Art/SFX/Models/qiu.fbx  effects=[210,215]
+  Art/SFX/Models/shizi.fbx  effects=[210,217]
+  Art/SFX/Models/yuanhuan.fbx  effects=[210,213,215,223]
+  Art/SFX/Textures/BlackSmoke.png  effects=[210,213,217,218,219,220,221]
+  Art/SFX/Textures/Noise32.png  effects=[210,211,213,215,221,222,223]
+  Art/SFX/Textures/yanwu05.png  effects=[210,215]
+  Art/SFX/Models/zhuanlun.fbx  effects=[211,212]
+  Art/SFX/Materials/guangyun.mtl  effects=[213,217,218,219,220,221]
+  Art/SFX/Models/dunmian60.fbx  effects=[214,220]
+  Art/SFX/Materials/qipao.mtl  effects=[216,217]
+  Art/SFX/Models/plane.fbx  effects=[216,220]
+  Art/SFX/Textures/qipao.png  effects=[216,217]
+  Art/SFX/Materials/shandian.mtl  effects=[218,219]
+  Art/SFX/Models/Lightning.fbx  effects=[218,219]
+  Art/SFX/Textures/shandian (2).png  effects=[218,219]
+  Art/SFX/Textures/zhezhao01.png  effects=[218,225]
+  Art/SFX/Materials/baodian01.mtl  effects=[219,224]
+  Art/SFX/Textures/baodian01.png  effects=[219,224]
+  Art/SFX/Materials/lizi-002.mtl  effects=[222,223]
+  Art/SFX/Textures/lizi04.png  effects=[222,223]
+  Art/SFX/Materials/blackBlood.mtl  effects=[223,401,404,411]
+  Art/SFX/Textures/huoyan04.png  effects=[223,401,404,411]
+  Art/SFX/Materials/FirePoint.mtl  effects=[401,411]
+  Art/SFX/Textures/baozha.png  effects=[401,411]
+  Art/SFX/Textures/BluePoint.png  effects=[404,406]
+
+USED by bullets/role/scenes (left in place): 12
+  Art/Role/Materials/Bullet.mtl
+  Art/SFX/Materials/baodian02.mtl
+  Art/SFX/Materials/lizi-001.mtl
+  Art/SFX/Materials/lizi.mtl
+  Art/SFX/Materials/yanwu.mtl
+  Art/SFX/Materials/yanwu01.mtl
+  Art/SFX/Models/bamianti.fbx
+  Art/SFX/Textures/baodain.png
+  Art/SFX/Textures/lizi02.png
+  Art/SFX/Textures/lizi03.png
+  Art/SFX/Textures/yanwu01.png
+  Art/SFX/Textures/yanwu04.png

@@ -1,0 +1,7 @@
+{
+  "storyId": 10026,
+  "name": "春厅立项",
+  "description": "scriptId=spring_pack; Lock→StartChat(10026)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

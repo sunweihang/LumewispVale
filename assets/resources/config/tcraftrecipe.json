@@ -6,7 +6,9 @@
     "out_item": "seeds",
     "out_count": 1,
     "craft_seconds": 12,
-    "sort": 10
+    "sort": 10,
+    "unlock_quest": 1003,
+    "unlock_mode": "reached"
   },
   {
     "id": "seed_mix",
@@ -15,7 +17,42 @@
     "out_item": "seeds",
     "out_count": 2,
     "craft_seconds": 18,
-    "sort": 20
+    "sort": 20,
+    "unlock_quest": 1003,
+    "unlock_mode": "completed"
+  },
+  {
+    "id": "can_basic",
+    "name": "水壶",
+    "desc": "石片与泥土捏成的浇水壶",
+    "out_item": "can",
+    "out_count": 1,
+    "craft_seconds": 16,
+    "sort": 25,
+    "unlock_quest": 1031,
+    "unlock_mode": "reached"
+  },
+  {
+    "id": "axe_basic",
+    "name": "斧头",
+    "desc": "石刃裹草绳，能砍倒松树与橡树",
+    "out_item": "axe",
+    "out_count": 1,
+    "craft_seconds": 18,
+    "sort": 26,
+    "unlock_quest": 1032,
+    "unlock_mode": "reached"
+  },
+  {
+    "id": "rod_basic",
+    "name": "鱼竿",
+    "desc": "木杆缠草线，湖边抛竿用",
+    "out_item": "rod",
+    "out_count": 1,
+    "craft_seconds": 18,
+    "sort": 27,
+    "unlock_quest": 1034,
+    "unlock_mode": "reached"
   },
   {
     "id": "wood_bundle",
@@ -24,7 +61,9 @@
     "out_item": "wood",
     "out_count": 3,
     "craft_seconds": 20,
-    "sort": 30
+    "sort": 30,
+    "unlock_quest": 1033,
+    "unlock_mode": "completed"
   },
   {
     "id": "stone_pack",
@@ -33,7 +72,9 @@
     "out_item": "stone",
     "out_count": 2,
     "craft_seconds": 22,
-    "sort": 40
+    "sort": 40,
+    "unlock_quest": 1031,
+    "unlock_mode": "completed"
   },
   {
     "id": "fish_bait_seed",
@@ -42,6 +83,8 @@
     "out_item": "seeds",
     "out_count": 3,
     "craft_seconds": 28,
-    "sort": 50
+    "sort": 50,
+    "unlock_quest": 1007,
+    "unlock_mode": "completed"
   }
 ]

@@ -67,28 +67,11 @@ const HUD_CHROME = [
 ];
 
 /** Default origin prologue — illustration + typewriter narration. */
-export const ORIGIN_STORY_PAGES: StoryIntroPage[] = [
-    {
-        uuid: STORY_INTRO_FRAMES.panels[0].uuid,
-        text: '星海深处，曾有人以身为刃。那一夜，灾兽的阴影覆过诸界——你守住了最后一道光，却没能守住自己的心跳。',
-    },
-    {
-        uuid: STORY_INTRO_FRAMES.panels[1].uuid,
-        text: '一拳落处，铠甲如花碎开。痛楚涌上喉间的刹那，名字、故土、所爱之人，都化作镜屑，无声消散。',
-    },
-    {
-        uuid: STORY_INTRO_FRAMES.panels[2].uuid,
-        text: '风暴自虚空倾泻而下，裹挟着你坠入未知。意识熄灭前，胸口仍残留一缕微光——像不肯熄灭的执念。',
-    },
-    {
-        uuid: STORY_INTRO_FRAMES.panels[3].uuid,
-        text: '再睁眼时，是人间的草香与灯火。溪谷少女露穗在紫晶坠落处扶起你，不问来处，只把你带回窗暖的小屋。',
-    },
-    {
-        uuid: STORY_INTRO_FRAMES.panels[4].uuid,
-        text: '伤会愈，土会暖。你与露穗并肩翻垄浇灌，在这片微光溪谷里，把遗忘的人生，重新种成一条路。',
-    },
-];
+/**
+ * @deprecated Prologue copy lives in Luban `chat.xlsx` (dialogue_id=10001).
+ * Kept as empty fallback — callers should pass pages from `getIntroPages()`.
+ */
+export const ORIGIN_STORY_PAGES: StoryIntroPage[] = [];
 
 /**
  * Full-screen story comic: illustration + typewriter caption.
@@ -223,7 +206,7 @@ export class StoryIntroPanel extends Component {
         this.bringToFront();
     }
 
-    /** Play prologue pages (defaults to ORIGIN_STORY_PAGES). */
+    /** Play prologue pages (from Luban chat rows via getIntroPages). */
     play(pages?: StoryIntroPage[], onDone?: () => void) {
         const list = pages?.length ? pages : ORIGIN_STORY_PAGES;
         if (!list.length) {

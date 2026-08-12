@@ -82,7 +82,7 @@ export enum ConditionType {
      */
     Gold = 9,
     /**
-     * 剧情旗标次数 param=flagId
+     * param=flagId
      */
     Flag = 10,
 }
@@ -142,7 +142,7 @@ export enum GotoAction {
      */
     HintCraft = 11,
     /**
-     * 提示通往小镇（旧陨石引导，已并入路牌）
+     * 提示通往小镇（旧）
      */
     HintMeteor = 12,
     /**
@@ -153,9 +153,55 @@ export enum GotoAction {
      * 提示镇长府
      */
     HintMayor = 14,
+    /**
+     * 选中斧头
+     */
+    SelectAxe = 15,
+    /**
+     * 提示挖石
+     */
+    HintRock = 16,
 }
 
  
+
+
+
+
+
+export class CChat {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.dialogue_id === undefined) { throw new Error() }
+        this.dialogueId = _json_.dialogue_id
+        if (_json_.seq === undefined) { throw new Error() }
+        this.seq = _json_.seq
+        if (_json_.speaker === undefined) { throw new Error() }
+        this.speaker = _json_.speaker
+        if (_json_.text === undefined) { throw new Error() }
+        this.text = _json_.text
+        if (_json_.image === undefined) { throw new Error() }
+        this.image = _json_.image
+    }
+
+    readonly id: number
+    readonly dialogueId: number
+    readonly seq: number
+    readonly speaker: string
+    readonly text: string
+    readonly image: string
+
+    resolve(tables:Tables) {
+        
+        
+        
+        
+        
+        
+    }
+}
 
 
 
@@ -242,6 +288,10 @@ export class CCraftRecipe {
         this.craftSeconds = _json_.craft_seconds
         if (_json_.sort === undefined) { throw new Error() }
         this.sort = _json_.sort
+        if (_json_.unlock_quest === undefined) { throw new Error() }
+        this.unlockQuest = _json_.unlock_quest
+        if (_json_.unlock_mode === undefined) { throw new Error() }
+        this.unlockMode = _json_.unlock_mode
     }
 
     readonly id: string
@@ -251,12 +301,72 @@ export class CCraftRecipe {
     readonly outCount: number
     readonly craftSeconds: number
     readonly sort: number
+    readonly unlockQuest: number
+    readonly unlockMode: string
 
     resolve(tables:Tables) {
         
         
         
         
+        
+        
+        
+        
+        
+    }
+}
+
+
+
+
+
+export class CDialogue {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.script_id === undefined) { throw new Error() }
+        this.scriptId = _json_.script_id
+        if (_json_.kind === undefined) { throw new Error() }
+        this.kind = _json_.kind
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+    }
+
+    readonly id: number
+    readonly scriptId: string
+    readonly kind: string
+    readonly name: string
+
+    resolve(tables:Tables) {
+        
+        
+        
+        
+    }
+}
+
+
+
+
+
+export class CFlag {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.label === undefined) { throw new Error() }
+        this.label = _json_.label
+        if (_json_.unlock_map === undefined) { throw new Error() }
+        this.unlockMap = _json_.unlock_map
+    }
+
+    readonly id: string
+    readonly label: string
+    readonly unlockMap: string
+
+    resolve(tables:Tables) {
         
         
         
@@ -293,6 +403,28 @@ export class CGoto {
 
 
 
+export class CItem {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+    }
+
+    readonly id: string
+    readonly name: string
+
+    resolve(tables:Tables) {
+        
+        
+    }
+}
+
+
+
+
+
 export class CQuest {
 
     constructor(_json_: any) {
@@ -320,6 +452,14 @@ export class CQuest {
         this.nextId = _json_.next_id
         if (_json_.sort === undefined) { throw new Error() }
         this.sort = _json_.sort
+        if (_json_.intro_script === undefined) { throw new Error() }
+        this.introScript = _json_.intro_script
+        if (_json_.outro_script === undefined) { throw new Error() }
+        this.outroScript = _json_.outro_script
+        if (_json_.chapter === undefined) { throw new Error() }
+        this.chapter = _json_.chapter
+        if (_json_.unlock_map === undefined) { throw new Error() }
+        this.unlockMap = _json_.unlock_map
     }
 
     readonly id: number
@@ -334,8 +474,16 @@ export class CQuest {
     readonly rewardCount: number
     readonly nextId: number
     readonly sort: number
+    readonly introScript: string
+    readonly outroScript: string
+    readonly chapter: string
+    readonly unlockMap: string
 
     resolve(tables:Tables) {
+        
+        
+        
+        
         
         
         
@@ -526,6 +674,142 @@ export class TGoto {
 
 
 
+/**
+ * 剧情旗标
+ */
+export class TFlag {
+    private _dataMap: Map<string, CFlag>
+    private _dataList: CFlag[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<string, CFlag>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CFlag
+            _v = new CFlag(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<string, CFlag> { return this._dataMap; }
+    getDataList(): CFlag[] { return this._dataList; }
+
+    get(key: string): CFlag | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
+/**
+ * 物品显示名
+ */
+export class TItem {
+    private _dataMap: Map<string, CItem>
+    private _dataList: CItem[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<string, CItem>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CItem
+            _v = new CItem(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<string, CItem> { return this._dataMap; }
+    getDataList(): CItem[] { return this._dataList; }
+
+    get(key: string): CItem | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
+/**
+ * 对白脚本目录
+ */
+export class TDialogue {
+    private _dataMap: Map<number, CDialogue>
+    private _dataList: CDialogue[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, CDialogue>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CDialogue
+            _v = new CDialogue(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, CDialogue> { return this._dataMap; }
+    getDataList(): CDialogue[] { return this._dataList; }
+
+    get(key: number): CDialogue | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
+/**
+ * 对白台词行
+ */
+export class TChat {
+    private _dataMap: Map<number, CChat>
+    private _dataList: CChat[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, CChat>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CChat
+            _v = new CChat(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, CChat> { return this._dataMap; }
+    getDataList(): CChat[] { return this._dataList; }
+
+    get(key: number): CChat | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
 type JsonLoader = (file: string) => any
 
 export class Tables {
@@ -554,6 +838,26 @@ export class Tables {
      * 引导跳转
      */
     get TGoto(): TGoto  { return this._TGoto;}
+    private _TFlag: TFlag
+    /**
+     * 剧情旗标
+     */
+    get TFlag(): TFlag  { return this._TFlag;}
+    private _TItem: TItem
+    /**
+     * 物品显示名
+     */
+    get TItem(): TItem  { return this._TItem;}
+    private _TDialogue: TDialogue
+    /**
+     * 对白脚本目录
+     */
+    get TDialogue(): TDialogue  { return this._TDialogue;}
+    private _TChat: TChat
+    /**
+     * 对白台词行
+     */
+    get TChat(): TChat  { return this._TChat;}
 
     constructor(loader: JsonLoader) {
         this._TCondition = new TCondition(loader('tcondition'))
@@ -561,12 +865,20 @@ export class Tables {
         this._TCraftCost = new TCraftCost(loader('tcraftcost'))
         this._TQuest = new TQuest(loader('tquest'))
         this._TGoto = new TGoto(loader('tgoto'))
+        this._TFlag = new TFlag(loader('tflag'))
+        this._TItem = new TItem(loader('titem'))
+        this._TDialogue = new TDialogue(loader('tdialogue'))
+        this._TChat = new TChat(loader('tchat'))
 
         this._TCondition.resolve(this)
         this._TCraftRecipe.resolve(this)
         this._TCraftCost.resolve(this)
         this._TQuest.resolve(this)
         this._TGoto.resolve(this)
+        this._TFlag.resolve(this)
+        this._TItem.resolve(this)
+        this._TDialogue.resolve(this)
+        this._TChat.resolve(this)
     }
 }
 

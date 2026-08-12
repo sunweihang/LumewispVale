@@ -230,7 +230,7 @@ export class FarmWorldLayout {
         if (id === 'girl') {
             return {
                 title: '露穗',
-                body: '院子里有我在呢。慢慢来，今天也要过得甜一点～',
+                body: '院子里有我在。不着急，一步一步来。',
             };
         }
         return null;
@@ -1352,6 +1352,7 @@ export class FarmWorldLayout {
             this.placeLakeShoreFlora(world, loaded);
             this.placeSoftClutter(world, loaded);
             this.placeLakeWaterDecor(world, loaded);
+            this.pruneGatherOverlap(world);
             onDone?.();
         };
         keys.forEach((k) => {
@@ -1693,6 +1694,56 @@ export class FarmWorldLayout {
                 }
             }
         }
+    }
+
+    /**
+     * Drop soft weeds that sit on rocks / tree feet so gather quests stay
+     * clickable (mirrors bake_farm_scene.prune_gather_overlap).
+     */
+    private static pruneGatherOverlap(world: Node) {
+        const rockFeet: Array<{ x: number; y: number }> = [];
+        const treeFeet: Array<{ x: number; y: number }> = [];
+        for (const child of world.children) {
+            const name = child.name;
+            if (
+                /^decor_soft_(?:shore_)?(?:rock_|pebble_)/.test(name) ||
+                /^decor_rock(?:Big)?_solid_/.test(name)
+            ) {
+                rockFeet.push({ x: child.position.x, y: child.position.y });
+            } else if (/^decor_(pine|oak)_solid_/.test(name)) {
+                treeFeet.push({ x: child.position.x, y: child.position.y });
+            }
+        }
+        const near = (x: number, y: number, feet: Array<{ x: number; y: number }>, rad: number) => {
+            const r2 = rad * rad;
+            for (let i = 0; i < feet.length; i++) {
+                const f = feet[i]!;
+                const dx = x - f.x;
+                const dy = y - f.y;
+                if (dx * dx + dy * dy <= r2) return true;
+            }
+            return false;
+        };
+        const grassFeet: Array<{ x: number; y: number }> = [];
+        const doomed: Node[] = [];
+        for (const child of world.children) {
+            const name = child.name;
+            const isGrass =
+                /^decor_soft_(?:shore_)?(weed|weedBloom|weedTall|weedPink|weedYellow|weedBlue|tuft|fiber|twig)_/.test(
+                    name,
+                ) ||
+                /^decor_bush_(soft|solid)_/.test(name) ||
+                name.startsWith('decor_garden_');
+            if (!isGrass) continue;
+            const x = child.position.x;
+            const y = child.position.y;
+            if (near(x, y, rockFeet, 48) || near(x, y, treeFeet, 88) || near(x, y, grassFeet, 28)) {
+                doomed.push(child);
+                continue;
+            }
+            grassFeet.push({ x, y });
+        }
+        for (let i = 0; i < doomed.length; i++) doomed[i]!.destroy();
     }
 
     private static spawnNode(

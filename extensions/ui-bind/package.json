@@ -1,0 +1,46 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "ui-bind",
+  "description": "Align GameUILib CDE: scan Prefab and generate ComponentTable / bind manifest",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "contributions": {
+    "menu": [
+      {
+        "path": "i18n:menu.extension/UI Bind/Generate bind from Prefab",
+        "message": "generate-from-prefab"
+      },
+      {
+        "path": "i18n:menu.extension/UI Bind/Generate Pan_Role binds",
+        "message": "generate-pan-role"
+      }
+    ],
+    "messages": {
+      "generate-from-prefab": {
+        "methods": [
+          "generateFromPrefab"
+        ]
+      },
+      "generate-pan-role": {
+        "methods": [
+          "generatePanRole"
+        ]
+      },
+      "generate-from-cde": {
+        "methods": [
+          "generateFromCde"
+        ]
+      }
+    }
+  }
+}

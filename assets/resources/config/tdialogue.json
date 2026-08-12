@@ -1,0 +1,212 @@
+[
+  {
+    "id": 10001,
+    "script_id": "origin_story",
+    "kind": "intro",
+    "name": "序章插画"
+  },
+  {
+    "id": 10002,
+    "script_id": "wake_farm",
+    "kind": "dialogue",
+    "name": "露穗唤醒"
+  },
+  {
+    "id": 10003,
+    "script_id": "quest_1002",
+    "kind": "dialogue",
+    "name": "任务1002"
+  },
+  {
+    "id": 10004,
+    "script_id": "quest_1030",
+    "kind": "dialogue",
+    "name": "任务1030"
+  },
+  {
+    "id": 10005,
+    "script_id": "quest_1031",
+    "kind": "dialogue",
+    "name": "任务1031"
+  },
+  {
+    "id": 10006,
+    "script_id": "quest_1003",
+    "kind": "dialogue",
+    "name": "任务1003"
+  },
+  {
+    "id": 10007,
+    "script_id": "quest_1004",
+    "kind": "dialogue",
+    "name": "任务1004"
+  },
+  {
+    "id": 10008,
+    "script_id": "quest_1005",
+    "kind": "dialogue",
+    "name": "任务1005"
+  },
+  {
+    "id": 10009,
+    "script_id": "quest_1006",
+    "kind": "dialogue",
+    "name": "任务1006"
+  },
+  {
+    "id": 10010,
+    "script_id": "quest_1032",
+    "kind": "dialogue",
+    "name": "任务1032"
+  },
+  {
+    "id": 10011,
+    "script_id": "quest_1033",
+    "kind": "dialogue",
+    "name": "任务1033"
+  },
+  {
+    "id": 10012,
+    "script_id": "quest_1034",
+    "kind": "dialogue",
+    "name": "任务1034"
+  },
+  {
+    "id": 10013,
+    "script_id": "quest_1007",
+    "kind": "dialogue",
+    "name": "任务1007"
+  },
+  {
+    "id": 10014,
+    "script_id": "quest_1009",
+    "kind": "dialogue",
+    "name": "任务1009"
+  },
+  {
+    "id": 10015,
+    "script_id": "arrive_town",
+    "kind": "dialogue",
+    "name": "抵达小镇"
+  },
+  {
+    "id": 10016,
+    "script_id": "mayor_tea",
+    "kind": "dialogue",
+    "name": "镇长的茶"
+  },
+  {
+    "id": 10017,
+    "script_id": "quest_1011",
+    "kind": "dialogue",
+    "name": "任务1011"
+  },
+  {
+    "id": 10018,
+    "script_id": "quest_1012",
+    "kind": "dialogue",
+    "name": "任务1012"
+  },
+  {
+    "id": 10019,
+    "script_id": "quest_1013",
+    "kind": "dialogue",
+    "name": "任务1013"
+  },
+  {
+    "id": 10020,
+    "script_id": "carpenter_nails",
+    "kind": "dialogue",
+    "name": "木工坊"
+  },
+  {
+    "id": 10021,
+    "script_id": "community_bell",
+    "kind": "dialogue",
+    "name": "社区钟楼"
+  },
+  {
+    "id": 10022,
+    "script_id": "ch1_done",
+    "kind": "dialogue",
+    "name": "第一章信件"
+  },
+  {
+    "id": 10023,
+    "script_id": "quest_1020",
+    "kind": "dialogue",
+    "name": "任务1020"
+  },
+  {
+    "id": 10024,
+    "script_id": "quest_1021",
+    "kind": "dialogue",
+    "name": "任务1021"
+  },
+  {
+    "id": 10025,
+    "script_id": "quest_1022",
+    "kind": "dialogue",
+    "name": "任务1022"
+  },
+  {
+    "id": 10026,
+    "script_id": "spring_pack",
+    "kind": "dialogue",
+    "name": "春厅立项"
+  },
+  {
+    "id": 10027,
+    "script_id": "quest_1023",
+    "kind": "dialogue",
+    "name": "任务1023"
+  },
+  {
+    "id": 10028,
+    "script_id": "clinic_advice",
+    "kind": "dialogue",
+    "name": "诊所叮嘱"
+  },
+  {
+    "id": 10029,
+    "script_id": "quest_1024",
+    "kind": "dialogue",
+    "name": "任务1024"
+  },
+  {
+    "id": 10030,
+    "script_id": "quest_1025",
+    "kind": "dialogue",
+    "name": "任务1025"
+  },
+  {
+    "id": 10031,
+    "script_id": "quest_1026",
+    "kind": "dialogue",
+    "name": "任务1026"
+  },
+  {
+    "id": 10032,
+    "script_id": "quest_1027",
+    "kind": "dialogue",
+    "name": "任务1027"
+  },
+  {
+    "id": 10033,
+    "script_id": "spring_light",
+    "kind": "dialogue",
+    "name": "春厅点亮"
+  },
+  {
+    "id": 10034,
+    "script_id": "ch2_done",
+    "kind": "dialogue",
+    "name": "第二章信件"
+  },
+  {
+    "id": 10035,
+    "script_id": "girl_chat",
+    "kind": "dialogue",
+    "name": "露穗闲聊"
+  }
+]

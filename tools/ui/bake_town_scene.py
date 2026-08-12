@@ -553,6 +553,27 @@ class TownBake:
             return
         self.add_actor(name or f"bld_{kind}", sf, x, y, w, h, 0.0)
 
+    def place_enter_door_beams(self, feet: Dict[str, Tuple[float, float]]) -> None:
+        """Classic portal marker: ground ring + upright light (combined AI prop)."""
+        sf_portal = self.sf("prop-door-portal")
+        if not sf_portal:
+            print("WARN missing prop-door-portal — skip door FX")
+            return
+        # kind -> (dx from building foot, dy into door threshold)
+        # WorldYSort biases door_portal_* in front of porch/yard occluders.
+        offsets = {
+            "mayor": (22.0, 8.0),        # double-door above stone steps (+lamps)
+            "clinic": (0.0, 12.0),       # central blue doors on porch
+            "community": (0.0, 16.0),    # portico double-doors
+            "carpenter": (48.0, 12.0),   # right-section wooden door
+        }
+        for kind, (dx, dy) in offsets.items():
+            foot = feet.get(kind)
+            if not foot:
+                continue
+            fx, fy = foot[0] + dx, foot[1] + dy
+            self.add_actor(f"door_portal_{kind}", sf_portal, fx, fy - 4, 80, 144, 0.0)
+
     def place_buildings(self) -> None:
         """
         Districted composition — feet at tile centers (+foot nudge).
@@ -589,6 +610,18 @@ class TownBake:
         self._bld("mayor", mx - 0.5, my + 43)
         self._bld("mayor_yard", mx + 0.0, my + 2)
         self._bld("mayor_yard_ground", mx - 0.5, my + 2, "decor_garden_mayor_yard")
+
+        # Enterable doorway light pillars (AI prop) — slightly south of building
+        # foot so Y-sort draws them in front of the facade while the tall
+        # sprite still covers the door opening.
+        self.place_enter_door_beams(
+            {
+                "mayor": (mx - 0.5, my + 43),
+                "clinic": at(6, 7),
+                "community": at(0, 11),
+                "carpenter": at(13, -6),
+            }
+        )
 
         # North meadow (~1/3 screen above civic) — chapel / mill / orchard
         self._bld("chapel", *at(0, 19))

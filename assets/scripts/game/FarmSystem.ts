@@ -146,7 +146,7 @@ export class FarmSystem extends Component {
     @property
     growSeconds = 30;
 
-    seeds = 12;
+    seeds = 0;
     crops = 0;
     /** Consumable crop accelerator (hotbar item). */
     boosts = 0;
@@ -165,6 +165,8 @@ export class FarmSystem extends Component {
     /** Named seed packs bought in town (planting still spends generic `seeds`). */
     seedPacks: Record<string, number> = {};
     tool: FarmTool = 'hand';
+    /** Hoe arrives on quest 1002; can / axe / rod come from craft. Survives travel via GameState. */
+    ownedTools = { hoe: false, can: false, axe: false, rod: false };
     /**
      * Optional quest / tutorial override for the bottom action cue.
      * When it returns a non-empty string, local aim preview is suppressed.
@@ -208,6 +210,14 @@ export class FarmSystem extends Component {
     private _natureHits = new Map<string, number>();
     /** Pending rewarded-ad boost (survives cancelPending / unscheduleAll). */
     private _adWait: { key: string; left: number } | null = null;
+    /**
+     * Gather-quest clearance: hide rival nature stacked on the current target
+     * type so guide taps can't land on the wrong resource.
+     */
+    private _gatherClearAct: NatureAct | null = null;
+    private _gatherHidden: Node[] = [];
+    /** World child count when clearance was last applied — gather/despawn triggers resync. */
+    private _gatherClearChildCount = -1;
 
     onLoad() {
         if (!ALL_TOOLS.includes(this.tool)) this.tool = 'hand';
@@ -541,6 +551,12 @@ export class FarmSystem extends Component {
             case GotoAction.SelectHoe:
                 if (kind === 'plot') return null;
                 return '先跟着星光开垦田地';
+            case GotoAction.HintRock:
+                if (kind === 'nature') return null;
+                return '先跟着星光挖取石料';
+            case GotoAction.SelectAxe:
+                if (kind === 'nature') return null;
+                return '先跟着星光砍伐树木';
             case GotoAction.SelectSeeds:
                 if (kind === 'plot') return null;
                 return '先跟着星光播种';
@@ -558,7 +574,7 @@ export class FarmSystem extends Component {
             case GotoAction.HintCraft:
             case GotoAction.OpenCraft:
                 if (kind === 'craft') return null;
-                return '先走到工作台合成种子';
+                return '先走到工作台制作道具';
             case GotoAction.OpenBag:
                 return '先打开背包查看物品';
             case GotoAction.HintFarm:
@@ -1204,6 +1220,109 @@ export class FarmSystem extends Component {
         };
     }
 
+    /**
+     * Hide stacked rival resources while a gather goto is active.
+     * `pull` → hide rocks near weeds; `dig` → hide weeds near rocks;
+     * `chop` → hide weeds/rocks under tree feet. Pass null to restore.
+     */
+    setGatherClearance(act: NatureAct | null) {
+        if (act === this._gatherClearAct) {
+            // Re-apply only after a gather/despawn changes the world tree.
+            if (act && this.world && this.world.children.length !== this._gatherClearChildCount) {
+                this.applyGatherClearance(act);
+            }
+            return;
+        }
+        this.restoreGatherClearance();
+        if (!act) return;
+        this._gatherClearAct = act;
+        this.applyGatherClearance(act);
+    }
+
+    private restoreGatherClearance() {
+        if (!this._gatherHidden.length && !this._gatherClearAct) return;
+        for (let i = 0; i < this._gatherHidden.length; i++) {
+            const n = this._gatherHidden[i]!;
+            if (n.isValid) n.active = true;
+        }
+        this._gatherHidden.length = 0;
+        this._gatherClearAct = null;
+        this._gatherClearChildCount = -1;
+        this.invalidateDecorBuckets();
+    }
+
+    private applyGatherClearance(act: NatureAct) {
+        for (let i = 0; i < this._gatherHidden.length; i++) {
+            const n = this._gatherHidden[i]!;
+            if (n.isValid) n.active = true;
+        }
+        this._gatherHidden.length = 0;
+
+        const keep =
+            act === 'pull' ? this.listGrass() : act === 'dig' ? this.listRocks() : this.listTrees();
+        if (!keep.length) {
+            this._gatherClearChildCount = this.world?.children.length ?? -1;
+            this.invalidateDecorBuckets();
+            return;
+        }
+        const rivals: Node[] = [];
+        if (act === 'pull') rivals.push(...this.listRocks());
+        else if (act === 'dig') rivals.push(...this.listGrass());
+        else {
+            rivals.push(...this.listGrass());
+            rivals.push(...this.listRocks());
+        }
+        // One tile for soft pairs; slightly wider under tree crowns.
+        const clearR = act === 'chop' ? 88 : 56;
+        const clearR2 = clearR * clearR;
+        for (let i = 0; i < rivals.length; i++) {
+            const rival = rivals[i]!;
+            if (!rival.isValid || !rival.active) continue;
+            const rx = rival.position.x;
+            const ry = rival.position.y;
+            for (let j = 0; j < keep.length; j++) {
+                const k = keep[j]!;
+                if (!k.isValid || !k.active) continue;
+                const dx = rx - k.position.x;
+                const dy = ry - k.position.y;
+                if (dx * dx + dy * dy <= clearR2) {
+                    rival.active = false;
+                    this._gatherHidden.push(rival);
+                    break;
+                }
+            }
+        }
+        this._gatherClearChildCount = this.world?.children.length ?? -1;
+        this.invalidateDecorBuckets();
+    }
+
+    private invalidateDecorBuckets() {
+        this._decorBuckets = null;
+        this._decorChildCount = -1;
+        this._hintSig = '';
+    }
+
+    /** Live gather goto → prefer that nature act under mixed taps. */
+    private guideNatureAct(): NatureAct | null {
+        const quests = this.node.getComponent('QuestSystem') as {
+            activeQuest?: { id: number } | null;
+            isAwaitingClaim?: boolean;
+            activeGotoAction?: () => GotoAction;
+        } | null;
+        if (!quests?.activeQuest || quests.isAwaitingClaim) return null;
+        if (
+            quests.activeQuest.id === 1001 &&
+            !GameState.hasSeenDialogue('guide_wake_yard')
+        ) {
+            return null;
+        }
+        const action = quests.activeGotoAction?.() ?? GotoAction.None;
+        if (action === GotoAction.HintGrass) return 'pull';
+        if (action === GotoAction.HintRock) return 'dig';
+        if (action === GotoAction.SelectAxe) return 'chop';
+        return null;
+    }
+
     /** Tap hit-test by sprite bounds. */
     private resolveNatureHit(wx: number, wy: number): { node: Node; act: NatureAct } | null {
         if (!this.world || !this.player) return null;
@@ -1225,24 +1344,48 @@ export class FarmSystem extends Component {
             return null;
         }
 
-        // Tree vs understory: neighbor bushes often sit inside a pine/oak AABB.
-        // Mid/upper canopy taps must chop; foot-zone keeps pull/dig (or axe bias).
+        // Gather quests: always prefer the objective type when it sits under the tap.
+        const prefer = this.guideNatureAct();
+        if (prefer === 'pull' && grass) {
+            console.log(`[FarmHit] decide: gather-prefer pull → ${grass.node.name}`);
+            return { node: grass.node, act: 'pull' };
+        }
+        if (prefer === 'dig' && rock) {
+            console.log(`[FarmHit] decide: gather-prefer dig → ${rock.node.name}`);
+            return { node: rock.node, act: 'dig' };
+        }
+        if (prefer === 'chop' && tree) {
+            console.log(`[FarmHit] decide: gather-prefer chop → ${tree.node.name}`);
+            return { node: tree.node, act: 'chop' };
+        }
+
+        // Tree vs understory: neighbor bushes/rocks often sit inside a pine/oak AABB.
+        // Tap on a rock/grass sprite keeps dig/pull (tool tip if wrong) — never steal
+        // for canopy chop. Forcing chop here asked for 斧头 during dig-stone (1030)
+        // before the axe is crafted. Axe equipped still chops; bare mid-canopy too.
         if (tree && (grass || rock)) {
             const rel = this.decorRelY(tree.node, wy);
             let pick: { node: Node; act: NatureAct };
             let reason: string;
-            if (rel >= 0.3) {
-                pick = { node: tree.node, act: 'chop' };
-                reason = `tree+understory relY=${rel.toFixed(2)}>=0.3 → canopy=chop`;
-            } else if (this.tool === 'axe') {
-                pick = { node: tree.node, act: 'chop' };
-                reason = `tree+understory relY=${rel.toFixed(2)} tool=axe → chop`;
-            } else if (rock && this.tool === 'hoe') {
+            if (rock && this.tool === 'hoe') {
                 pick = { node: rock.node, act: 'dig' };
-                reason = `tree+understory relY=${rel.toFixed(2)} tool=hoe → dig`;
+                reason = `tree+understory tool=hoe → dig`;
             } else if (grass && this.tool === 'hand') {
                 pick = { node: grass.node, act: 'pull' };
-                reason = `tree+understory relY=${rel.toFixed(2)} tool=hand → pull grass`;
+                reason = `tree+understory tool=hand → pull grass`;
+            } else if (this.tool === 'axe') {
+                pick = { node: tree.node, act: 'chop' };
+                reason = `tree+understory tool=axe → chop`;
+            } else if (rock && this.tool !== 'axe') {
+                // Rock sprite under the tap — dig intent (需选择：锄头, not 斧头).
+                pick = { node: rock.node, act: 'dig' };
+                reason = `tree+understory rock sprite → dig`;
+            } else if (grass && this.tool !== 'axe') {
+                pick = { node: grass.node, act: 'pull' };
+                reason = `tree+understory grass sprite → pull`;
+            } else if (rel >= 0.3) {
+                pick = { node: tree.node, act: 'chop' };
+                reason = `tree+understory relY=${rel.toFixed(2)}>=0.3 → canopy=chop`;
             } else if (grass && rock) {
                 pick =
                     grass.area <= rock.area
@@ -1298,6 +1441,11 @@ export class FarmSystem extends Component {
         const tree = this.findDecorNear(wx, wy, TILE * 1.55, TREE_NAME_RE, TILE * 0.7);
         if (tree) cands.push({ node: tree.node, dSq: tree.dSq, act: 'chop' });
         if (!cands.length) return null;
+        const prefer = this.guideNatureAct();
+        if (prefer) {
+            const guided = cands.find((c) => c.act === prefer);
+            if (guided) return { node: guided.node, act: guided.act };
+        }
         cands.sort((a, b) => a.dSq - b.dSq);
         const best = cands[0]!;
         return { node: best.node, act: best.act };
@@ -1329,7 +1477,21 @@ export class FarmSystem extends Component {
         if (!this.world) return [];
         this.ensureDecorBuckets();
         const list = this._decorBuckets?.grass ?? [];
-        return list.filter((n) => n.isValid);
+        return list.filter((n) => n.isValid && n.active);
+    }
+
+    listRocks(): Node[] {
+        if (!this.world) return [];
+        this.ensureDecorBuckets();
+        const list = this._decorBuckets?.rock ?? [];
+        return list.filter((n) => n.isValid && n.active);
+    }
+
+    listTrees(): Node[] {
+        if (!this.world) return [];
+        this.ensureDecorBuckets();
+        const list = this._decorBuckets?.tree ?? [];
+        return list.filter((n) => n.isValid && n.active);
     }
 
     /**
@@ -1376,13 +1538,7 @@ export class FarmSystem extends Component {
         let best: { x: number; y: number } | null = null;
         let bestSq = Number.POSITIVE_INFINITY;
         for (const [key, plot] of this._plots) {
-            let ok = false;
-            if (need === 'soil') ok = plot.phase === 'soil';
-            else if (need === 'tilled') ok = plot.phase === 'tilled';
-            else if (need === 'water') ok = plot.phase === 'crop' && !plot.watered && plot.stage < 2;
-            else if (need === 'grow') ok = plot.phase === 'crop' && plot.watered && plot.stage < 2;
-            else if (need === 'harvest') ok = plot.phase === 'crop' && plot.stage >= 2;
-            if (!ok) continue;
+            if (!this.plotMatchesNeed(plot, need)) continue;
             const parts = key.split(',');
             const ix = Number(parts[0]);
             const iy = Number(parts[1]);
@@ -1398,6 +1554,29 @@ export class FarmSystem extends Component {
             }
         }
         return best;
+    }
+
+    /** True when the plot under world (wx, wy) still matches an idle-hint need. */
+    plotPosMatchesNeed(
+        wx: number,
+        wy: number,
+        need: 'soil' | 'tilled' | 'water' | 'grow' | 'harvest',
+    ): boolean {
+        const key = `${Math.round(wx / TILE)},${Math.round(wy / TILE)}`;
+        const plot = this._plots.get(key);
+        return !!plot && this.plotMatchesNeed(plot, need);
+    }
+
+    private plotMatchesNeed(
+        plot: Plot,
+        need: 'soil' | 'tilled' | 'water' | 'grow' | 'harvest',
+    ): boolean {
+        if (need === 'soil') return plot.phase === 'soil';
+        if (need === 'tilled') return plot.phase === 'tilled';
+        if (need === 'water') return plot.phase === 'crop' && !plot.watered && plot.stage < 2;
+        if (need === 'grow') return plot.phase === 'crop' && plot.watered && plot.stage < 2;
+        if (need === 'harvest') return plot.phase === 'crop' && plot.stage >= 2;
+        return false;
     }
 
     /** True while a mock rewarded-ad grow boost is ticking. */
@@ -1496,7 +1675,7 @@ export class FarmSystem extends Component {
         const list = this.decorListFor(nameRe);
         for (let i = 0; i < list.length; i++) {
             const child = list[i]!;
-            if (!child.isValid) continue;
+            if (!child.isValid || !child.active) continue;
             const ui = child.getComponent(UITransform);
             if (!ui) continue;
             const w = ui.contentSize.width;
@@ -1547,7 +1726,7 @@ export class FarmSystem extends Component {
         const list = this.decorListFor(nameRe);
         for (let i = 0; i < list.length; i++) {
             const child = list[i]!;
-            if (!child.isValid) continue;
+            if (!child.isValid || !child.active) continue;
             const ui = child.getComponent(UITransform);
             const lift = ui ? Math.min(yLift, ui.contentSize.height * 0.4) : yLift;
             const cx = child.position.x;

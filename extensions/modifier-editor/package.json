@@ -1,0 +1,109 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "modifier-editor",
+  "description": "Buff（Modifier）管理器：战斗管理器子模块；浏览/创建 Buff 资产，对齐 GameAsset ApplyModifier",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "browser": {
+      "title": "Buff浏览器",
+      "type": "dockable",
+      "main": "./dist/panels/browser.js",
+      "size": {
+        "min-width": 360,
+        "min-height": 420,
+        "width": 480,
+        "height": 640
+      }
+    },
+    "create": {
+      "title": "创建Buff",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 300
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "browse-modifiers": {
+        "methods": [
+          "browseModifiers"
+        ]
+      },
+      "create-modifier": {
+        "methods": [
+          "createModifier"
+        ]
+      },
+      "ensure-registered": {
+        "public": true,
+        "description": "向 node-graph 注册 Buff 节点/端口",
+        "methods": [
+          "ensureRegistered"
+        ]
+      },
+      "list-modifiers": {
+        "public": true,
+        "methods": [
+          "listModifiers"
+        ]
+      },
+      "open-modifier": {
+        "public": true,
+        "description": "打开 Buff 图 { modifierId }",
+        "methods": [
+          "openModifier"
+        ]
+      },
+      "export-modifier": {
+        "public": true,
+        "description": "导出单个 Buff TS { modifierId }",
+        "methods": [
+          "exportModifier"
+        ]
+      },
+      "export-ts-batch": {
+        "public": true,
+        "methods": [
+          "exportTsBatch"
+        ]
+      },
+      "create-modifier-api": {
+        "public": true,
+        "methods": [
+          "createModifierApi"
+        ]
+      },
+      "validate-modifier": {
+        "public": true,
+        "description": "校验单个 Buff { modifierId }",
+        "methods": [
+          "validateModifier"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 battle-manager 自动发现的模块契约",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      }
+    }
+  }
+}

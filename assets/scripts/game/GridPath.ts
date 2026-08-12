@@ -72,6 +72,22 @@ export function footSolidFor(
         return { x: footX, y: footY + hh, hw, hh };
     }
 
+    // Buildings / homes — lower wall mass (not full roof height). Tiny prop
+    // toe boxes left players walking across facades ("站在房子上了").
+    if (
+        name.startsWith('bld_') ||
+        name.startsWith('cottage_') ||
+        name.startsWith('home_') ||
+        name.startsWith('shed') ||
+        name === 'shop' ||
+        name === 'community' ||
+        name === 'fountain'
+    ) {
+        const hw = Math.max(40, Math.min(140, contentW * 0.42));
+        const hh = Math.max(28, Math.min(72, contentH * 0.22));
+        return { x: footX, y: footY + hh, hw, hh };
+    }
+
     // Stumps / rocks / logs / fences / props — modest foot box.
     const hw = Math.max(12, Math.min(28, contentW * 0.22));
     const hh = Math.max(8, Math.min(16, contentH * 0.1));

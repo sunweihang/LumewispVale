@@ -1,4 +1,5 @@
 import { Node, Sprite, UIOpacity, UITransform, Vec3, tween } from 'cc';
+import { DoorPortalAnimator } from './DoorPortalAnimator';
 import { NPC_FRAMES } from './NpcFrames';
 import { NpcAnimator } from './NpcAnimator';
 
@@ -20,18 +21,24 @@ export class ClinicWorldLayout {
     static mountExitFx(world: Node): void {
         if ((world as Node & { __clinicExitFx?: boolean }).__clinicExitFx) return;
         (world as Node & { __clinicExitFx?: boolean }).__clinicExitFx = true;
-        const glow = world.getChildByName('exit_floor_glow');
-        if (!glow?.isValid) return;
-        let op = glow.getComponent(UIOpacity);
-        if (!op) op = glow.addComponent(UIOpacity);
-        op.opacity = 170;
-        tween(op)
-            .repeatForever(
-                tween(op)
-                    .to(1.8, { opacity: 110 }, { easing: 'sineInOut' })
-                    .to(1.8, { opacity: 170 }, { easing: 'sineInOut' }),
-            )
-            .start();
+        const pulse = (name: string, hi: number, lo: number, dur: number) => {
+            const n = world.getChildByName(name);
+            if (!n?.isValid) return;
+            let op = n.getComponent(UIOpacity);
+            if (!op) op = n.addComponent(UIOpacity);
+            op.opacity = hi;
+            tween(op)
+                .repeatForever(
+                    tween(op)
+                        .to(dur, { opacity: lo }, { easing: 'sineInOut' })
+                        .to(dur, { opacity: hi }, { easing: 'sineInOut' }),
+                )
+                .start();
+        };
+        DoorPortalAnimator.mountAll(world);
+        pulse('exit_floor_glow', 170, 110, 1.8);
+        pulse('door_portal_beam', 255, 200, 1.6);
+        pulse('door_light_beam', 255, 200, 1.6);
     }
 
     static spawnNpcs(world: Node): Node[] {
@@ -93,7 +100,15 @@ export class ClinicWorldLayout {
     }
 
     private static interactKey(name: string): string | null {
-        if (name === 'door_exit' || name === 'exit_floor_glow') return 'exit';
+        if (
+            name === 'door_exit' ||
+            name === 'exit_floor_glow' ||
+            name === 'door_light_beam' ||
+            name === 'door_portal_ring' ||
+            name === 'door_portal_beam'
+        ) {
+            return 'exit';
+        }
         if (name === 'prop_desk_clinic') return 'desk';
         if (name === 'prop_shelf_meds') return 'shelf';
         if (name === 'prop_tea_clinic') return 'tea';

@@ -1,0 +1,130 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "ballistic-editor",
+  "description": "弹道图编辑器（依赖 node-graph，与 skill-editor 配合；导出 TsBallistic TS 代码）",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "browser": {
+      "title": "弹道浏览器",
+      "type": "dockable",
+      "main": "./dist/panels/browser.js",
+      "size": {
+        "min-width": 360,
+        "min-height": 420,
+        "width": 480,
+        "height": 640
+      }
+    },
+    "create": {
+      "title": "创建弹道",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 300
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "browse-ballistics": {
+        "methods": [
+          "browseBallistics"
+        ]
+      },
+      "create-ballistic": {
+        "methods": [
+          "createBallistic"
+        ]
+      },
+      "edit-ballistic-graph": {
+        "methods": [
+          "editBallisticGraph"
+        ]
+      },
+      "validate-ballistic-graph": {
+        "methods": [
+          "validateBallisticGraph"
+        ]
+      },
+      "export-ts": {
+        "methods": [
+          "exportTs"
+        ]
+      },
+      "export-ts-batch": {
+        "methods": [
+          "exportTsBatch"
+        ]
+      },
+      "ensure-registered": {
+        "public": true,
+        "description": "向 node-graph 注册弹道节点/端口",
+        "methods": [
+          "ensureRegistered"
+        ]
+      },
+      "open-ballistic": {
+        "public": true,
+        "description": "打开弹道图 { ballisticId }",
+        "methods": [
+          "openBallistic"
+        ]
+      },
+      "export-ballistic": {
+        "public": true,
+        "description": "导出单个弹道 TS { ballisticId }",
+        "methods": [
+          "exportBallistic"
+        ]
+      },
+      "list-ballistics": {
+        "public": true,
+        "methods": [
+          "listBallistics"
+        ]
+      },
+      "create-ballistic-api": {
+        "public": true,
+        "methods": [
+          "createBallisticApi"
+        ]
+      },
+      "find-skills-using-ballistic": {
+        "public": true,
+        "description": "查找引用本弹道模板的技能图 { ballisticId }",
+        "methods": [
+          "findSkillsUsingBallistic"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 battle-manager 自动发现的模块契约",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      },
+      "validate-ballistic": {
+        "public": true,
+        "description": "校验单个弹道 { ballisticId }",
+        "methods": [
+          "validateBallistic"
+        ]
+      }
+    }
+  }
+}

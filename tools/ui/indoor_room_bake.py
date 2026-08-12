@@ -31,6 +31,8 @@ PROPS = {
     "chair": ("prop-chair", 48, 56),
     "rug": ("prop-rug-mayor", 128, 80),
     "exitFloorGlow": ("prop-exit-floor-glow", 112, 64),
+    "doorPortalRing": ("prop-door-portal-ring", 96, 56),
+    "doorPortalBeam": ("prop-door-portal-beam", 56, 128),
     "crate": ("prop-crate", 56, 56),
     "barrel": ("prop-barrel", 48, 56),
     "bench": ("prop-bench", 96, 48),
@@ -198,7 +200,11 @@ class IndoorRoomBake:
 
     def place_exit(self) -> None:
         exit_y = ROOM_BOTTOM + 8
-        if self.sf("prop-exit-floor-glow"):
+        # Portal marker (ground ring + upright light) — replaces old floor sheen.
+        portal_sf = self.sf("prop-door-portal") or self.sf("prop-door-portal-beam")
+        if portal_sf:
+            self.add_actor("door_portal_beam", portal_sf, 0.0, exit_y + 2, 80, 144, 0.0)
+        elif self.sf("prop-exit-floor-glow"):
             self.add_actor(
                 "exit_floor_glow",
                 self.sf("prop-exit-floor-glow"),

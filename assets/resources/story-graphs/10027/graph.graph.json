@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "graphId": "story_10027_quest_1023",
+  "profile": {
+    "name": "story",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "StoryEntranceBlueprint",
+        "StartChatBlueprint",
+        "WaitSecondsBlueprint",
+        "WaitGameEventBlueprint",
+        "EmitGameEventBlueprint",
+        "SetFlagBlueprint",
+        "FlagBranchBlueprint",
+        "LockPlayerInputBlueprint",
+        "UnlockPlayerInputBlueprint",
+        "CameraMoveToTargetBlueprint",
+        "CameraShakeBlueprint",
+        "CameraLockPlayerBlueprint",
+        "PlayAnimationBlueprint",
+        "PlayParticleEffectBlueprint",
+        "PlayAudioOneShotBlueprint",
+        "BossPlayAppearShowBlueprint",
+        "BossStartCombatBlueprint",
+        "StoryEndBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "StoryEntranceBlueprint",
+      "title": "剧情入口",
+      "position": {
+        "x": 40,
+        "y": 40,
+        "w": 220,
+        "h": 180
+      },
+      "minWidth": 220,
+      "minHeight": 180,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "开始",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "每帧更新",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "正常结束",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "中断",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_lock",
+      "typeName": "LockPlayerInputBlueprint",
+      "title": "锁定玩家输入",
+      "position": {
+        "x": 300,
+        "y": 40,
+        "w": 180,
+        "h": 80
+      },
+      "minWidth": 180,
+      "minHeight": 80,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "后继",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_chat",
+      "typeName": "StartChatBlueprint",
+      "title": "播对话",
+      "position": {
+        "x": 520,
+        "y": 40,
+        "w": 200,
+        "h": 100
+      },
+      "minWidth": 200,
+      "minHeight": 100,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "后继",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "chatId": 10027
+      }
+    },
+    {
+      "id": "node_unlock",
+      "typeName": "UnlockPlayerInputBlueprint",
+      "title": "解锁玩家输入",
+      "position": {
+        "x": 760,
+        "y": 40,
+        "w": 180,
+        "h": 80
+      },
+      "minWidth": 180,
+      "minHeight": 80,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "后继",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_end",
+      "typeName": "StoryEndBlueprint",
+      "title": "结束剧情",
+      "position": {
+        "x": 980,
+        "y": 40,
+        "w": 160,
+        "h": 80
+      },
+      "minWidth": 160,
+      "minHeight": 80,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [],
+      "customData": {}
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_lock",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_lock",
+      "fromPortIndex": 0,
+      "toNodeId": "node_chat",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_chat",
+      "fromPortIndex": 0,
+      "toNodeId": "node_unlock",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_unlock",
+      "fromPortIndex": 0,
+      "toNodeId": "node_end",
+      "toPortIndex": 0
+    }
+  ]
+}

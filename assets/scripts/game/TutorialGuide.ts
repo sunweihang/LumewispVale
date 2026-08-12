@@ -16,6 +16,7 @@ import {
     Tween,
 } from 'cc';
 import { GotoAction } from '../cfg/schema';
+import { getCraftRecipes } from './CraftRecipes';
 import { ClickMoveMarker } from './ClickMoveMarker';
 import { DialoguePanel } from './DialoguePanel';
 import { FarmHUD } from './FarmHUD';
@@ -37,6 +38,7 @@ import { TownShopPanel } from './TownShopPanel';
 import { portraitVisibleSize } from './PortraitFit';
 import { playUiClick } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
+import { WorldYSort } from './WorldYSort';
 
 const { ccclass, executionOrder } = _decorator;
 
@@ -83,8 +85,6 @@ const GRASS_HINT_RANGE = 340;
 const YARD_GRASS = { x0: -40, x1: 260, y0: 140, y1: 280 };
 /** Within this range of the pier, tip switches from “walk” to “cast”. */
 const FISH_NEAR_RANGE = 300;
-/** Quest 1003 first-seed recipe — matches FarmHUD guided craft. */
-const FIRST_SEED_RECIPE = 'seed_from_grass';
 /** Keep the same world target this long so nearest-picking can't thrash the arrow. */
 const STICKY_MS = 1800;
 /** Prefer the stuck target until a rival is this much closer (world units²). */
@@ -96,25 +96,27 @@ const STICKY_SWITCH_SQ = 160 * 160;
 const EDGE_HYSTERESIS = 96;
 /** Hold the last good idle aim briefly when HUD/world holes flicker on farm boot. */
 const LAST_GUIDE_HOLD_MS = 450;
-/** World spacing between starlight path dots (denser trail, still pooled). */
-const PATH_DOT_STEP = 16;
+/** World spacing for path polyline samples (smooth continuous stroke). */
+const PATH_DOT_STEP = 12;
 /** Recompute A* at most this often while the player walks. */
 const PATH_REPATH_MS = 320;
-/** Cap path samples (world polyline); only on-screen dots are activated. */
-const PATH_DOT_MAX = 80;
-/** Hard cap on live Sprite nodes — performance budget. */
-const PATH_VISIBLE_MAX = 36;
-/** Canvas size of each ground mote. */
-const PATH_DOT_SIZE = 28;
+/** Cap path samples (world polyline) so long aims still reach the goal tip. */
+const PATH_DOT_MAX = 200;
+/** Canvas size of each optional spark accent. */
+const PATH_DOT_SIZE = 22;
+/** Place a soft spark every N visible samples along the continuous line. */
+const PATH_SPARK_EVERY = 5;
+/** Hard cap on spark Sprite nodes — accents only; the stroke carries the guide. */
+const PATH_VISIBLE_MAX = 24;
 /**
- * Arc length (world) past the player's nearest path sample before the first mote.
- * Clears feet / torso so the trail starts in front of the sprite, not through it.
+ * Arc length (world) past the player's nearest path sample before the trail starts.
+ * Stay tiny so the line reads as rising from under the feet, not from mid-torso.
  */
-const PATH_START_CLEAR = 78;
-/** Extra body AABB around feet (world) — catch path zigzags that skim the sprite. */
-const PATH_BODY_HW = 34;
-const PATH_BODY_DOWN = 18;
-const PATH_BODY_UP = 78;
+const PATH_START_CLEAR = 12;
+/** Tiny feet pad — skip samples stacked on the stand point. */
+const PATH_BODY_HW = 10;
+const PATH_BODY_DOWN = 8;
+const PATH_BODY_UP = 12;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
@@ -141,14 +143,18 @@ type IdleGuide = {
      * South edge uses arrowDeg 0 + edgeWalk.
      */
     arrowDeg?: number;
-    /** Off-screen “往×走” — ground starlight path (no floating firefly). */
+    /** Off-screen「前往xxx」— hide floating finger; starlight path still leads. */
     edgeWalk?: boolean;
     /**
-     * Place-only cue (door / gate / pier…). Never for NPCs or props —
-     * those keep the chevron alone.
+     * Click-aim light ring under the chevron (plots / plants / doors…).
      */
     groundRipple?: boolean;
-    /** Optional world lock for the ripple (e.g. pier tip / door feet). */
+    /**
+     * Parent the ring in World (under plants, over soil). False / omitted =
+     * Canvas ring (doors / gates — porch sprites used to bury World rings).
+     */
+    rippleInWorld?: boolean;
+    /** Optional world lock for the chevron (pier / door feet / portal beam). */
     rippleWorld?: WorldPos;
     /** World feet goal for the ground starlight path (player → here). */
     pathWorld?: WorldPos;
@@ -159,17 +165,18 @@ const TOOL_LABEL: Record<string, string> = {
     hoe: '锄头',
     seeds: '种子',
     can: '水壶',
+    axe: '斧头',
     rod: '鱼竿',
     boost: '催熟剂',
 };
 
 /**
- * Hollow spotlight tutorial after wake_farm dialogue:
- * 1) show quest tracker → 2) select hand → 3) pull weeds until quest 1001 is done.
- * Spotlight is forced: InputBridge.uiBlocking stays on (no walk / no other taps).
+ * Yard guide after wake_farm (quest+bag HUD unlock fly + idle arrows; spotlight retired):
+ * Talk to 露穗 → center icons fly to dock → soft idle arrows for weeds.
  *
  * Also: while a quest is active, keep guiding — wrong tool → yellow click arrow
- * on hotbar; walk-to world aims use a ground starlight path (edge when off-screen).
+ * on hotbar; walk-to world aims keep a continuous ground path until the tap
+ * (yellow arrow joins once the aim is on-screen).
  *
  * lateUpdate after CameraFollow so world→UI holes match the snapped World pose.
  */
@@ -196,8 +203,9 @@ export class TutorialGuide extends Component {
     /** Dark halo under the edge trail so it pops on bright grass / dirt. */
     private _edgeHaloN: Node | null = null;
     private _edgeHaloG: Graphics | null = null;
-    /** Ground starlight path (player → world aim). */
+    /** Ground guide path (player → world aim): continuous stroke + sparse sparks. */
     private _pathRoot: Node | null = null;
+    private _pathLineG: Graphics | null = null;
     private _pathDots: Node[] = [];
     private _pathDotFrames: SpriteFrame[] = [];
     private _pathFramesLoaded = false;
@@ -216,6 +224,14 @@ export class TutorialGuide extends Component {
     private _rippleSp: Sprite | null = null;
     private _rippleLoaded = false;
     private _ripplePulsing = false;
+    /** World-space aim ring (plots / plants) — Y-sorted under actors. */
+    private _worldRippleN: Node | null = null;
+    private _worldRippleOp: UIOpacity | null = null;
+    private _worldRippleSp: Sprite | null = null;
+    private _worldRippleLoaded = false;
+    private _worldRipplePulsing = false;
+    /** 「点击」label on the yellow chevron. */
+    private _clickLab: Label | null = null;
 
     private _open = false;
     private _idleOn = false;
@@ -229,6 +245,7 @@ export class TutorialGuide extends Component {
     /** True only for off-screen walk-direction cues (ground path). */
     private _idleEdgeWalk = false;
     private _idleGroundRipple = false;
+    private _idleRippleInWorld = false;
     private _idleRippleWorld: WorldPos | null = null;
     private _idlePathWorld: WorldPos | null = null;
     private _step: GuideStep = 'quest';
@@ -266,6 +283,7 @@ export class TutorialGuide extends Component {
         }
         loadUiFont().then((font) => {
             if (font && this._tipLab) applyUiFont(this._tipLab);
+            if (font && this._clickLab) applyUiFont(this._clickLab);
         });
     }
 
@@ -286,8 +304,8 @@ export class TutorialGuide extends Component {
      */
     currentGuideHint(): string | null {
         if (this._open) {
-            if (this._step === 'quest') return '露穗：看这里呀 · 点一下继续';
-            if (this._step === 'hand') return '露穗：先点下方「手」哦';
+            if (this._step === 'quest') return '露穗：点任务打开日志 · 点一下继续';
+            if (this._step === 'hand') return '露穗：先点下方「手」';
             return this.grassStepTip();
         }
         if (!this.quests?.activeQuest) return null;
@@ -304,11 +322,26 @@ export class TutorialGuide extends Component {
             return null;
         }
         const hud = this.node.getComponent(FarmHUD);
-        // Craft / bag modals normally hide the cue — keep guided craft / boost steps.
+        // Craft countdown: no click cue; soft wait line (input stays free).
+        if (hud?.isTutorialCraftBusy) {
+            const id = hud.guidedCraftRecipeId;
+            return id === 'seed_from_grass'
+                ? '露穗：种子还在搓，稍等'
+                : '露穗：还在制作，稍等';
+        }
+        // Closed panel — wait for the product fly to land before claim.
+        if (hud?.isTutorialCraftAwaitFly) {
+            return '露穗：做好啦，收进背包';
+        }
+        if (hud?.isRecipeLearnAwaitFly) {
+            return '露穗：新配方飞进背包了';
+        }
+        // Craft / bag modals normally hide the cue — keep guided craft / bag / learn steps.
         if (
             hud?.isModalOpen &&
-            !hud.needsFirstSeedCraftGuide() &&
-            !hud.needsHarvestBoostGuide()
+            !hud.needsCraftQuestGuide() &&
+            !hud.needsBagHotbarGuide() &&
+            !hud.needsRecipeLearnGuide()
         ) {
             return null;
         }
@@ -323,6 +356,7 @@ export class TutorialGuide extends Component {
         if (this.farm?.guideHintProvider) {
             this.farm.guideHintProvider = null;
         }
+        this.farm?.setGatherClearance(null);
         if (this._open) {
             InputBridge.uiBlocking = false;
         }
@@ -334,18 +368,18 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * First-yard guide after opening dialogue. Idempotent via GameState.
+     * After first 露穗 talk: unlock quest + bag HUD (center→badge fly) + idle arrows.
+     * No forced 镂空 spotlight — player can walk and pull weeds freely.
      */
     startWakeYardGuide() {
         if (GameState.hasSeenDialogue(GUIDE_ID)) return;
-        if (this._open) return;
         if ((this.quests?.activeQuest?.id ?? 0) !== 1001) return;
         if (this.quests?.isCompleted(1001)) return;
-        this.hideIdleArrow();
-        this._step = 'quest';
-        this._grassTarget = null;
-        this.show();
-        this.applyStep();
+        GameState.markDialogueSeen(GUIDE_ID);
+        this.node.getComponent(FarmHUD)?.playHudUnlockFx();
+        this.node.getComponent(QuestPanel)?.revealQuestHud();
+        // Soft idle arrow (no dim / hole lock) resumes on the next frame.
+        if (this._open) this.dismissSpotlight();
     }
 
     /**
@@ -354,6 +388,7 @@ export class TutorialGuide extends Component {
      */
     dismissSpotlight() {
         GameState.markDialogueSeen(GUIDE_ID);
+        this.node.getComponent(QuestPanel)?.revealQuestHud();
         if (!this._open) return;
         this._open = false;
         this._inputReady = false;
@@ -421,9 +456,7 @@ export class TutorialGuide extends Component {
                 InputBridge.uiBlocking = true;
                 InputBridge.clear();
             }
-            if (this._root?.isValid) {
-                this._root.setSiblingIndex(this.node.children.length - 1);
-            }
+            this.bringGuideFront();
             this.refreshHole();
             this.paint();
             this.layoutChrome(true);
@@ -434,9 +467,7 @@ export class TutorialGuide extends Component {
             if (this._idleOn) this.hideIdleArrow();
             return;
         }
-        if (this._root?.isValid) {
-            this._root.setSiblingIndex(this.node.children.length - 1);
-        }
+        this.bringGuideFront();
         const guide = this.resolveIdleGuideStable();
         if (!guide) {
             this.hideIdleArrow();
@@ -465,11 +496,13 @@ export class TutorialGuide extends Component {
         this._idleOn = false;
         this._inputReady = false;
         GameState.markDialogueSeen(GUIDE_ID);
+        // Dock was hidden until this talk — reveal before the quest-tracker spotlight.
+        this.node.getComponent(QuestPanel)?.revealQuestHud();
         this.setSpotlightChrome(true);
         if (this._rootOp) this._rootOp.opacity = 0;
         if (this._root) {
             this._root.active = true;
-            this._root.setSiblingIndex(this.node.children.length - 1);
+            this.bringGuideFront();
         }
         if (this._rootOp) {
             tween(this._rootOp).to(FADE_IN, { opacity: 255 }).start();
@@ -510,8 +543,10 @@ export class TutorialGuide extends Component {
         this._idleArrowDeg = 0;
         this._idleEdgeWalk = false;
         this._idleGroundRipple = false;
+        this._idleRippleInWorld = false;
         this._idleRippleWorld = null;
         this._idlePathWorld = null;
+        this.syncClickLabel(false);
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         this._lastIdleGuide = null;
         this._lastIdleUntil = 0;
@@ -545,11 +580,15 @@ export class TutorialGuide extends Component {
             return false;
         }
         const hud = this.node.getComponent(FarmHUD);
-        // Allow arrow over craft (first seed) and bag (drag boost to hotbar).
+        // Countdown / bag-fly: no click arrow; claim waits until deliver lands.
+        if (hud?.isTutorialCraftBusy || hud?.isTutorialCraftAwaitFly) return false;
+        if (hud?.isRecipeLearnAwaitFly) return false;
+        // Allow arrow over craft / bag hotbar teach / recipe-scroll learn.
         if (
             hud?.isModalOpen &&
-            !hud.needsFirstSeedCraftGuide() &&
-            !hud.needsHarvestBoostGuide()
+            !hud.needsCraftQuestGuide() &&
+            !hud.needsBagHotbarGuide() &&
+            !hud.needsRecipeLearnGuide()
         ) {
             return false;
         }
@@ -573,9 +612,20 @@ export class TutorialGuide extends Component {
         }
         if (this._root) {
             this._root.active = true;
-            this._root.setSiblingIndex(this.node.children.length - 1);
+            this.bringGuideFront();
         }
         // Defer layout to lateUpdate so the first paint matches CameraFollow snap.
+    }
+
+    /** Guide under active quest Toast so progress text is never covered. */
+    private bringGuideFront() {
+        if (!this._root?.isValid) return;
+        const parent = this.node;
+        this._root.setSiblingIndex(parent.children.length - 1);
+        const toast = parent.getChildByName('Toast');
+        if (toast?.isValid && toast.active) {
+            toast.setSiblingIndex(parent.children.length - 1);
+        }
     }
 
     private hideIdleArrow() {
@@ -589,8 +639,10 @@ export class TutorialGuide extends Component {
         this._idleArrowDeg = 0;
         this._idleEdgeWalk = false;
         this._idleGroundRipple = false;
+        this._idleRippleInWorld = false;
         this._idleRippleWorld = null;
         this._idlePathWorld = null;
+        this.syncClickLabel(false);
         if (this._finger) this._finger.setRotationFromEuler(0, 0, 0);
         // Keep sticky aim across brief dialogue / modal hides so the arrow
         // doesn't re-pick a different weed/plot when it comes back.
@@ -647,6 +699,7 @@ export class TutorialGuide extends Component {
         this._idleArrowDeg = guide.arrowDeg ?? 0;
         this._idleEdgeWalk = !!guide.edgeWalk;
         this._idleGroundRipple = !!guide.groundRipple;
+        this._idleRippleInWorld = !!guide.rippleInWorld;
         this._idleRippleWorld = guide.rippleWorld ?? null;
         this._idlePathWorld = guide.pathWorld ?? guide.rippleWorld ?? null;
         if (this._tipLab) this._tipLab.string = guide.tip;
@@ -665,8 +718,54 @@ export class TutorialGuide extends Component {
         // Ripple only when the aim is on-target (arrowDeg 0). Edge walks keep path.
         if ((guide.arrowDeg ?? 0) !== 0) return guide;
         guide.groundRipple = true;
+        // Canvas ring — World parenting used to hide under porch / facade sprites.
+        guide.rippleInWorld = false;
         if (world) guide.rippleWorld = world;
         return guide;
+    }
+
+    /** Outdoor enter FX: `bld_mayor` → `door_portal_mayor`. */
+    private doorPortalForBuilding(bldName: string): Node | null {
+        const kind = bldName.startsWith('bld_') ? bldName.slice(4) : bldName;
+        if (!kind) return null;
+        return this.farm?.findWorldNode(`door_portal_${kind}`) ?? null;
+    }
+
+    /** Indoor leave FX (`door_portal_beam` / ring) shared across rooms. */
+    private indoorDoorPortal(): Node | null {
+        return (
+            this.farm?.findWorldNode('door_portal_beam') ??
+            this.farm?.findWorldNode('door_portal_ring') ??
+            null
+        );
+    }
+
+    /**
+     * Door / exit place cue. When portal VFX is present, aim the chevron at it
+     * and skip the ground ripple — the portal already marks the tap spot.
+     */
+    private doorPlaceGuide(
+        stand: WorldPos,
+        tip: string,
+        walkTip: string,
+        portal: Node | null,
+    ): IdleGuide | null {
+        if (portal?.isValid) {
+            // Mid-beam lock point (portal ay=0, ~144 tall). rippleWorld keeps the
+            // chevron glued like place aims; groundRipple stays off so no water ring.
+            const aim = {
+                x: portal.position.x,
+                y: portal.position.y + 40,
+            };
+            const guide = this.worldOrQuest(this.worldPosHole(aim), tip, walkTip);
+            if (!guide || guide.uiDock) return guide;
+            guide.pathWorld = stand;
+            if ((guide.arrowDeg ?? 0) === 0) {
+                guide.rippleWorld = aim;
+            }
+            return guide;
+        }
+        return this.withPlaceRipple(this.worldPosGuide(stand, tip, walkTip), stand);
     }
 
     /** Attach a world feet goal so the starlight path can A* even on edge cues. */
@@ -678,7 +777,7 @@ export class TutorialGuide extends Component {
 
     private toolSwapTip(tool: string): string {
         const name = TOOL_LABEL[tool] ?? tool;
-        return `露穗：换上「${name}」再继续呀`;
+        return `露穗：换上「${name}」再继续`;
     }
 
     /** Wrong tool → arrow on that hotbar slot only (no caption, no quest-chip fallback). */
@@ -735,12 +834,29 @@ export class TutorialGuide extends Component {
     private worldNodeGuide(node: Node | null, tip: string, fallbackTip?: string): IdleGuide | null {
         const guide = this.worldOrQuest(this.worldNodeHole(node), tip, fallbackTip);
         if (!guide || !node?.isValid) return guide;
-        return this.withPathWorld(guide, { x: node.position.x, y: node.position.y });
+        const pos = { x: node.position.x, y: node.position.y };
+        return this.withWorldAimRipple(this.withPathWorld(guide, pos), pos);
     }
 
     /** World pos → directed hole. */
     private worldPosGuide(pos: WorldPos | null, tip: string, fallbackTip?: string): IdleGuide | null {
-        return this.withPathWorld(this.worldOrQuest(this.worldPosHole(pos), tip, fallbackTip), pos);
+        return this.withWorldAimRipple(
+            this.withPathWorld(this.worldOrQuest(this.worldPosHole(pos), tip, fallbackTip), pos),
+            pos,
+        );
+    }
+
+    /**
+     * Plot / plant / NPC click aims: yellow arrow + World light ring
+     * (under plants via WorldYSort, over soil tiles).
+     */
+    private withWorldAimRipple(guide: IdleGuide | null, world?: WorldPos | null): IdleGuide | null {
+        if (!guide || guide.uiDock || !world) return guide;
+        if ((guide.arrowDeg ?? 0) !== 0) return guide;
+        guide.groundRipple = true;
+        guide.rippleInWorld = true;
+        guide.rippleWorld = world;
+        return guide;
     }
 
     /**
@@ -749,7 +865,10 @@ export class TutorialGuide extends Component {
      */
     private resolveIdleGuide(): IdleGuide | null {
         const quests = this.quests;
-        if (!quests?.activeQuest) return null;
+        if (!quests?.activeQuest) {
+            this.farm?.setGatherClearance(null);
+            return null;
+        }
 
         // Journal open blocks movement — force close before any world step.
         const journal = this.node.getComponent(QuestPanel);
@@ -757,7 +876,7 @@ export class TutorialGuide extends Component {
             const hole = this.uiNodeHole(journal.btnClose);
             if (!hole) return null;
             this.clearStickyTarget();
-            return { hole, tip: '露穗：关掉这个，继续任务呀', uiDock: true };
+            return { hole, tip: '露穗：关掉这个，继续任务', uiDock: true };
         }
 
         // Police / post board open — hand off to Accept (quest 1011 used to die here).
@@ -770,28 +889,50 @@ export class TutorialGuide extends Component {
 
         // Before yard spotlight — free roam (no lock); soft arrow on 露穗 only.
         if (quests.activeQuest.id === 1001 && !GameState.hasSeenDialogue(GUIDE_ID)) {
+            this.farm?.setGatherClearance(null);
             return this.worldNodeGuide(
                 this.farm?.findWorldNode('npc_girl') ?? null,
-                '露穗：点我说话呀～',
-                '露穗：走近点我，点一下～',
+                '露穗：点我说话',
+                '露穗：走近一点，再点我',
             );
         }
 
-        // First-seed craft panel: make → wait (locked 5s) → close, then claim / next.
-        const craftGuide = this.resolveFirstSeedCraftGuide();
+        // Closed-panel guided craft: wait for countdown / bag fly — don't re-aim bench.
+        const hudPending = this.node.getComponent(FarmHUD);
+        if (hudPending?.isTutorialCraftBusy || hudPending?.isTutorialCraftAwaitFly) {
+            this.clearStickyTarget();
+            return null;
+        }
+        if (hudPending?.isRecipeLearnAwaitFly) {
+            this.clearStickyTarget();
+            return null;
+        }
+
+        // Craft panel (recipe / close-after-craft) must beat claim — same as shop:
+        // the modal still swallows quest-dock taps while open.
+        const craftGuide = this.resolveCraftQuestGuide();
         if (craftGuide) {
             this.clearStickyTarget();
             return craftGuide;
         }
 
         if (quests.isAwaitingClaim) {
-            const hole = this.questHole();
+            this.farm?.setGatherClearance(null);
+            const hole = this.claimHole();
             if (!hole) return null;
             this.clearStickyTarget();
-            return { hole, tip: '露穗：点任务栏领奖吧～', uiDock: true };
+            return { hole, tip: '露穗：点这里领奖', uiDock: true };
+        }
+
+        // New recipe scroll in the bag — learn before workbench / world steps.
+        const learnGuide = this.resolveRecipeLearnGuide();
+        if (learnGuide) {
+            this.clearStickyTarget();
+            return learnGuide;
         }
 
         const action = quests.activeGotoAction();
+        this.syncGatherClearance(action);
         const tool = this.farm?.tool;
 
         switch (action) {
@@ -801,13 +942,13 @@ export class TutorialGuide extends Component {
                 if (!harvestPos) {
                     const boost = this.resolveHarvestBoostGuide();
                     if (boost) return boost;
-                    return this.worldOrQuest(null, '露穗：再等等，作物就要熟啦');
+                    return this.worldOrQuest(null, '露穗：再等等，作物就要熟了');
                 }
                 if (tool !== 'hand') {
                     this.clearStickyTarget();
                     return this.toolSwapGuide('hand', 'hand');
                 }
-                return this.worldPosGuide(harvestPos, '露穗：点成熟作物收获呀');
+                return this.worldPosGuide(harvestPos, '露穗：点成熟作物收获');
             }
             case GotoAction.HintGrass: {
                 if (tool !== 'hand') {
@@ -816,30 +957,66 @@ export class TutorialGuide extends Component {
                 }
                 return this.worldNodeGuide(
                     this.pickHintGrass(),
-                    '露穗：点这里拔掉杂草～',
+                    '露穗：点这里拔掉杂草',
                 );
             }
             case GotoAction.SelectHoe: {
+                const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+                    ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+                    openTip: '露穗：点开背包，把锄头拿出来',
+                });
+                if (hoeBag) return hoeBag;
                 if (tool !== 'hoe') {
                     this.clearStickyTarget();
                     return this.toolSwapGuide('hoe', 'hoe');
                 }
                 // worldPosGuide attaches pathWorld so arrow taps snap to the plot.
-                return this.worldPosGuide(this.stickyPlotPos('soil'), '露穗：点这里开垦田地哦');
+                return this.worldPosGuide(this.stickyPlotPos('soil'), '露穗：点这里开垦田地');
+            }
+            case GotoAction.HintRock: {
+                const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+                    ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+                    openTip: '露穗：点开背包，把锄头拿出来',
+                });
+                if (hoeBag) return hoeBag;
+                if (tool !== 'hoe') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('hoe', 'hoe');
+                }
+                return this.worldNodeGuide(
+                    this.pickNearestDecor(this.farm?.listRocks() ?? []),
+                    '露穗：点石头挖石料',
+                );
+            }
+            case GotoAction.SelectAxe: {
+                const axeBag = this.resolveBagToHotbarGuide('axe');
+                if (axeBag) return axeBag;
+                if (tool !== 'axe') {
+                    this.clearStickyTarget();
+                    return this.toolSwapGuide('axe', 'axe');
+                }
+                return this.worldNodeGuide(
+                    this.pickNearestDecor(this.farm?.listTrees() ?? []),
+                    '露穗：点树砍几下，攒木料',
+                );
             }
             case GotoAction.SelectSeeds: {
+                const seedBag = this.resolveBagToHotbarGuide('seeds');
+                if (seedBag) return seedBag;
                 if (tool !== 'seeds') {
                     this.clearStickyTarget();
                     return this.toolSwapGuide('seeds', 'seeds');
                 }
-                return this.worldPosGuide(this.stickyPlotPos('tilled'), '露穗：点翻好的地播种呀');
+                return this.worldPosGuide(this.stickyPlotPos('tilled'), '露穗：点翻好的地播种');
             }
             case GotoAction.SelectCan: {
+                const canBag = this.resolveBagToHotbarGuide('can');
+                if (canBag) return canBag;
                 if (tool !== 'can') {
                     this.clearStickyTarget();
                     return this.toolSwapGuide('can', 'can');
                 }
-                return this.worldPosGuide(this.stickyPlotPos('water'), '露穗：给作物浇点水吧');
+                return this.worldPosGuide(this.stickyPlotPos('water'), '露穗：给作物浇点水');
             }
             case GotoAction.SelectRod:
             case GotoAction.HintFish:
@@ -847,43 +1024,65 @@ export class TutorialGuide extends Component {
             case GotoAction.HintFarm: {
                 const soil = this.stickyPlotPos('soil');
                 if (soil) {
+                    const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+                        ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+                        openTip: '露穗：点开背包，把锄头拿出来',
+                    });
+                    if (hoeBag) return hoeBag;
                     if (tool !== 'hoe') {
                         this.clearStickyTarget();
                         return this.toolSwapGuide('hoe', 'hoe');
                     }
-                    return this.worldPosGuide(soil, '露穗：点这里开垦田地哦');
+                    return this.worldPosGuide(soil, '露穗：点这里开垦田地');
                 }
                 const tilled = this.stickyPlotPos('tilled');
                 if (tilled) {
+                    const seedBag = this.resolveBagToHotbarGuide('seeds');
+                    if (seedBag) return seedBag;
                     if (tool !== 'seeds') {
                         this.clearStickyTarget();
                         return this.toolSwapGuide('seeds', 'seeds');
                     }
-                    return this.worldPosGuide(tilled, '露穗：点翻好的地播种呀');
+                    return this.worldPosGuide(tilled, '露穗：点翻好的地播种');
                 }
-                return this.worldOrQuest(null, '露穗：去田边操作一下吧');
+                return this.worldOrQuest(null, '露穗：去田边操作一下');
             }
             case GotoAction.HintCraft:
             case GotoAction.OpenCraft: {
                 const hud = this.node.getComponent(FarmHUD);
                 if (hud?.isCraftOpen) {
-                    // Panel open mid-quest — fall through to in-panel guide above.
-                    const again = this.resolveFirstSeedCraftGuide();
+                    const again = this.resolveCraftQuestGuide();
                     if (again) {
                         this.clearStickyTarget();
                         return again;
                     }
                 }
-                return this.worldNodeGuide(
-                    this.farm?.findWorldNode('prop_craftbench') ?? null,
-                    '露穗：点工作台打开合成呀',
-                );
+                // Aim the place chevron at the desk (anvil), not sprite-top /
+                // feet — worldNodeGuide sat the tip on dirt above the bench.
+                const bench = this.farm?.findWorldNode('prop_craftbench') ?? null;
+                if (!bench) {
+                    return this.worldOrQuest(null, '露穗：点工作台打开制作');
+                }
+                const tip = '露穗：点工作台打开制作';
+                const desk = this.stickyWorldPos('craftbench', {
+                    x: bench.position.x,
+                    y: bench.position.y + 42,
+                });
+                const guide = this.worldOrQuest(this.worldPosHole(desk), tip);
+                if (!guide || guide.uiDock) return guide;
+                guide.pathWorld = { x: bench.position.x, y: bench.position.y };
+                if ((guide.arrowDeg ?? 0) === 0) {
+                    guide.groundRipple = true;
+                    guide.rippleInWorld = false;
+                    guide.rippleWorld = desk;
+                }
+                return guide;
             }
             case GotoAction.OpenBag: {
                 const bag = this.bagHole() ?? this.questHole();
                 if (!bag) return null;
                 this.clearStickyTarget();
-                return { hole: bag, tip: '露穗：点开背包看看～', uiDock: true };
+                return { hole: bag, tip: '露穗：点开背包看看', uiDock: true };
             }
             case GotoAction.HintMeteor:
             case GotoAction.HintTownGate:
@@ -998,7 +1197,7 @@ export class TutorialGuide extends Component {
         const hole = this.uiNodeHole(shop.acceptBtnNode());
         if (!hole) return null;
         this.clearStickyTarget();
-        return { hole, tip: '露穗：点「接受委托」接任务呀', uiDock: true };
+        return { hole, tip: '露穗：点「接受委托」，再到任务里看', uiDock: true };
     }
 
     /**
@@ -1013,7 +1212,7 @@ export class TutorialGuide extends Component {
         if (shop.needsShopCloseGuide()) {
             const hole = this.uiNodeHole(shop.closeBtnNode());
             if (!hole) return null;
-            return { hole, tip: '露穗：关掉商店继续吧', uiDock: true };
+            return { hole, tip: '露穗：关掉商店继续', uiDock: true };
         }
         if (!shop.needsShopTradeGuide()) return null;
         const qid = this.quests?.activeQuest?.id ?? 0;
@@ -1021,26 +1220,26 @@ export class TutorialGuide extends Component {
             if (shop.shopSide !== 'sell') {
                 const hole = this.uiNodeHole(shop.sellTabNode());
                 if (!hole) return null;
-                return { hole, tip: '露穗：先点「出售」页签呀', uiDock: true };
+                return { hole, tip: '露穗：先点「出售」页签', uiDock: true };
             }
             const hole = this.uiNodeHole(shop.firstSellRowNode());
             if (hole) {
-                return { hole, tip: '露穗：点这一行卖掉一件呀', uiDock: true };
+                return { hole, tip: '露穗：点这一行卖掉一件', uiDock: true };
             }
             // Empty sell list — keep the panel cue (don't fall through to buildings).
             const tab = this.uiNodeHole(shop.sellTabNode());
             if (!tab) return null;
-            return { hole: tab, tip: '露穗：背包里还没有可卖的收获物呀', uiDock: true };
+            return { hole: tab, tip: '露穗：背包里还没有可卖的收获物', uiDock: true };
         }
         if (qid === 1020) {
             if (shop.shopSide !== 'buy') {
                 const hole = this.uiNodeHole(shop.buyTabNode());
                 if (!hole) return null;
-                return { hole, tip: '露穗：先点「购买」页签呀', uiDock: true };
+                return { hole, tip: '露穗：先点「购买」页签', uiDock: true };
             }
             const hole = this.uiNodeHole(shop.firstBuyRowNode());
             if (!hole) return null;
-            return { hole, tip: '露穗：点这一行买一件呀', uiDock: true };
+            return { hole, tip: '露穗：点这一行买一件', uiDock: true };
         }
         return null;
     }
@@ -1065,10 +1264,14 @@ export class TutorialGuide extends Component {
                 x: node.position.x + biasX,
                 y: node.position.y + 28,
             });
-            const guide = this.worldPosGuide(pos, tip, walkTip);
-            // Buildings / signs = place; NPCs keep arrow only.
-            if (node.name.startsWith('npc_')) return guide;
-            return this.withPlaceRipple(guide, pos);
+            // Buildings / signs = place; NPCs keep arrow above the sprite hole.
+            if (node.name.startsWith('npc_')) {
+                return this.worldPosGuide(pos, tip, walkTip);
+            }
+            const portal = node.name.startsWith('bld_')
+                ? this.doorPortalForBuilding(node.name)
+                : null;
+            return this.doorPlaceGuide(pos, tip, walkTip, portal);
         }
         const exit = this.farm?.findWorldNode('door_exit') ?? null;
         if (exit) {
@@ -1076,13 +1279,11 @@ export class TutorialGuide extends Component {
                 x: exit.position.x,
                 y: exit.position.y + 24,
             });
-            return this.withPlaceRipple(
-                this.worldPosGuide(
-                    pos,
-                    '点击门口回镇子',
-                    '走到门口后点一下出门',
-                ),
+            return this.doorPlaceGuide(
                 pos,
+                '点击门口回镇子',
+                '走到门口后点一下出门',
+                this.indoorDoorPortal(),
             );
         }
         return this.worldOrQuest(null, tip, walkTip);
@@ -1119,6 +1320,93 @@ export class TutorialGuide extends Component {
     }
 
     /**
+     * Earned recipe scroll: open bag → tap scroll to learn → workbench unlocks.
+     */
+    private resolveRecipeLearnGuide(): IdleGuide | null {
+        const hud = this.node.getComponent(FarmHUD);
+        const quests = this.quests;
+        if (!hud || !quests) return null;
+        const pending = quests.pendingCraftRecipeIds();
+        if (!pending.length) return null;
+
+        this.clearStickyTarget();
+        const recipeId = pending[0]!;
+        const recipe = getCraftRecipes().find((r) => r.id === recipeId);
+        const name = recipe?.name ?? '配方';
+        if (hud.isRecipeLearnOpen) {
+            const learn = this.uiNodeHole(hud.recipeLearnBtnNode());
+            if (!learn) return null;
+            return { hole: learn, tip: `露穗：点「学习」，学会「${name}」`, uiDock: true };
+        }
+        if (!hud.isBagOpen) {
+            const bag = this.bagHole() ?? this.questHole();
+            if (!bag) return null;
+            return { hole: bag, tip: '露穗：新配方飞进背包了，打开学习', uiDock: true };
+        }
+        if (!hud.recipeScrollSlotNode(recipeId)) {
+            hud.grantRecipeScroll(recipeId, { fly: false });
+        }
+        const hole = this.uiNodeHole(hud.recipeScrollSlotNode(recipeId));
+        if (!hole) return null;
+        return { hole, tip: `露穗：点卷轴，打开「${name}」配方`, uiDock: true };
+    }
+
+    /**
+     * Shared bag → hotbar drag lesson for dockable tools / consumables.
+     * open bag → drag item → close (caller handles post-close equip / world aim).
+     */
+    private resolveBagToHotbarGuide(
+        itemId: string,
+        opts?: {
+            ensure?: () => void;
+            openTip?: string;
+            dragTip?: string;
+            dragTipShort?: string;
+            closeTip?: string;
+        },
+    ): IdleGuide | null {
+        const hud = this.node.getComponent(FarmHUD);
+        if (!hud) return null;
+        opts?.ensure?.();
+
+        const label = TOOL_LABEL[itemId] ?? itemId;
+        const openTip = opts?.openTip ?? `露穗：点开背包，把${label}拖到快捷栏`;
+        const dragTip = opts?.dragTip ?? `露穗：按住${label}，拖到空快捷栏`;
+        const dragTipShort = opts?.dragTipShort ?? `露穗：把${label}拖到下方快捷栏`;
+        const closeTip = opts?.closeTip ?? '露穗：关掉背包继续';
+
+        if (hud.isHotbarBound(itemId)) {
+            if (hud.isBagOpen) {
+                this.clearStickyTarget();
+                const close = this.uiNodeHole(hud.bagCloseBtnNode());
+                if (!close) return null;
+                return { hole: close, tip: closeTip, uiDock: true };
+            }
+            return null;
+        }
+
+        this.clearStickyTarget();
+        if (!hud.isBagOpen) {
+            const bag = this.bagHole() ?? this.questHole();
+            if (!bag) return null;
+            return { hole: bag, tip: openTip, uiDock: true };
+        }
+        const itemHole = this.uiNodeHole(hud.bagSlotNode(itemId));
+        if (!itemHole) return null;
+        const dropHole = this.uiNodeHole(hud.emptyHotbarSlotNode());
+        if (!dropHole) {
+            return { hole: itemHole, tip: dragTipShort, uiDock: true };
+        }
+        return {
+            hole: itemHole,
+            tip: dragTip,
+            uiDock: true,
+            dragTo: dropHole,
+            dragItem: itemId,
+        };
+    }
+
+    /**
      * Quest 1006 before the crop is mature:
      * open bag → drag boost to hotbar → close → equip → use on crop.
      */
@@ -1128,34 +1416,10 @@ export class TutorialGuide extends Component {
         if (!farm || !hud) return null;
         if (farm.boosts <= 0) return null;
 
-        if (!hud.isHotbarBound('boost')) {
-            this.clearStickyTarget();
-            if (!hud.isBagOpen) {
-                const bag = this.bagHole() ?? this.questHole();
-                if (!bag) return null;
-                return { hole: bag, tip: '露穗：点开背包看看～', uiDock: true };
-            }
-            const itemHole = this.uiNodeHole(hud.bagSlotNode('boost'));
-            if (!itemHole) return null;
-            const dropHole = this.uiNodeHole(hud.emptyHotbarSlotNode());
-            if (!dropHole) {
-                return { hole: itemHole, tip: '露穗：把催熟剂拖到下方快捷栏', uiDock: true };
-            }
-            return {
-                hole: itemHole,
-                tip: '露穗：按住催熟剂，拖到空快捷栏呀',
-                uiDock: true,
-                dragTo: dropHole,
-                dragItem: 'boost',
-            };
-        }
-
-        if (hud.isBagOpen) {
-            this.clearStickyTarget();
-            const close = this.uiNodeHole(hud.bagCloseBtnNode());
-            if (!close) return null;
-            return { hole: close, tip: '露穗：关掉背包继续吧', uiDock: true };
-        }
+        const bagGuide = this.resolveBagToHotbarGuide('boost', {
+            openTip: '露穗：点开背包看看',
+        });
+        if (bagGuide) return bagGuide;
 
         if (farm.tool !== 'boost') {
             // Already on the dock — select it so the crop tap is one shot (not equip+use).
@@ -1168,34 +1432,80 @@ export class TutorialGuide extends Component {
             }
         }
 
-        return this.worldPosGuide(this.stickyPlotPos('grow'), '露穗：点作物用催熟剂～');
+        return this.worldPosGuide(this.stickyPlotPos('grow'), '露穗：点作物用催熟剂');
     }
 
-    /**
-     * Quest 1003 craft modal steps (FarmHUD enforces 5s lock).
-     * Returns null when the panel is closed or this quest doesn't need it.
-     */
-    private resolveFirstSeedCraftGuide(): IdleGuide | null {
+    /** Forced craft-quest steps while the workbench is open (countdown stays free). */
+    private resolveCraftQuestGuide(): IdleGuide | null {
+        const quests = this.quests;
+        const q = quests?.activeQuest;
+        if (!q) return null;
         const hud = this.node.getComponent(FarmHUD);
-        if (!hud?.needsFirstSeedCraftGuide()) return null;
+        if (!hud?.isCraftOpen) return null;
 
-        if (hud.isTutorialCraftLocked) {
-            const node = hud.craftRecipeBtnNode(FIRST_SEED_RECIPE);
-            const hole = this.uiNodeHole(node);
-            if (!hole) return null;
-            return { hole, tip: '露穗：种子正在搓呢，稍等～', uiDock: true };
-        }
+        // Job already ticking — wait for finish, then guide close (no click arrow).
+        if (hud.isTutorialCraftBusy) return null;
 
         if (hud.isTutorialCraftAwaitClose) {
             const hole = this.uiNodeHole(hud.craftCloseBtnNode());
             if (!hole) return null;
-            return { hole, tip: '露穗：关掉工作台继续吧', uiDock: true };
+            return { hole, tip: '露穗：关掉工作台继续', uiDock: true };
         }
 
-        const btn = hud.craftRecipeBtnNode(FIRST_SEED_RECIPE);
+        // After craft completes, close first so the claim chip is free.
+        if (quests.isAwaitingClaim) {
+            const hole = this.uiNodeHole(hud.craftCloseBtnNode());
+            if (!hole) return null;
+            return { hole, tip: '露穗：关掉工作台领奖', uiDock: true };
+        }
+
+        if (q.conditionId !== 3 || !q.param) return null;
+        const btn = hud.craftRecipeBtnNode(q.param);
         const hole = this.uiNodeHole(btn);
         if (!hole) return null;
-        return { hole, tip: '露穗：点这里制作种子呀', uiDock: true };
+        const tip =
+            q.param === 'can_basic'
+                ? '露穗：点这里打造水壶'
+                : q.param === 'axe_basic'
+                  ? '露穗：点这里打造斧头'
+                  : q.param === 'rod_basic'
+                    ? '露穗：点这里编织鱼竿'
+                    : q.param === 'seed_from_grass'
+                      ? '露穗：点这里制作种子'
+                      : '露穗：点这里制作';
+        return { hole, tip, uiDock: true };
+    }
+
+    /** Hide stacked rival nature while a gather goto is live. */
+    private syncGatherClearance(action: GotoAction) {
+        const farm = this.farm;
+        if (!farm) return;
+        if (action === GotoAction.HintGrass) farm.setGatherClearance('pull');
+        else if (action === GotoAction.HintRock) farm.setGatherClearance('dig');
+        else if (action === GotoAction.SelectAxe) farm.setGatherClearance('chop');
+        else farm.setGatherClearance(null);
+    }
+
+    /** Nearest valid decor node to the player (rocks / trees). */
+    private pickNearestDecor(list: Node[]): Node | null {
+        const farm = this.farm;
+        if (!farm?.player || !list.length) return null;
+        const px = farm.player.position.x;
+        const py = farm.player.position.y;
+        let best: Node | null = null;
+        let bestSq = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < list.length; i++) {
+            const n = list[i]!;
+            if (!n.isValid || !n.active) continue;
+            const dx = n.position.x - px;
+            const dy = n.position.y - py;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < bestSq) {
+                bestSq = dSq;
+                best = n;
+            }
+        }
+        return best;
     }
 
     /**
@@ -1239,13 +1549,13 @@ export class TutorialGuide extends Component {
         }
         const bld = this.farm?.findWorldNode(outdoorBld) ?? null;
         if (bld) {
-            const pos = this.stickyWorldPos(`door:${outdoorBld}`, {
-                x: bld.position.x,
-                y: bld.position.y + 20,
-            });
-            return this.withPlaceRipple(
-                this.worldPosGuide(pos, outdoorTip, walkTip),
+            const stand = StoryWorldHooks.standForInteract(bld);
+            const pos = this.stickyWorldPos(`door:${outdoorBld}`, stand);
+            return this.doorPlaceGuide(
                 pos,
+                outdoorTip,
+                walkTip,
+                this.doorPortalForBuilding(outdoorBld),
             );
         }
         const exit = this.farm?.findWorldNode('door_exit') ?? null;
@@ -1254,9 +1564,11 @@ export class TutorialGuide extends Component {
                 x: exit.position.x,
                 y: exit.position.y + 20,
             });
-            return this.withPlaceRipple(
-                this.worldPosGuide(pos, '点击门口离开', '走到门口后点一下离开'),
+            return this.doorPlaceGuide(
                 pos,
+                '点击门口离开',
+                '走到门口后点一下离开',
+                this.indoorDoorPortal(),
             );
         }
         const q = this.questHole();
@@ -1276,8 +1588,8 @@ export class TutorialGuide extends Component {
         return this.withPlaceRipple(
             this.worldPosGuide(
                 pos,
-                '露穗：点路牌去微光溪谷镇吧',
-                '露穗：往右走，去东侧路牌呀',
+                '露穗：点路牌去微光溪谷镇',
+                '露穗：往右走，去东侧路牌',
             ),
             pos,
         );
@@ -1288,19 +1600,21 @@ export class TutorialGuide extends Component {
      * → tap lake water to cast. Never falls back to the quest chip alone.
      */
     private resolveFishGuide(tool: string | undefined): IdleGuide | null {
+        const rodBag = this.resolveBagToHotbarGuide('rod');
+        if (rodBag) return rodBag;
         if (tool !== 'rod') {
             this.clearStickyTarget();
             this._fishNearLatch = false;
             const slotHole = this.toolSlotHole('rod') ?? this.toolSlotHoleFallback('rod');
             if (!slotHole) return null;
             // Caption on — first fishing step is easy to miss with a silent hotbar arrow.
-            return { hole: slotHole, tip: '露穗：先点下方「鱼竿」哦', uiDock: true };
+            return { hole: slotHole, tip: '露穗：先点下方「鱼竿」', uiDock: true };
         }
 
         const target = this.fishGuideTarget();
         if (this.farm?.isBusy) {
             return this.withPlaceRipple(
-                this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿啦', '露穗：往西边码头走，再点湖面～'),
+                this.worldPosGuide(target.pos, '露穗：走到钓点就会抛竿', '露穗：往西边码头走，再点湖面'),
                 target.pos,
             );
         }
@@ -1308,14 +1622,14 @@ export class TutorialGuide extends Component {
             return this.withPlaceRipple(
                 this.worldPosGuide(
                     target.pos,
-                    '露穗：点湖面抛竿呀',
-                    '露穗：往西边码头走，再点湖面～',
+                    '露穗：点湖面抛竿',
+                    '露穗：往西边码头走，再点湖面',
                 ),
                 target.pos,
             );
         }
         return this.withPlaceRipple(
-            this.worldPosGuide(target.pos, '露穗：跟着星光走到湖边码头', '露穗：往西边码头走，再点湖面～'),
+            this.worldPosGuide(target.pos, '露穗：跟着星光走到湖边码头', '露穗：往西边码头走，再点湖面'),
             target.pos,
         );
     }
@@ -1473,8 +1787,17 @@ export class TutorialGuide extends Component {
         };
     }
 
-    /** Keep author tips only when they match the chevron facing. */
+    /**
+     * Off-screen tip: chevron already shows which way — just「前往xxx」.
+     * Keep the author line only when we can't parse a place name.
+     */
     private edgeWalkTip(tip: string, deg: number): string {
+        if (tip.startsWith('前往')) return tip;
+        // Stale latch / old copy may still carry the retired line.
+        if (tip.includes('靠近了再动手')) return '前往目标';
+        const dest = this.extractGoToDest(tip);
+        if (dest) return `前往${dest}`;
+
         const north = tip.includes('北');
         const south = tip.includes('南');
         const east = tip.includes('右') || tip.includes('东');
@@ -1483,10 +1806,43 @@ export class TutorialGuide extends Component {
         if (deg === 0 && (south || (!north && !east && !west && tip.includes('走')))) return tip;
         if (deg === 90 && (east || (!west && !north && !south && tip.includes('走')))) return tip;
         if (deg === -90 && (west || (!east && !north && !south && tip.includes('走')))) return tip;
-        if (deg === 180) return '往北走，靠近了再动手';
-        if (deg === 0) return '往南走，靠近了再动手';
-        if (deg === 90) return '往右走，靠近了再动手';
-        return '往左走，靠近了再动手';
+        // Direction mismatch / no place parse — never「靠近了再动手」
+        return tip || '前往目标';
+    }
+
+    /** Pull a short place name out of walk tips like「往北走到镇长府，点大门」. */
+    private extractGoToDest(tip: string): string | null {
+        const t = tip.replace(/^露穗[：:]/, '').trim();
+        if (!t || t.includes('靠近了再动手')) return null;
+
+        let m = t.match(/去(.+?)(?:呀|～|吧|哦|啦|，|,|$)/);
+        if (m?.[1]) return this.cleanGoToDest(m[1]);
+
+        m = t.match(/往[南北左右]走到(.+?)(?:，|,|$)/);
+        if (m?.[1]) return this.cleanGoToDest(m[1]);
+
+        m = t.match(/往(.+?)走/);
+        if (m?.[1]) {
+            const inner = m[1].replace(/^[南北左右]边?侧?/, '');
+            if (inner) return this.cleanGoToDest(inner);
+        }
+
+        m = t.match(/走[到至](.+?)(?:后|，|,|$)/);
+        if (m?.[1]) return this.cleanGoToDest(m[1]);
+
+        m = t.match(/点(.+?)大门/);
+        if (m?.[1]) return this.cleanGoToDest(m[1]);
+
+        return null;
+    }
+
+    private cleanGoToDest(raw: string): string | null {
+        let s = raw.replace(/^(到|去)/, '').trim();
+        s = s.replace(/再点.*$/, '').trim();
+        s = s.replace(/[呀～吧哦啦。！!…]+$/g, '').trim();
+        if (!s || s.length > 14) return null;
+        if (/^(点|再|近)$/.test(s)) return null;
+        return s;
     }
 
     /**
@@ -1526,6 +1882,8 @@ export class TutorialGuide extends Component {
     /**
      * Sticky plot aim — hold the same tile so nearest-picking can't
      * thrash the arrow between two equal-distance plots.
+     * Drop the latch once that tile no longer matches (e.g. just tilled),
+     * otherwise the guide stays locked on the front plot forever.
      */
     private stickyPlotPos(
         need: 'soil' | 'tilled' | 'water' | 'grow' | 'harvest',
@@ -1538,11 +1896,18 @@ export class TutorialGuide extends Component {
             return null;
         }
         if (this._stickyKey === key && this._stickyPos) {
-            const dx = fresh.x - this._stickyPos.x;
-            const dy = fresh.y - this._stickyPos.y;
-            if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) {
-                this._stickyUntil = now + STICKY_MS;
-                return this._stickyPos;
+            const stillGood = this.farm?.plotPosMatchesNeed(
+                this._stickyPos.x,
+                this._stickyPos.y,
+                need,
+            );
+            if (stillGood) {
+                const dx = fresh.x - this._stickyPos.x;
+                const dy = fresh.y - this._stickyPos.y;
+                if (dx * dx + dy * dy <= STICKY_SWITCH_SQ) {
+                    this._stickyUntil = now + STICKY_MS;
+                    return this._stickyPos;
+                }
             }
         }
         this._stickyKey = key;
@@ -1569,8 +1934,8 @@ export class TutorialGuide extends Component {
         }
 
         if (this._tipLab) {
-            if (this._step === 'quest') this._tipLab.string = '露穗：看这里呀 · 点一下继续';
-            else if (this._step === 'hand') this._tipLab.string = '露穗：先点下方「手」哦';
+            if (this._step === 'quest') this._tipLab.string = '露穗：点任务打开日志 · 点一下继续';
+            else if (this._step === 'hand') this._tipLab.string = '露穗：先点下方「手」';
             else this._tipLab.string = this.grassStepTip();
         }
         this.refreshHole();
@@ -1584,10 +1949,10 @@ export class TutorialGuide extends Component {
             const p = this.quests!.progressOf(q);
             const left = Math.max(1, p.target - p.current);
             return left > 1
-                ? `露穗：点镂空处拔草呀（还剩 ${left} 棵）`
-                : '露穗：最后一棵啦，轻轻拔掉～';
+                ? `露穗：点镂空处拔草（还剩 ${left} 棵）`
+                : '露穗：最后一棵了，轻轻拔掉';
         }
-        return '露穗：走近杂草，点镂空处拔掉哦';
+        return '露穗：走近杂草，点镂空处拔掉';
     }
 
     private checkGrassDone() {
@@ -1644,19 +2009,17 @@ export class TutorialGuide extends Component {
     }
 
     private questHole(): HoleRect | null {
+        // Journal entry sits left of the bag (not the claim chip).
+        const btn = this.node.getComponent(FarmHUD)?.questBtnNode() ?? null;
+        return this.uiNodeHole(btn);
+    }
+
+    /** Mainline quick-claim chip (QuestHud / QuestTracker). */
+    private claimHole(): HoleRect | null {
         const dock = this.node.getChildByName('QuestHud');
         if (!dock?.active) return null;
-        const btn = dock.getChildByName('QuestBtn');
         const bar = dock.getChildByName('QuestTracker');
-        if (!btn?.isValid || !bar?.isValid) return null;
-        const a = this.uiNodeHole(btn);
-        const b = this.uiNodeHole(bar);
-        if (!a || !b) return null;
-        const x0 = Math.min(a.x - a.w * 0.5, b.x - b.w * 0.5);
-        const x1 = Math.max(a.x + a.w * 0.5, b.x + b.w * 0.5);
-        const y0 = Math.min(a.y - a.h * 0.5, b.y - b.h * 0.5);
-        const y1 = Math.max(a.y + a.h * 0.5, b.y + b.h * 0.5);
-        return { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5, w: x1 - x0, h: y1 - y0 };
+        return this.uiNodeHole(bar?.active ? bar : dock);
     }
 
     private handHole(): HoleRect | null {
@@ -1860,8 +2223,8 @@ export class TutorialGuide extends Component {
         }
         this.clearDragDemoChrome();
 
-        // Off-screen “往×走” → ground starlight path (hide floating finger).
-        // On-screen click aims / UI → yellow arrow.
+        // Off-screen “往×走” → hide floating finger (starlight path still leads).
+        // On-screen click aims / UI → yellow arrow; path stays until the tap.
         // Bob AFTER clamp — claim / dock targets pin to the playfield floor and
         // would otherwise eat the sine offset every frame.
         const arrowDeg = this._idleOn ? this._idleArrowDeg : 0;
@@ -1870,30 +2233,33 @@ export class TutorialGuide extends Component {
         const uiDock =
             (this._open && (this._step === 'quest' || this._step === 'hand')) ||
             (!this._open && this._idleOn && this._idleUiDock);
-        // Screen-edge walk cues use the ground path (incl. south, deg 0).
+        // Screen-edge walk cues: path only (no floating finger). On-screen: arrow + path.
         const walkGuide = !this._open && this._idleOn && this._idleEdgeWalk;
-        // Door / gate / pier — chevron must stay locked to the ground ripple.
-        // Playfield Y clamp used to drag the arrow south while the ring stayed on the feet.
-        const placeRipple =
+        // Door / gate / pier / portal — glue chevron to the place cue.
+        // World rings (plots / plants / NPCs) keep the arrow above the hole so
+        // the tap target stays visible under the tip.
+        const placeAim =
             !this._open &&
             this._idleOn &&
-            this._idleGroundRipple &&
+            !!this._idleRippleWorld &&
+            !this._idleRippleInWorld &&
             !this._idleUiDock &&
             arrowDeg === 0;
         this.syncGroundPath();
         const rippleHole =
-            (placeRipple && this._idleRippleWorld
+            (placeAim && this._idleRippleWorld
                 ? this.worldPosHole(this._idleRippleWorld)
                 : null) ?? this._hole;
         let fx = rippleHole.x;
         let fy = this._idleSilent ? top + 40 : top + 56;
         if (walkGuide) {
             finger.active = false;
+            this.syncClickLabel(false);
             this.syncEdgeHalo(false, 0, 0);
         } else {
             finger.active = true;
             const bob = Math.sin(Date.now() * 0.01) * 12;
-            if (placeRipple) {
+            if (placeAim) {
                 fx = rippleHole.x;
                 fy = rippleHole.y + PLACE_ARROW_ABOVE;
             } else if (arrowDeg === 90) {
@@ -1914,8 +2280,8 @@ export class TutorialGuide extends Component {
             if (uiDock) {
                 fx = Math.max(-halfW + 40, Math.min(halfW - 40, fx));
                 fy = Math.max(-halfH + 80, Math.min(halfH - 50, fy));
-            } else if (placeRipple) {
-                // X only — Y stays on the ripple so door aims don't split.
+            } else if (placeAim) {
+                // X only — Y stays on the place aim so door / portal don't split.
                 fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
             } else {
                 fx = Math.max(band.x0 + 40, Math.min(band.x1 - 40, fx));
@@ -1936,6 +2302,7 @@ export class TutorialGuide extends Component {
             if (fingerUi) fingerUi.setContentSize(96, 96);
             this.syncGuideSprite(false);
             this.syncEdgeHalo(false, 0, 0);
+            this.syncClickLabel(true);
         }
 
         if (withTip && tip && !walkGuide) {
@@ -2027,6 +2394,23 @@ export class TutorialGuide extends Component {
         return n;
     }
 
+    /** 「点击」on yellow down-arrows (world / UI click aims — not edge walks / drag). */
+    private syncClickLabel(on: boolean) {
+        const lab = this._clickLab;
+        if (!lab?.isValid) return;
+        const host = lab.node;
+        const show =
+            on &&
+            !!this._finger?.active &&
+            this._guideMode === 'arrow' &&
+            (this._idleArrowDeg ?? 0) === 0 &&
+            !this._idleDragTo &&
+            !this._idleEdgeWalk;
+        host.active = show;
+        // Keep text upright when the chevron rotates (edge cues hide it anyway).
+        if (show) host.setRotationFromEuler(0, 0, -(this._idleArrowDeg ?? 0));
+    }
+
     /**
      * Loop: press on bag item → drag down to empty hotbar → release → reset.
      * Ghost item + dashed path make the gesture read as drag, not tap.
@@ -2035,6 +2419,7 @@ export class TutorialGuide extends Component {
         const finger = this._finger;
         const dest = this._idleDragTo;
         if (!finger || !dest) return;
+        this.syncClickLabel(false);
 
         const fromX = this._hole.x;
         const fromY = this._hole.y;
@@ -2059,6 +2444,8 @@ export class TutorialGuide extends Component {
             // Keep ghost under the chevron.
             if (this._trailN) this._dragGhost.setSiblingIndex(this._trailN.getSiblingIndex() + 1);
             finger.setSiblingIndex(this._dragGhost.getSiblingIndex() + 1);
+            // Drag reorder used to leave Finger under guide_ground_ripple.
+            if (this._rippleN?.isValid) this.assertCanvasRippleUnderArrow(this._rippleN);
         }
 
         // Chevron rides just above the dragged icon (points into the drop slot).
@@ -2359,6 +2746,27 @@ export class TutorialGuide extends Component {
         this._fingerSp = sp;
         this.loadGuideSprites(sp, fg);
 
+        const clickN = new Node('ClickLab');
+        clickN.layer = canvas.layer;
+        clickN.setParent(finger);
+        // Above the chevron top (96px sprite → extent 48), not inside the stem.
+        clickN.setPosition(0, ARROW_EXTENT_UP + 28, 0);
+        clickN.addComponent(UITransform).setContentSize(110, 48);
+        const clickLab = clickN.addComponent(Label);
+        styleUiLabel(clickLab, {
+            size: 34,
+            color: new Color(255, 248, 220, 255),
+            outline: true,
+            outlineWidth: 3,
+            outlineColor: new Color(70, 42, 16, 255),
+        });
+        clickLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        clickLab.verticalAlign = Label.VerticalAlign.CENTER;
+        clickLab.overflow = Label.Overflow.SHRINK;
+        clickLab.string = '点击';
+        clickN.active = false;
+        this._clickLab = clickLab;
+
         // Tip after Finger so the caption always draws above the chevron.
         const tip = new Node('Tip');
         tip.layer = canvas.layer;
@@ -2424,15 +2832,15 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Ground starlight trail: player feet → quest world aim (A*).
-     * Only while the aim is off-screen (`edgeWalk`); on-screen aims keep the yellow arrow.
+     * Ground guide trail: player feet → quest world aim (A*).
+     * Continuous gold stroke inside the playfield (no dotted gaps);
+     * sparse sparks ride the line for sparkle only.
      */
     private syncGroundPath() {
-        // Only when the quest aim is off the playfield — on-screen keeps the yellow arrow.
+        // World walk aims only (not hotbar / drag / silent tool-swap).
         const want =
             this._idleOn &&
             !this._open &&
-            this._idleEdgeWalk &&
             !this._idleUiDock &&
             !this._idleDragTo &&
             !this._idleSilent;
@@ -2470,48 +2878,33 @@ export class TutorialGuide extends Component {
         root.active = true;
         this.loadPathDotFrames();
 
-        const frames = this._pathDotFrames;
-        const fallback = this._pathDotFrames[0] ?? null;
-        // Slow traveling shimmer along the trail (not a harsh per-dot blink).
-        const t = now * 0.0042;
-        const wave = now * 0.0031;
         const band = this.playfieldBand();
         const px = player.position.x;
         const py = player.position.y;
-        // Trail starts ahead of the body toward the goal — never behind / through the sprite.
         const startI = this.pathTrailStartIndex(px, py);
+        const canvasPts = this.collectVisiblePathCanvas(startI, px, py, band);
+        this.paintGroundPathLine(canvasPts, now);
+
+        // Sparse sparks on top of the continuous stroke (accents, not the trail).
+        const frames = this._pathDotFrames;
+        const fallback = this._pathDotFrames[0] ?? null;
+        const t = now * 0.0042;
+        const wave = now * 0.0031;
         let shown = 0;
-        for (let i = startI; i < this._pathPts.length; i++) {
-            if (shown >= PATH_VISIBLE_MAX) break;
-            const pt = this._pathPts[i]!;
-            // Safety: skip zigzags that still skim the character AABB.
-            if (this.pathDotHitsBody(pt.x - px, pt.y - py)) continue;
-            const hole = this.worldPosHole(pt);
-            if (!hole) continue;
-            // Only paint dots inside the playfield (path continues off-screen as walk).
-            if (
-                hole.x < band.x0 + 20 ||
-                hole.x > band.x1 - 20 ||
-                hole.y < band.y0 + 24 ||
-                hole.y > band.y1 - 24
-            ) {
-                continue;
-            }
+        for (let i = 0; i < canvasPts.length && shown < PATH_VISIBLE_MAX; i += PATH_SPARK_EVERY) {
+            const pt = canvasPts[i]!;
             const dot = this.ensurePathDot(shown);
             if (!dot) break;
             dot.active = true;
-            // Soft float — tiny bob, no sideways jitter (that looked like dirt flecks).
-            const bob = Math.sin(t + i * 0.55) * 1.4;
-            dot.setPosition(hole.x, hole.y - 4 + bob, 0);
-            const breath = 0.96 + Math.sin(t * 1.1 + i * 0.4) * 0.08;
+            const bob = Math.sin(t + i * 0.55) * 1.2;
+            dot.setPosition(pt.x, pt.y + bob, 0);
+            const breath = 0.9 + Math.sin(t * 1.1 + i * 0.4) * 0.1;
             dot.setScale(breath, breath, 1);
-            // Flowing bright crest — keep a high floor so dirt paths still read.
             const crest = 0.5 + 0.5 * Math.sin(wave * 2.2 - shown * 0.4);
             const op = dot.getComponent(UIOpacity);
-            if (op) op.opacity = Math.round(210 + crest * 45);
+            if (op) op.opacity = Math.round(180 + crest * 60);
             const sp = dot.getComponent(Sprite);
             if (sp && frames.length) {
-                // Soft / spark only — never the dim frame (vanishes on sand).
                 const fi = crest > 0.65 ? 2 : shown % 2 === 0 ? 0 : 3;
                 const frame = frames[fi] ?? fallback;
                 if (frame && sp.spriteFrame !== frame) sp.spriteFrame = frame;
@@ -2522,10 +2915,118 @@ export class TutorialGuide extends Component {
             const n = this._pathDots[i];
             if (n?.isValid) n.active = false;
         }
-        if (shown === 0) {
-            // Aim off-screen and no visible segment yet — keep root for next frame.
-            return;
+    }
+
+    /**
+     * Canvas polyline for the visible guide: contiguous samples from the feet
+     * until the playfield lip (or the goal). Never skips mid-path holes.
+     */
+    private collectVisiblePathCanvas(
+        startI: number,
+        px: number,
+        py: number,
+        band: { x0: number; x1: number; y0: number; y1: number },
+    ): { x: number; y: number }[] {
+        const x0 = band.x0 + 20;
+        const x1 = band.x1 - 20;
+        const y0 = band.y0 + 24;
+        const y1 = band.y1 - 24;
+        const out: { x: number; y: number }[] = [];
+        let prev: { x: number; y: number } | null = null;
+        let prevIn = false;
+
+        for (let i = startI; i < this._pathPts.length; i++) {
+            const pt = this._pathPts[i]!;
+            // Skip stand-point samples only before the trail has started.
+            if (!out.length && this.pathDotHitsBody(pt.x - px, pt.y - py)) continue;
+            const hole = this.worldPosHole(pt);
+            if (!hole) break;
+            const cx = hole.x;
+            const cy = hole.y - 4;
+            const inside = cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+
+            if (inside) {
+                if (!prevIn && prev) {
+                    const enter = this.clipSegmentToBand(prev.x, prev.y, cx, cy, x0, y0, x1, y1);
+                    if (enter) out.push(enter);
+                }
+                out.push({ x: cx, y: cy });
+                prevIn = true;
+                prev = { x: cx, y: cy };
+                continue;
+            }
+
+            if (prevIn && prev) {
+                const exit = this.clipSegmentToBand(prev.x, prev.y, cx, cy, x0, y0, x1, y1);
+                if (exit) out.push(exit);
+                break;
+            }
+            prevIn = false;
+            prev = { x: cx, y: cy };
         }
+        return out;
+    }
+
+    /** Boundary hit of segment A→B with the playfield rectangle (one end in, one out). */
+    private clipSegmentToBand(
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number,
+        x0: number,
+        y0: number,
+        x1: number,
+        y1: number,
+    ): { x: number; y: number } | null {
+        const dx = bx - ax;
+        const dy = by - ay;
+        let bestT = Infinity;
+        const consider = (t: number, onEdge: boolean) => {
+            if (!onEdge || t < 0 || t > 1 || t >= bestT) return;
+            bestT = t;
+        };
+        if (Math.abs(dx) > 1e-8) {
+            let t = (x0 - ax) / dx;
+            let y = ay + dy * t;
+            consider(t, y >= y0 && y <= y1);
+            t = (x1 - ax) / dx;
+            y = ay + dy * t;
+            consider(t, y >= y0 && y <= y1);
+        }
+        if (Math.abs(dy) > 1e-8) {
+            let t = (y0 - ay) / dy;
+            let x = ax + dx * t;
+            consider(t, x >= x0 && x <= x1);
+            t = (y1 - ay) / dy;
+            x = ax + dx * t;
+            consider(t, x >= x0 && x <= x1);
+        }
+        if (bestT === Infinity) return null;
+        return { x: ax + dx * bestT, y: ay + dy * bestT };
+    }
+
+    /** Continuous warm gold stroke through canvas path samples. */
+    private paintGroundPathLine(pts: { x: number; y: number }[], now: number) {
+        const g = this._pathLineG;
+        if (!g) return;
+        g.clear();
+        if (pts.length < 2) return;
+
+        const pulse = 0.88 + 0.12 * Math.sin(now * 0.004);
+        const drawPoly = (width: number, color: Color) => {
+            g.lineWidth = width;
+            g.strokeColor = color;
+            g.moveTo(pts[0]!.x, pts[0]!.y);
+            for (let i = 1; i < pts.length; i++) {
+                g.lineTo(pts[i]!.x, pts[i]!.y);
+            }
+            g.stroke();
+        };
+
+        // Soft outer glow → main ribbon → bright core (reads solid on dirt/grass).
+        drawPoly(12, new Color(255, 210, 90, Math.round(40 * pulse)));
+        drawPoly(6, new Color(255, 228, 130, Math.round(150 * pulse)));
+        drawPoly(2.5, new Color(255, 248, 210, Math.round(230 * pulse)));
     }
 
     private densifyPath(pts: WorldPos[], step: number, maxDots: number): WorldPos[] {
@@ -2549,17 +3050,19 @@ export class TutorialGuide extends Component {
             carry = len - (d - step);
             if (carry < 0) carry = 0;
         }
+        // Always keep the true goal tip so the stroke reaches the aim.
         const last = pts[pts.length - 1]!;
         const tip = out[out.length - 1]!;
-        if (Math.hypot(tip.x - last.x, tip.y - last.y) > step * 0.35 && out.length < maxDots) {
-            out.push({ x: last.x, y: last.y });
+        if (Math.hypot(tip.x - last.x, tip.y - last.y) > step * 0.35) {
+            if (out.length < maxDots) out.push({ x: last.x, y: last.y });
+            else out[out.length - 1] = { x: last.x, y: last.y };
         }
         return out;
     }
 
     /**
-     * First path index that is ahead of the player by PATH_START_CLEAR.
-     * Drops the segment under / behind the body so motes only lead toward the goal.
+     * First path index a short step ahead of the feet (PATH_START_CLEAR).
+     * Keeps the trail leading forward without a big empty gap at the stand point.
      */
     private pathTrailStartIndex(px: number, py: number): number {
         const pts = this._pathPts;
@@ -2581,11 +3084,11 @@ export class TutorialGuide extends Component {
             along += Math.hypot(b.x - a.x, b.y - a.y);
             if (along >= PATH_START_CLEAR) return i + 1;
         }
-        // Goal is within the clear radius — hide the short stub rather than pierce the body.
-        return pts.length;
+        // Almost at the goal — still show the last samples from the feet.
+        return Math.min(nearest + 1, pts.length - 1);
     }
 
-    /** True when a world offset from feet still overlaps the standing sprite. */
+    /** True when a world offset sits on the feet stand point (avoid stacked motes). */
     private pathDotHitsBody(dx: number, dy: number): boolean {
         return Math.abs(dx) <= PATH_BODY_HW && dy >= -PATH_BODY_DOWN && dy <= PATH_BODY_UP;
     }
@@ -2596,6 +3099,7 @@ export class TutorialGuide extends Component {
         this._pathRepathAt = 0;
         const root = this._pathRoot;
         if (root?.isValid) root.active = false;
+        if (this._pathLineG) this._pathLineG.clear();
         for (let i = 0; i < this._pathDots.length; i++) {
             const n = this._pathDots[i];
             if (n?.isValid) n.active = false;
@@ -2606,7 +3110,7 @@ export class TutorialGuide extends Component {
         const root = this._root;
         if (!root?.isValid) return null;
         let n = this._pathRoot;
-        if (n?.isValid && n.parent === root) return n;
+        if (n?.isValid && n.parent === root && this._pathLineG?.isValid) return n;
         if (n?.isValid) n.destroy();
         n = new Node('GuidePath');
         n.layer = root.layer;
@@ -2615,6 +3119,11 @@ export class TutorialGuide extends Component {
         n.setSiblingIndex(1);
         n.addComponent(UITransform).setContentSize(10, 10);
         n.active = false;
+        const line = new Node('PathLine');
+        line.layer = root.layer;
+        line.setParent(n);
+        line.addComponent(UITransform).setContentSize(10, 10);
+        this._pathLineG = line.addComponent(Graphics);
         this._pathRoot = n;
         this._pathDots = [];
         return n;
@@ -2690,16 +3199,18 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * If a world tap lands on the place-aim ripple, snap walk-to to that feet
-     * goal so click-move and the guide share one destination (no double ring).
+     * If a world tap lands on the place aim (ripple or door portal beam), snap
+     * walk-to to the feet goal so click-move and the guide share one destination.
      */
     snapPlaceAim(wx: number, wy: number, radius = 96): { x: number; y: number } | null {
-        if (!this._idleOn || !this._idleGroundRipple || this._idleUiDock) return null;
+        if (!this._idleOn || this._idleUiDock) return null;
         const aim = this._idleRippleWorld;
         if (!aim) return null;
         if ((this._idleArrowDeg ?? 0) !== 0) return null;
         if (Math.hypot(wx - aim.x, wy - aim.y) > radius) return null;
-        return { x: aim.x, y: aim.y };
+        // Portal aims lock on the beam but walk to door feet (pathWorld).
+        const dest = this._idlePathWorld ?? aim;
+        return { x: dest.x, y: dest.y };
     }
 
     /**
@@ -2734,10 +3245,9 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Place aims only (door / gate / pier / sign). NPCs, props, crops, weeds —
-     * chevron alone. Edge / UI-dock / drag-demo also skip the ripple.
-     * Canvas chrome (with the chevron) — World ground-band parenting hid the ring
-     * under opaque porch / facade sprites (carpenter door, mayor steps, …).
+     * Click aims: light ring under the chevron.
+     * - World ring (plots / plants / NPCs): ground-band Y-sort — over soil, under crops.
+     * - Canvas ring (doors / gates / pier): stays above porch facades.
      */
     private syncGroundRipple() {
         // Click-move owns destination chrome while auto-walking — never stack rings.
@@ -2762,20 +3272,52 @@ export class TutorialGuide extends Component {
             this.hideGroundRipple();
             return;
         }
-        const hole = this.worldPosHole(aim);
-        if (!hole) {
-            this.hideGroundRipple();
+
+        if (this._idleRippleInWorld) {
+            this.hideCanvasRipple();
+            const n = this.ensureWorldRipple();
+            if (!n) return;
+            n.active = true;
+            n.setPosition(aim.x, aim.y, 0);
+            this.applyGroundRippleSize(n, 1);
+            this.pulseRippleNode(n, this._worldRippleOp, 'world');
             return;
         }
-        const n = this.ensureGroundRipple();
+
+        this.hideWorldRipple();
+        const hole = this.worldPosHole(aim);
+        if (!hole) {
+            this.hideCanvasRipple();
+            return;
+        }
+        const n = this.ensureCanvasRipple();
         if (!n) return;
         n.active = true;
         n.setPosition(hole.x, hole.y, 0);
         this.applyGroundRippleSize(n, world.scale.x);
-        this.pulseGroundRipple();
+        // Arrow must cover the ring — drag demo used to yank Finger under it.
+        this.assertCanvasRippleUnderArrow(n);
+        this.pulseRippleNode(n, this._rippleOp, 'canvas');
+    }
+
+    /** Canvas place ring stays under Finger (chevron) / Tip. */
+    private assertCanvasRippleUnderArrow(ripple: Node) {
+        const finger = this._finger;
+        if (!finger?.isValid || finger.parent !== ripple.parent) return;
+        const want = Math.max(0, finger.getSiblingIndex() - 1);
+        if (ripple.getSiblingIndex() !== want) ripple.setSiblingIndex(want);
+        // If Tip somehow sat between them, bump Finger back above the ring.
+        if (ripple.getSiblingIndex() >= finger.getSiblingIndex()) {
+            finger.setSiblingIndex(ripple.getSiblingIndex() + 1);
+        }
     }
 
     private hideGroundRipple() {
+        this.hideCanvasRipple();
+        this.hideWorldRipple();
+    }
+
+    private hideCanvasRipple() {
         const n = this._rippleN;
         this._ripplePulsing = false;
         if (!n?.isValid) return;
@@ -2786,7 +3328,18 @@ export class TutorialGuide extends Component {
         if (this._rippleOp) this._rippleOp.opacity = 0;
     }
 
-    private ensureGroundRipple(): Node | null {
+    private hideWorldRipple() {
+        const n = this._worldRippleN;
+        this._worldRipplePulsing = false;
+        if (!n?.isValid) return;
+        if (this._worldRippleOp) Tween.stopAllByTarget(this._worldRippleOp);
+        Tween.stopAllByTarget(n);
+        n.active = false;
+        n.setScale(1, 1, 1);
+        if (this._worldRippleOp) this._worldRippleOp.opacity = 0;
+    }
+
+    private ensureCanvasRipple(): Node | null {
         const root = this._root;
         if (!root?.isValid) return null;
         let n = this._rippleN;
@@ -2798,8 +3351,7 @@ export class TutorialGuide extends Component {
         n.layer = root.layer;
         n.setParent(root);
         // Under Finger / Tip; above dim + path so porch aims stay readable.
-        const finger = root.getChildByName('Finger');
-        n.setSiblingIndex(finger ? finger.getSiblingIndex() : 2);
+        this.assertCanvasRippleUnderArrow(n);
         n.active = false;
         const ui = n.addComponent(UITransform);
         ui.setAnchorPoint(0.5, 0.5);
@@ -2813,7 +3365,37 @@ export class TutorialGuide extends Component {
         this._rippleSp = sp;
         this._rippleOp = op;
         this._rippleLoaded = false;
-        this.loadGroundRippleFrame();
+        this.loadRippleFrame('canvas');
+        return n;
+    }
+
+    private ensureWorldRipple(): Node | null {
+        const world = this.farm?.world;
+        if (!world?.isValid) return null;
+        let n = this._worldRippleN;
+        if (n?.isValid && n.parent === world) return n;
+        if (n?.isValid) n.destroy();
+        this._worldRipplePulsing = false;
+
+        n = new Node('guide_aim_ripple');
+        n.layer = world.layer;
+        n.setParent(world);
+        n.active = false;
+        const ui = n.addComponent(UITransform);
+        ui.setAnchorPoint(0.5, 0.5);
+        this.applyGroundRippleSize(n, 1);
+        const sp = n.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = false;
+        const op = n.addComponent(UIOpacity);
+        op.opacity = 0;
+        this._worldRippleN = n;
+        this._worldRippleSp = sp;
+        this._worldRippleOp = op;
+        this._worldRippleLoaded = false;
+        this.loadRippleFrame('world');
+        // Force WorldYSort to rebuild with the new ground-band child.
+        world.getComponent(WorldYSort)?.sortNow();
         return n;
     }
 
@@ -2829,32 +3411,40 @@ export class TutorialGuide extends Component {
         }
     }
 
-    private loadGroundRippleFrame() {
-        const sp = this._rippleSp;
-        if (!sp?.isValid || this._rippleLoaded) return;
+    private loadRippleFrame(kind: 'canvas' | 'world') {
+        const sp = kind === 'world' ? this._worldRippleSp : this._rippleSp;
+        const loaded = kind === 'world' ? this._worldRippleLoaded : this._rippleLoaded;
+        if (!sp?.isValid || loaded) return;
         const uuid = FISHING_FRAMES.groundRipple;
         if (!uuid) return;
         assetManager.loadAny({ uuid }, (err, asset) => {
             if (err || !asset || !sp.isValid) return;
             sp.spriteFrame = asset as SpriteFrame;
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            const host = this._rippleN;
-            if (host?.isValid) {
-                this.applyGroundRippleSize(host, this.farm?.world?.scale.x ?? 1);
+            if (kind === 'world') {
+                const host = this._worldRippleN;
+                if (host?.isValid) this.applyGroundRippleSize(host, 1);
+                this._worldRippleLoaded = true;
+            } else {
+                const host = this._rippleN;
+                if (host?.isValid) {
+                    this.applyGroundRippleSize(host, this.farm?.world?.scale.x ?? 1);
+                }
+                this._rippleLoaded = true;
             }
-            this._rippleLoaded = true;
         });
     }
 
     /** Expand + fade loop so the tap spot reads as “click here”. */
-    private pulseGroundRipple() {
-        const n = this._rippleN;
-        const op = this._rippleOp;
+    private pulseRippleNode(n: Node, op: UIOpacity | null, kind: 'canvas' | 'world') {
         if (!n?.isValid || !op?.isValid || !n.active) return;
-        // Already looping — don't restart every lateUpdate frame.
-        if (this._ripplePulsing) return;
-        this._ripplePulsing = true;
-        // Size pulse unchanged; brighter floor so cream rings stay readable on water.
+        if (kind === 'world') {
+            if (this._worldRipplePulsing) return;
+            this._worldRipplePulsing = true;
+        } else {
+            if (this._ripplePulsing) return;
+            this._ripplePulsing = true;
+        }
         n.setScale(0.85, 0.85, 1);
         op.opacity = 255;
         tween(n)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -834,6 +835,53 @@ class FarmBake:
 
         self.nodes = [n for n in self.nodes if not bury(n[0], n[2], n[3])]
 
+    def prune_gather_overlap(self) -> None:
+        """Keep grass / stone / tree feet from stacking so gather tutorials stay clickable."""
+        rock_re = re.compile(
+            r"^decor_soft_(?:shore_)?(?:rock_|pebble_)|^decor_rock(?:Big)?_solid_"
+        )
+        grass_re = re.compile(
+            r"^decor_soft_(?:shore_)?(weed|weedBloom|weedTall|weedPink|weedYellow|weedBlue|tuft|fiber|twig)_"
+            r"|^decor_bush_(soft|solid)_|^decor_garden_"
+        )
+        tree_re = re.compile(r"^decor_(pine|oak)_solid_")
+
+        rocks = [(n[2], n[3]) for n in self.nodes if rock_re.match(n[0])]
+        trees = [(n[2], n[3]) for n in self.nodes if tree_re.match(n[0])]
+
+        def near(x: float, y: float, feet: list, rad: float) -> bool:
+            r2 = rad * rad
+            for fx, fy in feet:
+                dx = x - fx
+                dy = y - fy
+                if dx * dx + dy * dy <= r2:
+                    return True
+            return False
+
+        kept = []
+        grass_feet: list = []
+        for name, sf, x, y, *rest in self.nodes:
+            node = (name, sf, x, y, *rest)
+            if rock_re.match(name):
+                # Rocks keep; drop later weeds that sit on them.
+                kept.append(node)
+                continue
+            if tree_re.match(name):
+                kept.append(node)
+                continue
+            if grass_re.match(name):
+                # Weeds must clear rocks and tree feet (tutorial dig/chop aim).
+                if near(x, y, rocks, 48) or near(x, y, trees, 88):
+                    continue
+                # Soft weeds also stay clear of each other enough to tap.
+                if near(x, y, grass_feet, 28):
+                    continue
+                grass_feet.append((x, y))
+                kept.append(node)
+                continue
+            kept.append(node)
+        self.nodes = kept
+
     def place_lake_shore_flora(self) -> None:
         n = 0
         for iy in range(-20, 12):
@@ -1099,6 +1147,7 @@ class FarmBake:
         self.place_soft_clutter()
         self.place_lake_water_decor()
         self.prune_under_canopy()
+        self.prune_gather_overlap()
         # marker first among actors so lookup is easy; keep ground order natural
         self.nodes.insert(0, ("__farm_baked", None, 0, 0, 1, 1, 0.5, 0.5, True))
         return self.nodes

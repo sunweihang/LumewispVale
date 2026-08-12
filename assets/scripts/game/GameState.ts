@@ -13,6 +13,13 @@ export type StoryMapId =
     | 'forest'
     | 'deepMine';
 
+export type OwnedFarmTools = {
+    hoe: boolean;
+    can: boolean;
+    axe: boolean;
+    rod: boolean;
+};
+
 export type InventorySnapshot = {
     seeds: number;
     crops: number;
@@ -28,6 +35,8 @@ export type InventorySnapshot = {
     gold: number;
     seedPacks: Record<string, number>;
     tool: FarmTool;
+    /** Crafted / starter tools that survive map travel. */
+    tools: OwnedFarmTools;
 };
 
 export type QuestSnapshot = {
@@ -43,6 +52,19 @@ export type QuestSnapshot = {
     water: number;
     harvest: number;
     fish: number;
+    /** Recipe ids the player has learned (workbench rows). Absent on old saves. */
+    learnedRecipes?: string[];
+    /** Earned but unlearned scrolls waiting in the bag. Absent on old saves. */
+    pendingRecipes?: string[];
+};
+
+/** Accepted town board commission (police / post) — not mainline. */
+export type BoardCommissionSnapshot = {
+    id: string;
+    title: string;
+    desc: string;
+    rewardGold: number;
+    source: 'police' | 'post';
 };
 
 /**
@@ -65,6 +87,8 @@ class GameStateStore {
 
     inventory: InventorySnapshot | null = null;
     quest: QuestSnapshot | null = null;
+    /** Active board commissions (survive scene travel). */
+    commissions: BoardCommissionSnapshot[] | null = null;
 
     /** One-shot story dialogue ids already played this save session. */
     seenDialogue: Record<string, boolean> = {};
@@ -104,6 +128,7 @@ class GameStateStore {
         gold: number;
         seedPacks: Record<string, number>;
         tool: FarmTool;
+        ownedTools: OwnedFarmTools;
     }) {
         this.inventory = {
             seeds: src.seeds,
@@ -120,6 +145,7 @@ class GameStateStore {
             gold: src.gold,
             seedPacks: { ...src.seedPacks },
             tool: src.tool,
+            tools: { ...src.ownedTools },
         };
     }
 
@@ -138,6 +164,7 @@ class GameStateStore {
         gold: number;
         seedPacks: Record<string, number>;
         tool: FarmTool;
+        ownedTools: OwnedFarmTools;
         notifyInventoryChanged: () => void;
     }) {
         const inv = this.inventory;
@@ -156,6 +183,14 @@ class GameStateStore {
         dst.gold = inv.gold;
         dst.seedPacks = { ...inv.seedPacks };
         dst.tool = inv.tool;
+        const tools = inv.tools;
+        dst.ownedTools = {
+            // Old snapshots without `tools` kept a free starter hoe; new saves track quest grant.
+            hoe: tools ? !!tools.hoe : true,
+            can: !!tools?.can,
+            axe: !!tools?.axe,
+            rod: !!tools?.rod,
+        };
         dst.notifyInventoryChanged();
     }
 
@@ -172,7 +207,19 @@ class GameStateStore {
             water: src.water,
             harvest: src.harvest,
             fish: src.fish,
+            learnedRecipes: [...(src.learnedRecipes ?? [])],
+            pendingRecipes: [...(src.pendingRecipes ?? [])],
         };
+    }
+
+    captureCommissions(list: BoardCommissionSnapshot[]) {
+        this.commissions = list.map((c) => ({
+            id: c.id,
+            title: c.title,
+            desc: c.desc,
+            rewardGold: c.rewardGold,
+            source: c.source,
+        }));
     }
 }
 

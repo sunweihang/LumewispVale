@@ -1,0 +1,7 @@
+{
+  "storyId": 10020,
+  "name": "木工坊",
+  "description": "scriptId=carpenter_nails; Lock→StartChat(10020)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

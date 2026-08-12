@@ -188,7 +188,9 @@ export class TownShopPanel extends Component {
         this._board = kind;
         this._shop = null;
         const pool = kind === 'police' ? POLICE_QUEST_POOL : POST_QUEST_POOL;
-        this._quest = pool[Math.floor(Math.random() * pool.length)];
+        const fresh = pool.filter((q) => !this.quests?.hasBoardQuest(q.id));
+        const pick = fresh.length > 0 ? fresh : pool;
+        this._quest = pick[Math.floor(Math.random() * pick.length)];
         this.refresh();
         this.show();
     }
@@ -505,13 +507,18 @@ export class TownShopPanel extends Component {
 
     private acceptQuest() {
         const q = this._quest;
-        const farm = this.farm;
-        if (!q || !farm) return;
-        // Instant resolve for v1 board jobs — later: walk-to objectives.
-        farm.addGold(q.rewardGold);
-        this.quests?.noteFlag('accept_board');
-        this.setHint(`完成「${q.title}」+${q.rewardGold}G`);
-        this.refreshGold();
+        if (!q || !this.quests) return;
+        if (!this.quests.acceptBoardQuest(q)) {
+            this.setHint(
+                this.quests.hasBoardQuest(q.id)
+                    ? '这份委托已经在任务里了'
+                    : '委托栏已满，先去任务里交付几份吧',
+            );
+            return;
+        }
+        this.quests.noteFlag('accept_board');
+        this.quests.infoBoard?.showToast(`已接取「${q.title}」`);
+        this.setHint(`已接取「${q.title}」— 打开任务查看`);
         this._quest = null;
         this.close();
     }
@@ -556,7 +563,7 @@ export class TownShopPanel extends Component {
                     `${this._quest.desc}\n\n` +
                     `报酬  ${this._quest.rewardGold}G`;
             }
-            this._hint.string = '接取后立刻结算报酬';
+            this._hint.string = '接取后可在任务「委托」页查看与交付';
             this.setActionLabel('接受委托');
             this.paintAction(true);
             this.ensureBodyLayout();

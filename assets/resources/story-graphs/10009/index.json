@@ -1,0 +1,7 @@
+{
+  "storyId": 10009,
+  "name": "任务1006",
+  "description": "scriptId=quest_1006; Lock→StartChat(10009)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

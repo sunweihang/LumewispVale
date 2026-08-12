@@ -1,0 +1,7 @@
+{
+  "storyId": 10016,
+  "name": "镇长的茶",
+  "description": "scriptId=mayor_tea; Lock→StartChat(10016)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

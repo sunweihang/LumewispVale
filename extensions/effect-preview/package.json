@@ -1,0 +1,39 @@
+{
+  "package_version": 2,
+  "version": "1.1.5",
+  "name": "effect-preview",
+  "description": "特效预览",
+  "main": "./main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "panels": {
+    "default": {
+      "title": "特效预览",
+      "type": "dockable",
+      "main": "./panels/default.js",
+      "size": {
+        "min-width": 340,
+        "min-height": 420,
+        "width": 400,
+        "height": 680
+      }
+    }
+  },
+  "contributions": {
+    "messages": {
+      "open-panel": {
+        "methods": [
+          "openPanel"
+        ]
+      },
+      "reload-scene-script": {
+        "methods": [
+          "reloadSceneScript"
+        ]
+      }
+    },
+    "scene": {
+      "script": "./scene.js"
+    }
+  }
+}
