@@ -9,6 +9,7 @@ import {
     Node,
     Prefab,
     Sprite,
+    SpriteFrame,
     UITransform,
     Vec3,
     Widget,
@@ -60,6 +61,7 @@ import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
 import { TownWorldLayout, TownNpcId } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
+import { JOYSTICK_FRAMES } from './JoystickFrames';
 import { ensureUiAudio } from './UiAudio';
 import { loadUiFont } from './UiFont';
 import { WorldYSort } from './WorldYSort';
@@ -173,6 +175,10 @@ export class GameBootstrap extends Component {
             'FarmBagPanel',
             'FarmChestDimmer',
             'FarmChestPanel',
+            'FarmCraftDimmer',
+            'FarmCraftPanel',
+            'FarmLearnDimmer',
+            'FarmLearnPanel',
             'FarmDragGhost',
             'FarmToolTip',
             'FarmInfoBoard',
@@ -362,6 +368,8 @@ export class GameBootstrap extends Component {
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
+                // Dock chrome before world — bag/hotbar must not open indoor props.
+                if (hud.handleUiTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
@@ -474,6 +482,8 @@ export class GameBootstrap extends Component {
                 isTown: false,
             });
 
+            MineWorldLayout.mountExitFx(world);
+
             const oldShop = canvas.getComponent(TownShopPanel);
             if (oldShop) canvas.removeComponent(oldShop);
             const shopPanel = canvas.addComponent(TownShopPanel);
@@ -485,7 +495,10 @@ export class GameBootstrap extends Component {
                 if (storyIntro.handleTap(x, y)) return;
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
+                if (guide.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
+                // Dock chrome before world — bag/hotbar must not open the exit sign.
+                if (hud.handleUiTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
@@ -576,6 +589,8 @@ export class GameBootstrap extends Component {
                 if (dialogue.handleTap(x, y)) return;
                 if (rewardPopup.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
+                // Dock chrome before world — bag/hotbar must not enter shops/signs.
+                if (hud.handleUiTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (shopPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
@@ -605,12 +620,14 @@ export class GameBootstrap extends Component {
                         // Walk-then-interact law: see StoryWorldHooks.approachInteractThen.
                         story.approachInteractThen(hit.node, () => {
                             if (!hit.node.isValid) return;
+                            // Board commissions pay only at their deliverKey (not journal「交付」).
+                            quests.tryDeliverBoardAt(hit.key);
                             if (hit.kind === 'travel') {
                                 if (hit.dest === 'mine') {
                                     if (!canTravel('mine')) {
                                         shopPanel.openInfo(
                                             '矿洞路牌',
-                                            '矿脉商会尚未放行。先去矿石店打听打听浅层矿洞的事。',
+                                            '矿脉商会尚未放行。先去矿石店找掌柜·赤铜打听浅层矿洞。',
                                         );
                                         return;
                                     }
@@ -642,12 +659,11 @@ export class GameBootstrap extends Component {
                                 return;
                             }
                             if (hit.kind === 'shop') {
-                                shopPanel.openShop(hit.shopId);
-                                // 矿脉商会放行浅层矿洞（Ch.2 钩子）
-                                if (hit.shopId === 'ore') {
-                                    quests.noteFlag('visit_oreshop');
-                                    GameState.unlock('mine');
+                                // 矿脉商会：主线先与掌柜对话放行，再开商店
+                                if (hit.shopId === 'ore' && storyDlg.tryBuilding('oreshop')) {
+                                    return;
                                 }
+                                shopPanel.openShop(hit.shopId);
                             } else if (hit.kind === 'board') {
                                 shopPanel.openBoard(hit.board);
                             } else {
@@ -686,6 +702,7 @@ export class GameBootstrap extends Component {
                     hud.reloadCraftRecipes();
                     // Arriving in town completes 1009 (idempotent via Flag ≥1).
                     quests.noteFlag('enter_town');
+                    TownWorldLayout.syncTravelPortalFx(world);
                     if (infoBoard) {
                         quests.infoBoard = infoBoard;
                         story.infoBoard = infoBoard;
@@ -746,9 +763,9 @@ export class GameBootstrap extends Component {
                 if (rewardPopup.handleTap(x, y)) return;
                 if (guide.handleTap(x, y)) return;
                 if (gm.handleTap(x, y)) return;
-                // Bag / chest / craft must beat info-board & quest dock hitboxes
+                // Bag / chest / craft / hotbar before world + quest dock
                 // (craft close sits under the top-right board on tall panels).
-                if (hud?.isModalOpen && hud.handleTap(x, y)) return;
+                if (hud.handleUiTap(x, y)) return;
                 if (questPanel.handleTap(x, y)) return;
                 if (infoBoard?.handleTap(x, y)) return;
                 this.clearAutoWalk(clickMove, player, farm);
@@ -798,6 +815,8 @@ export class GameBootstrap extends Component {
                 infoReady,
                 afterTables: () => {
                     hud.reloadCraftRecipes();
+                    // Town unlock may arrive with tables / quest resume.
+                    story.syncTownPortalFx();
                 },
             });
         }
@@ -900,8 +919,19 @@ export class GameBootstrap extends Component {
 
         if (covered) {
             // Intro / dialogue own input locks; just clear stale stick state.
+            // QuestHud / hotbar resync waits for DialoguePanel.restoreChrome
+            // (stale hide from splash must not win while arrive_town is still up).
             InputBridge.clear();
         } else {
+            // enter_town / enter_mine may flip awaitingClaim under the splash.
+            if (canvas.isValid) {
+                questPanel.revealQuestHud();
+                opts.hud?.ensureDockVisible();
+                canvas
+                    .getChildByName('TouchControls')
+                    ?.getComponent(TouchJoystick)
+                    ?.showFixedStick();
+            }
             InputBridge.uiBlocking = false;
             InputBridge.moveLocked = false;
             InputBridge.clear();
@@ -1276,7 +1306,9 @@ export class GameBootstrap extends Component {
     }
 
     /**
-     * Hotbar / bag / farm job first; empty ground → click-to-move with marker.
+     * Farm job after world miss (dock chrome already ran via handleUiTap).
+     * Empty ground: stick-only, except when the quest idle guide has a world
+     * walk aim (starlight path / place ring) — then click-to-move to that goal.
      */
     private finishWorldTap(
         hud: FarmHUD,
@@ -1290,10 +1322,11 @@ export class GameBootstrap extends Component {
     ) {
         if (hud.handleTap(uiX, uiY)) return;
         if (!worldPt) return;
-        // Taps on the quest place-aim ring walk to that feet goal (one marker).
-        const snapped =
-            this.node.getComponent(TutorialGuide)?.snapPlaceAim(worldPt.x, worldPt.y) ?? worldPt;
-        clickMove.go(player, world, farm, snapped.x, snapped.y);
+        const dest = this.node
+            .getComponent(TutorialGuide)
+            ?.questClickMoveDest(worldPt.x, worldPt.y);
+        if (!dest) return;
+        clickMove.go(player, world, farm, dest.x, dest.y);
     }
 
     /** UI coords (origin bottom-left) → world-local point under CameraFollow. */
@@ -1360,6 +1393,11 @@ export class GameBootstrap extends Component {
         base.layer = canvas.layer;
         base.setParent(visual);
         base.addComponent(UITransform).setContentSize(160, 160);
+        const baseSp = base.addComponent(Sprite);
+        baseSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        baseSp.type = Sprite.Type.SIMPLE;
+        baseSp.trim = false;
+        // Fallback ring until AI chrome loads.
         const g = base.addComponent(Graphics);
         g.fillColor = new Color(20, 28, 24, 150);
         g.circle(0, 0, 72);
@@ -1373,17 +1411,35 @@ export class GameBootstrap extends Component {
         knob.layer = canvas.layer;
         knob.setParent(visual);
         knob.addComponent(UITransform).setContentSize(80, 80);
+        const knobSp = knob.addComponent(Sprite);
+        knobSp.sizeMode = Sprite.SizeMode.CUSTOM;
+        knobSp.type = Sprite.Type.SIMPLE;
+        knobSp.trim = false;
         const kg = knob.addComponent(Graphics);
         kg.fillColor = new Color(120, 190, 80, 230);
         kg.circle(0, 0, 32);
         kg.fill();
+
+        assetManager.loadAny({ uuid: JOYSTICK_FRAMES.base }, (err, asset) => {
+            if (err || !asset || !base.isValid) return;
+            baseSp.spriteFrame = asset as SpriteFrame;
+            g.destroy();
+        });
+        assetManager.loadAny({ uuid: JOYSTICK_FRAMES.knob }, (err, asset) => {
+            if (err || !asset || !knob.isValid) return;
+            knobSp.spriteFrame = asset as SpriteFrame;
+            kg.destroy();
+        });
 
         const touch = host.addComponent(TouchJoystick);
         touch.visualRoot = visual;
         touch.knob = knob;
         touch.radius = 80;
         touch.dragThreshold = 22;
-        visual.active = false;
+        // Rest dock center-bottom; press+drag relocates stick to the finger.
+        touch.fixedStick = true;
+        touch.layoutFixedStick();
+        visual.active = true;
         return touch;
     }
 

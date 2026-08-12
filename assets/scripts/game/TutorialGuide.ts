@@ -60,6 +60,11 @@ const ARROW_UI_FLOOR = -560;
 const ARROW_TOP_RESERVE = 200;
 /** Chevron half-height above its node center (sprite / fallback). */
 const ARROW_EXTENT_UP = 48;
+/** 「点击」label box — tight to glyphs so side/down gaps match. */
+const CLICK_LAB_W = 80;
+const CLICK_LAB_H = 48;
+/** Clearance between chevron base edge and「点击」box edge (all aims). */
+const CLICK_LAB_GAP = 20;
 /**
  * Place-aim chevron center above the ground-ripple origin.
  * Tip sits ~8px above the ring (96px sprite, tip ≈ center − 48).
@@ -96,27 +101,34 @@ const STICKY_SWITCH_SQ = 160 * 160;
 const EDGE_HYSTERESIS = 96;
 /** Hold the last good idle aim briefly when HUD/world holes flicker on farm boot. */
 const LAST_GUIDE_HOLD_MS = 450;
-/** World spacing for path polyline samples (smooth continuous stroke). */
-const PATH_DOT_STEP = 12;
-/** Recompute A* at most this often while the player walks. */
-const PATH_REPATH_MS = 320;
-/** Cap path samples (world polyline) so long aims still reach the goal tip. */
-const PATH_DOT_MAX = 200;
-/** Canvas size of each optional spark accent. */
-const PATH_DOT_SIZE = 22;
-/** Place a soft spark every N visible samples along the continuous line. */
-const PATH_SPARK_EVERY = 5;
-/** Hard cap on spark Sprite nodes — accents only; the stroke carries the guide. */
-const PATH_VISIBLE_MAX = 24;
+/** World spacing between starlight path dots (denser trail, still pooled). */
+const PATH_DOT_STEP = 16;
 /**
- * Arc length (world) past the player's nearest path sample before the trail starts.
- * Stay tiny so the line reads as rising from under the feet, not from mid-torso.
+ * Recompute A* this often while walking. Painted motes re-densify from the
+ * live feet every frame using cached waypoints — this only refreshes the corridor.
  */
-const PATH_START_CLEAR = 12;
-/** Tiny feet pad — skip samples stacked on the stand point. */
-const PATH_BODY_HW = 10;
-const PATH_BODY_DOWN = 8;
-const PATH_BODY_UP = 12;
+const PATH_REPATH_MS = 140;
+/**
+ * Cap path samples (world polyline). High enough that long A* routes still
+ * densify through a full playfield (not just the first ~screen of walk).
+ */
+const PATH_DOT_MAX = 200;
+/**
+ * Hard cap on live Sprite nodes. When more on-screen samples exist, thin
+ * evenly so the trail still spans the whole visible segment.
+ */
+const PATH_VISIBLE_MAX = 64;
+/** Canvas size of each ground mote. */
+const PATH_DOT_SIZE = 28;
+/**
+ * Arc length (world) past the player's nearest path sample before the first mote.
+ * Small so stars read as rising from under the feet, not starting mid-path.
+ */
+const PATH_START_CLEAR = 22;
+/** Feet pad (world) — skip samples stacked on the stand point only. */
+const PATH_BODY_HW = 16;
+const PATH_BODY_DOWN = 10;
+const PATH_BODY_UP = 22;
 
 type GuideStep = 'quest' | 'hand' | 'grass';
 
@@ -136,11 +148,10 @@ type IdleGuide = {
     /** Item frame for the drag ghost (e.g. boost). */
     dragItem?: string;
     /**
-     * Finger Z euler degrees when on-screen. Sprite defaults to pointing down (0).
-     * Non-zero = off-screen edge cue:
-     * 90 = walk east / right edge; -90 = walk west / left edge;
-     * 180 = walk north / top edge (target above the playfield).
-     * South edge uses arrowDeg 0 + edgeWalk.
+     * Finger Z euler degrees. Sprite defaults to pointing down (0).
+     * On-screen click: 0 = from above; 90 = from left (point right);
+     * -90 = from right (point left). With edgeWalk: off-screen cue
+     * (90 east / -90 west / 180 north; south uses 0 + edgeWalk).
      */
     arrowDeg?: number;
     /** Off-screen「前往xxx」— hide floating finger; starlight path still leads. */
@@ -175,8 +186,7 @@ const TOOL_LABEL: Record<string, string> = {
  * Talk to 露穗 → center icons fly to dock → soft idle arrows for weeds.
  *
  * Also: while a quest is active, keep guiding — wrong tool → yellow click arrow
- * on hotbar; walk-to world aims keep a continuous ground path until the tap
- * (yellow arrow joins once the aim is on-screen).
+ * on hotbar; walk-to world aims use a ground starlight path (edge when off-screen).
  *
  * lateUpdate after CameraFollow so world→UI holes match the snapped World pose.
  */
@@ -203,13 +213,21 @@ export class TutorialGuide extends Component {
     /** Dark halo under the edge trail so it pops on bright grass / dirt. */
     private _edgeHaloN: Node | null = null;
     private _edgeHaloG: Graphics | null = null;
-    /** Ground guide path (player → world aim): continuous stroke + sparse sparks. */
+    /** Canvas starlight path root (place-ring aims) or world-dot pool parent. */
     private _pathRoot: Node | null = null;
-    private _pathLineG: Graphics | null = null;
+    /**
+     * True when live motes are direct World children (`guide_path_dot`) so each
+     * footY weaves with props. Soft garden decor is promoted past in WorldYSort.
+     */
+    private _pathInWorld = false;
     private _pathDots: Node[] = [];
     private _pathDotFrames: SpriteFrame[] = [];
     private _pathFramesLoaded = false;
     private _pathRepathAt = 0;
+    /** One-shot World orphan sweep while on canvas trails (hot-reload / stuck ghosts). */
+    private _orphanPathSweepDone = false;
+    /** Sparse A* corridor (goal-relative); densified from live feet each frame. */
+    private _pathWaypoints: WorldPos[] = [];
     private _pathPts: WorldPos[] = [];
     private _pathGoal: WorldPos | null = null;
     private _dragGhost: Node | null = null;
@@ -322,16 +340,9 @@ export class TutorialGuide extends Component {
             return null;
         }
         const hud = this.node.getComponent(FarmHUD);
-        // Craft countdown: no click cue; soft wait line (input stays free).
-        if (hud?.isTutorialCraftBusy) {
-            const id = hud.guidedCraftRecipeId;
-            return id === 'seed_from_grass'
-                ? '露穗：种子还在搓，稍等'
-                : '露穗：还在制作，稍等';
-        }
-        // Closed panel — wait for the product fly to land before claim.
-        if (hud?.isTutorialCraftAwaitFly) {
-            return '露穗：做好啦，收进背包';
+        // Craft countdown / deliver fly — no caption nag; player closes when ready.
+        if (hud?.isTutorialCraftBusy || hud?.isTutorialCraftAwaitFly) {
+            return null;
         }
         if (hud?.isRecipeLearnAwaitFly) {
             return '露穗：新配方飞进背包了';
@@ -357,6 +368,12 @@ export class TutorialGuide extends Component {
             this.farm.guideHintProvider = null;
         }
         this.farm?.setGatherClearance(null);
+        // Live motes parent under World — must destroy before the component dies
+        // or remount leaves ghost star trails (multiple lines to the same aim).
+        this.hideGroundPath();
+        this.releaseAllPathDots();
+        if (this._pathRoot?.isValid) this._pathRoot.destroy();
+        this._pathRoot = null;
         if (this._open) {
             InputBridge.uiBlocking = false;
         }
@@ -666,17 +683,25 @@ export class TutorialGuide extends Component {
     /**
      * resolveIdleGuide + short hold so boot / HUD rebuild null frames don't
      * yank the chevron to the quest dock (or hide it) for a single tick.
+     * Also keeps a UI-dock cue (bag / claim) from snapping to a world/edge aim
+     * when FarmHotbar is inactive for a frame mid-chrome restore.
      */
     private resolveIdleGuideStable(): IdleGuide | null {
         const guide = this.resolveIdleGuide();
         const now = Date.now();
+        const prev = this._lastIdleGuide;
         if (guide) {
+            if (prev?.uiDock && !guide.uiDock && now < this._lastIdleUntil) {
+                return prev;
+            }
             this._lastIdleGuide = guide;
-            this._lastIdleUntil = now + LAST_GUIDE_HOLD_MS;
+            // Dock aims need a longer bridge — bag↔hotbar thrash is worse than a
+            // one-frame world miss.
+            this._lastIdleUntil = now + (guide.uiDock ? LAST_GUIDE_HOLD_MS * 2 : LAST_GUIDE_HOLD_MS);
             return guide;
         }
-        if (this._lastIdleGuide && now < this._lastIdleUntil) {
-            return this._lastIdleGuide;
+        if (prev && now < this._lastIdleUntil) {
+            return prev;
         }
         this._lastIdleGuide = null;
         return null;
@@ -782,9 +807,18 @@ export class TutorialGuide extends Component {
 
     /** Wrong tool → arrow on that hotbar slot only (no caption, no quest-chip fallback). */
     private toolSwapGuide(tool: string, slot: string): IdleGuide | null {
-        const slotHole = this.toolSlotHole(slot) ?? this.toolSlotHoleFallback(slot);
-        if (!slotHole) return null;
-        return { hole: slotHole, tip: this.toolSwapTip(tool), uiDock: true, silent: true };
+        const slotHole = this.toolSlotHole(slot);
+        if (slotHole) {
+            return { hole: slotHole, tip: this.toolSwapTip(tool), uiDock: true, silent: true };
+        }
+        // Geometric fallback only when the tool is already docked but the slot
+        // node is mid-rebuild. Never invent an empty hoe/seeds seat — that used
+        // to yank the chevron off the bag during bag→hotbar lessons.
+        const hud = this.node.getComponent(FarmHUD);
+        if (!hud?.isHotbarBound(slot)) return null;
+        const fb = this.toolSlotHoleFallback(slot);
+        if (!fb) return null;
+        return { hole: fb, tip: this.toolSwapTip(tool), uiDock: true, silent: true };
     }
 
     /** Match FarmHUD dock layout if the slot node is not ready yet. */
@@ -908,27 +942,34 @@ export class TutorialGuide extends Component {
             return null;
         }
 
-        // Craft panel (recipe / close-after-craft) must beat claim — same as shop:
-        // the modal still swallows quest-dock taps while open.
-        const craftGuide = this.resolveCraftQuestGuide();
-        if (craftGuide) {
+        // Craft panel open: recipe tip only — never aim claim / world through the modal.
+        if (hudPending?.isCraftOpen) {
             this.clearStickyTarget();
-            return craftGuide;
+            return this.resolveCraftQuestGuide();
         }
 
         if (quests.isAwaitingClaim) {
             this.farm?.setGatherClearance(null);
+            // Mine/town boot can leave FarmHotbar / QuestHud inactive after Loading
+            // chrome restore — force them back before aiming the claim chip.
+            this.node.getComponent(FarmHUD)?.ensureDockVisible();
+            this.node.getComponent(QuestPanel)?.revealQuestHud();
             const hole = this.claimHole();
-            if (!hole) return null;
-            this.clearStickyTarget();
-            return { hole, tip: '露穗：点这里领奖', uiDock: true };
+            if (hole) {
+                this.clearStickyTarget();
+                return { hole, tip: '露穗：点这里领奖', uiDock: true };
+            }
+            // Claim dock still missing — fall through so world aims (e.g. mine copper)
+            // are not permanently silenced.
         }
 
-        // New recipe scroll in the bag — learn before workbench / world steps.
-        const learnGuide = this.resolveRecipeLearnGuide();
-        if (learnGuide) {
+        // New recipe scroll — learn before workbench / world steps.
+        // While pending, never fall through to quest-dock / world aims: dialogue
+        // fade-out clears isOpen before FarmHotbar chrome restores, so bagHole
+        // is briefly null and the old questHole fallback flashed the journal icon.
+        if (quests.pendingCraftRecipeIds().length) {
             this.clearStickyTarget();
-            return learnGuide;
+            return this.resolveRecipeLearnGuide();
         }
 
         const action = quests.activeGotoAction();
@@ -984,7 +1025,7 @@ export class TutorialGuide extends Component {
                     return this.toolSwapGuide('hoe', 'hoe');
                 }
                 return this.worldNodeGuide(
-                    this.pickNearestDecor(this.farm?.listRocks() ?? []),
+                    this.pickNearestDecor(this.farm?.listRocks() ?? [], 'rock'),
                     '露穗：点石头挖石料',
                 );
             }
@@ -996,7 +1037,7 @@ export class TutorialGuide extends Component {
                     return this.toolSwapGuide('axe', 'axe');
                 }
                 return this.worldNodeGuide(
-                    this.pickNearestDecor(this.farm?.listTrees() ?? []),
+                    this.pickNearestDecor(this.farm?.listTrees() ?? [], 'tree'),
                     '露穗：点树砍几下，攒木料',
                 );
             }
@@ -1057,6 +1098,19 @@ export class TutorialGuide extends Component {
                         return again;
                     }
                 }
+                // Mats short → gather first; don't park the arrow on a dead bench.
+                const recipeId = hud?.guidedCraftRecipeId;
+                if (recipeId && !hud!.canAffordRecipe(recipeId)) {
+                    const gather = this.resolveCraftMatsGatherGuide(
+                        hud!.firstMissingCraftCost(recipeId),
+                    );
+                    if (gather) {
+                        // Only drop the desk lock — do NOT wipe grass/rock sticky
+                        // every frame (that made the chevron thrash while walking).
+                        if (this._stickyKey === 'craftbench') this.clearStickyTarget();
+                        return gather;
+                    }
+                }
                 // Aim the place chevron at the desk (anvil), not sprite-top /
                 // feet — worldNodeGuide sat the tip on dirt above the bench.
                 const bench = this.farm?.findWorldNode('prop_craftbench') ?? null;
@@ -1079,7 +1133,7 @@ export class TutorialGuide extends Component {
                 return guide;
             }
             case GotoAction.OpenBag: {
-                const bag = this.bagHole() ?? this.questHole();
+                const bag = this.bagHole();
                 if (!bag) return null;
                 this.clearStickyTarget();
                 return { hole: bag, tip: '露穗：点开背包看看', uiDock: true };
@@ -1160,25 +1214,25 @@ export class TutorialGuide extends Component {
                 if (id === 1024) {
                     return this.resolveTownOutdoorGuide(
                         ['bld_oreshop'],
-                        '点击矿脉商会取得通行证',
-                        '往矿脉商会走，再点一下',
+                        '点矿脉商会，向掌柜·赤铜打听放行',
+                        '往矿脉商会走，再点一下找掌柜',
                     );
                 }
                 if (id === 1025) {
-                    return this.resolveTownOutdoorGuide(
-                        ['sign_mine'],
-                        '点击北山矿洞路牌进入',
-                        '往北走到矿洞路牌',
-                    );
+                    // Town: point at the mine portal. Already inside → dig guide
+                    // (enter_mine claim is handled above when awaitingClaim).
+                    const outdoor = this.nearestWorldNode(['sign_mine', 'door_portal_mine']);
+                    if (outdoor) {
+                        return this.resolveTownOutdoorGuide(
+                            ['sign_mine', 'door_portal_mine'],
+                            '点击东门外矿洞路牌进入',
+                            '往东走到矿洞路牌',
+                        );
+                    }
+                    return this.resolveMineCopperGuide();
                 }
                 if (id === 1026) {
-                    return this.worldNodeGuide(
-                        this.farm?.findWorldNode(
-                            'decor_rock_solid_ore_copper',
-                            'ore_copper',
-                        ) ?? null,
-                        '选中锄头，挖开铜矿石',
-                    );
+                    return this.resolveMineCopperGuide();
                 }
                 const q = this.questHole();
                 if (!q) return null;
@@ -1197,12 +1251,12 @@ export class TutorialGuide extends Component {
         const hole = this.uiNodeHole(shop.acceptBtnNode());
         if (!hole) return null;
         this.clearStickyTarget();
-        return { hole, tip: '露穗：点「接受委托」，再到任务里看', uiDock: true };
+        return { hole, tip: '露穗：点「接受委托」，再去目标地点交付', uiDock: true };
     }
 
     /**
      * Quest 1020 / 1021 while the shop is open: force「购买/出售」tab → first
-     * list row → close X after trade (panel still blocks claim / world taps).
+     * list row → confirm → close X after trade (panel still blocks claim / world taps).
      */
     private resolveTownShopGuide(): IdleGuide | null {
         const shop = this.node.getComponent(TownShopPanel);
@@ -1222,14 +1276,19 @@ export class TutorialGuide extends Component {
                 if (!hole) return null;
                 return { hole, tip: '露穗：先点「出售」页签', uiDock: true };
             }
-            const hole = this.uiNodeHole(shop.firstSellRowNode());
-            if (hole) {
-                return { hole, tip: '露穗：点这一行卖掉一件', uiDock: true };
+            if (!shop.hasTradeSelection) {
+                const hole = this.uiNodeHole(shop.firstSellRowNode());
+                if (hole) {
+                    return { hole, tip: '露穗：先点这一行选中', uiDock: true };
+                }
+                // Empty sell list — keep the panel cue (don't fall through to buildings).
+                const tab = this.uiNodeHole(shop.sellTabNode());
+                if (!tab) return null;
+                return { hole: tab, tip: '露穗：背包里还没有可卖的收获物', uiDock: true };
             }
-            // Empty sell list — keep the panel cue (don't fall through to buildings).
-            const tab = this.uiNodeHole(shop.sellTabNode());
-            if (!tab) return null;
-            return { hole: tab, tip: '露穗：背包里还没有可卖的收获物', uiDock: true };
+            const confirm = this.uiNodeHole(shop.confirmBtnNode());
+            if (!confirm) return null;
+            return { hole: confirm, tip: '露穗：点确认出售', uiDock: true };
         }
         if (qid === 1020) {
             if (shop.shopSide !== 'buy') {
@@ -1237,9 +1296,14 @@ export class TutorialGuide extends Component {
                 if (!hole) return null;
                 return { hole, tip: '露穗：先点「购买」页签', uiDock: true };
             }
-            const hole = this.uiNodeHole(shop.firstBuyRowNode());
-            if (!hole) return null;
-            return { hole, tip: '露穗：点这一行买一件', uiDock: true };
+            if (!shop.hasTradeSelection) {
+                const hole = this.uiNodeHole(shop.firstBuyRowNode());
+                if (!hole) return null;
+                return { hole, tip: '露穗：先点这一行选中', uiDock: true };
+            }
+            const confirm = this.uiNodeHole(shop.confirmBtnNode());
+            if (!confirm) return null;
+            return { hole: confirm, tip: '露穗：点确认购买', uiDock: true };
         }
         return null;
     }
@@ -1336,10 +1400,16 @@ export class TutorialGuide extends Component {
         if (hud.isRecipeLearnOpen) {
             const learn = this.uiNodeHole(hud.recipeLearnBtnNode());
             if (!learn) return null;
-            return { hole: learn, tip: `露穗：点「学习」，学会「${name}」`, uiDock: true };
+            // From the right — a top-down chevron covers the recipe desc above「学习」.
+            return {
+                hole: learn,
+                tip: `露穗：点「学习」，学会「${name}」`,
+                uiDock: true,
+                arrowDeg: -90,
+            };
         }
         if (!hud.isBagOpen) {
-            const bag = this.bagHole() ?? this.questHole();
+            const bag = this.bagHole();
             if (!bag) return null;
             return { hole: bag, tip: '露穗：新配方飞进背包了，打开学习', uiDock: true };
         }
@@ -1387,7 +1457,8 @@ export class TutorialGuide extends Component {
 
         this.clearStickyTarget();
         if (!hud.isBagOpen) {
-            const bag = this.bagHole() ?? this.questHole();
+            // Always keep the bag seat — never fall through to soil / phantom slots.
+            const bag = this.bagHole();
             if (!bag) return null;
             return { hole: bag, tip: openTip, uiDock: true };
         }
@@ -1435,7 +1506,7 @@ export class TutorialGuide extends Component {
         return this.worldPosGuide(this.stickyPlotPos('grow'), '露穗：点作物用催熟剂');
     }
 
-    /** Forced craft-quest steps while the workbench is open (countdown stays free). */
+    /** Forced craft-quest steps while the workbench is open — only aim the recipe button. */
     private resolveCraftQuestGuide(): IdleGuide | null {
         const quests = this.quests;
         const q = quests?.activeQuest;
@@ -1443,23 +1514,12 @@ export class TutorialGuide extends Component {
         const hud = this.node.getComponent(FarmHUD);
         if (!hud?.isCraftOpen) return null;
 
-        // Job already ticking — wait for finish, then guide close (no click arrow).
-        if (hud.isTutorialCraftBusy) return null;
-
-        if (hud.isTutorialCraftAwaitClose) {
-            const hole = this.uiNodeHole(hud.craftCloseBtnNode());
-            if (!hole) return null;
-            return { hole, tip: '露穗：关掉工作台继续', uiDock: true };
-        }
-
-        // After craft completes, close first so the claim chip is free.
-        if (quests.isAwaitingClaim) {
-            const hole = this.uiNodeHole(hud.craftCloseBtnNode());
-            if (!hole) return null;
-            return { hole, tip: '露穗：关掉工作台领奖', uiDock: true };
-        }
-
+        // Countdown / claim / short mats: stay quiet — don't nag close or gather.
+        if (hud.isTutorialCraftBusy || hud.isTutorialCraftAwaitClose) return null;
+        if (quests.isAwaitingClaim) return null;
         if (q.conditionId !== 3 || !q.param) return null;
+        if (!hud.canAffordRecipe(q.param)) return null;
+
         const btn = hud.craftRecipeBtnNode(q.param);
         const hole = this.uiNodeHole(btn);
         if (!hole) return null;
@@ -1476,20 +1536,129 @@ export class TutorialGuide extends Component {
         return { hole, tip, uiDock: true };
     }
 
+    /**
+     * Craft quest short on mats → aim the matching gather action
+     * (grass / rock / till / chop) instead of the workbench.
+     */
+    private resolveCraftMatsGatherGuide(missing: string | null): IdleGuide | null {
+        if (!missing) return null;
+        const tool = this.farm?.tool;
+        if (missing === 'grass') {
+            this.farm?.setGatherClearance('pull');
+            if (tool !== 'hand') {
+                this.clearStickyTarget();
+                return this.toolSwapGuide('hand', 'hand');
+            }
+            return this.worldNodeGuide(this.pickHintGrass(), '露穗：先拔草凑材料');
+        }
+        if (missing === 'stone') {
+            this.farm?.setGatherClearance('dig');
+            const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+                ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+                openTip: '露穗：点开背包，把锄头拿出来挖石',
+            });
+            if (hoeBag) return hoeBag;
+            if (tool !== 'hoe') {
+                this.clearStickyTarget();
+                return this.toolSwapGuide('hoe', 'hoe');
+            }
+            return this.worldNodeGuide(
+                this.pickNearestDecor(this.farm?.listRocks() ?? [], 'craft-mat-rock'),
+                '露穗：先挖石头凑材料',
+            );
+        }
+        if (missing === 'dirt') {
+            this.farm?.setGatherClearance(null);
+            const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+                ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+                openTip: '露穗：点开背包，把锄头拿出来翻土',
+            });
+            if (hoeBag) return hoeBag;
+            if (tool !== 'hoe') {
+                this.clearStickyTarget();
+                return this.toolSwapGuide('hoe', 'hoe');
+            }
+            return this.worldPosGuide(this.stickyPlotPos('soil'), '露穗：先开垦田地凑泥土');
+        }
+        if (missing === 'wood') {
+            this.farm?.setGatherClearance('chop');
+            const axeBag = this.resolveBagToHotbarGuide('axe');
+            if (axeBag) return axeBag;
+            if (tool !== 'axe') {
+                this.clearStickyTarget();
+                return this.toolSwapGuide('axe', 'axe');
+            }
+            return this.worldNodeGuide(
+                this.pickNearestDecor(this.farm?.listTrees() ?? [], 'craft-mat-tree'),
+                '露穗：先砍点木料凑材料',
+            );
+        }
+        return null;
+    }
+
     /** Hide stacked rival nature while a gather goto is live. */
+    /** Mine copper quest — bag→hotbar hoe, equip, then nearest copper ore. */
+    private resolveMineCopperGuide(): IdleGuide | null {
+        this.farm?.setGatherClearance('dig');
+        const hoeBag = this.resolveBagToHotbarGuide('hoe', {
+            ensure: () => this.node.getComponent(FarmHUD)?.ensureStoryHoe(),
+            openTip: '露穗：点开背包，把锄头拿出来',
+        });
+        if (hoeBag) return hoeBag;
+        if (this.farm?.tool !== 'hoe') {
+            this.clearStickyTarget();
+            return this.toolSwapGuide('hoe', 'hoe');
+        }
+        const ore = this.pickNearestCopperOre();
+        return this.worldNodeGuide(ore, '露穗：点铜矿石开采', '往铜矿石走，再点一下挖');
+    }
+
+    private pickNearestCopperOre(): Node | null {
+        const world = this.farm?.world;
+        if (!world?.isValid) return null;
+        const list: Node[] = [];
+        for (const child of world.children) {
+            if (child.isValid && child.active && child.name.includes('ore_copper')) {
+                list.push(child);
+            }
+        }
+        return this.pickNearestDecor(list, 'ore_copper');
+    }
+
     private syncGatherClearance(action: GotoAction) {
         const farm = this.farm;
         if (!farm) return;
+        // Mine copper dig clearance is set inside resolveMineCopperGuide.
         if (action === GotoAction.HintGrass) farm.setGatherClearance('pull');
         else if (action === GotoAction.HintRock) farm.setGatherClearance('dig');
         else if (action === GotoAction.SelectAxe) farm.setGatherClearance('chop');
-        else farm.setGatherClearance(null);
+        else if (action === GotoAction.HintCraft || action === GotoAction.OpenCraft) {
+            // Mats short → same clearance as resolveCraftMatsGatherGuide.
+            // Must set here (not null→pull later) or buckets rebuild every frame.
+            const hud = this.node.getComponent(FarmHUD);
+            const recipeId = hud?.guidedCraftRecipeId;
+            if (recipeId && !hud!.canAffordRecipe(recipeId)) {
+                const missing = hud!.firstMissingCraftCost(recipeId);
+                if (missing === 'grass') farm.setGatherClearance('pull');
+                else if (missing === 'stone') farm.setGatherClearance('dig');
+                else if (missing === 'wood') farm.setGatherClearance('chop');
+                else farm.setGatherClearance(null);
+            } else {
+                farm.setGatherClearance(null);
+            }
+        } else farm.setGatherClearance(null);
     }
 
-    /** Nearest valid decor node to the player (rocks / trees). */
-    private pickNearestDecor(list: Node[]): Node | null {
+    /**
+     * Sticky nearest decor (rocks / trees) — same hysteresis as weeds so the
+     * craft-mats chevron doesn't hop every step toward a new nearest stump.
+     */
+    private pickNearestDecor(list: Node[], stickyKey = 'decor'): Node | null {
         const farm = this.farm;
-        if (!farm?.player || !list.length) return null;
+        if (!farm?.player || !list.length) {
+            if (this._stickyKey === stickyKey) this.clearStickyTarget();
+            return null;
+        }
         const px = farm.player.position.x;
         const py = farm.player.position.y;
         let best: Node | null = null;
@@ -1505,6 +1674,27 @@ export class TutorialGuide extends Component {
                 best = n;
             }
         }
+        if (!best) return null;
+        const now = Date.now();
+        if (this._stickyKey === stickyKey && this._stickyNode?.isValid) {
+            if (list.includes(this._stickyNode)) {
+                const sx = this._stickyNode.position.x - px;
+                const sy = this._stickyNode.position.y - py;
+                const stickySq = sx * sx + sy * sy;
+                if (bestSq + STICKY_SWITCH_SQ >= stickySq) {
+                    this._stickyUntil = now + STICKY_MS;
+                    this._stickyPos = {
+                        x: this._stickyNode.position.x,
+                        y: this._stickyNode.position.y,
+                    };
+                    return this._stickyNode;
+                }
+            }
+        }
+        this._stickyKey = stickyKey;
+        this._stickyNode = best;
+        this._stickyPos = { x: best.position.x, y: best.position.y };
+        this._stickyUntil = now + STICKY_MS;
         return best;
     }
 
@@ -2017,9 +2207,14 @@ export class TutorialGuide extends Component {
     /** Mainline quick-claim chip (QuestHud / QuestTracker). */
     private claimHole(): HoleRect | null {
         const dock = this.node.getChildByName('QuestHud');
-        if (!dock?.active) return null;
-        const bar = dock.getChildByName('QuestTracker');
-        return this.uiNodeHole(bar?.active ? bar : dock);
+        if (dock?.active) {
+            const bar = dock.getChildByName('QuestTracker');
+            const hole = this.uiNodeHole(bar?.active ? bar : dock);
+            if (hole) return hole;
+        }
+        // Chrome restore race (town enter_town under Loading) can leave the
+        // claim dock hidden for a frame — still aim the journal entry.
+        return this.questHole();
     }
 
     private handHole(): HoleRect | null {
@@ -2055,12 +2250,54 @@ export class TutorialGuide extends Component {
     }
 
     private bagHole(): HoleRect | null {
-        const bar = this.node.getChildByName('FarmHotbar');
-        if (!bar?.active) return null;
-        return this.uiNodeHole(bar.getChildByName('BagBtn'));
+        const hud = this.node.getComponent(FarmHUD);
+        // Loading / dialogue chrome restore can leave FarmHotbar inactive for a
+        // tick — wake it before measuring, else the chevron falls through to soil.
+        hud?.ensureDockVisible();
+        const btn = hud?.bagBtnNode() ?? null;
+        if (btn?.isValid && btn.active) {
+            let parentOk = true;
+            for (let p: Node | null = btn.parent; p; p = p.parent) {
+                if (!p.active) {
+                    parentOk = false;
+                    break;
+                }
+            }
+            if (parentOk) {
+                const live = this.uiNodeHole(btn);
+                if (live) return live;
+            }
+        } else if (btn?.isValid && !btn.active) {
+            // Modal open — real bag badge is meant to be gone.
+            if (hud.isBagOpen || hud.isModalOpen) return null;
+            // Unlock fly / chrome hide — keep the seat so teach aims don't
+            // snap to a soil plot for a frame.
+            return this.bagHoleFallback();
+        }
+        // Button missing or parent chain still dark — keep the dock seat so
+        // OpenBag / bag→hotbar never snaps to a world plot for one frame.
+        if (!hud || hud.isBagOpen || hud.isModalOpen) return null;
+        return this.bagHoleFallback();
     }
 
-    /** Canvas-local AABB of a UI node (handles parent offsets / anchors). */
+    /** Match FarmHUD.buildBagButton when the live node isn't measurable yet. */
+    private bagHoleFallback(): HoleRect {
+        const slot = 150;
+        const gap = 4;
+        const bagBtn = 180;
+        const barInnerPad = 3;
+        const barBgW = 7 * slot + 6 * gap + barInnerPad * 2;
+        const edgePad = 9;
+        const barY = -860;
+        const x = barBgW * 0.5 - bagBtn * 0.5 - edgePad;
+        const y = barY + slot * 0.5 + bagBtn * 0.5;
+        return { x, y, w: bagBtn, h: bagBtn };
+    }
+
+    /**
+     * Canvas-local hole for a UI node. Uses pivot + design contentSize so local
+     * scale pulses (bag/quest unlock) can't change hole.h and yank the chevron.
+     */
     private uiNodeHole(node: Node | null): HoleRect | null {
         if (!node?.isValid) return null;
         const ui = node.getComponent(UITransform);
@@ -2068,30 +2305,24 @@ export class TutorialGuide extends Component {
         if (!ui || !canvasUi) return null;
         const w = ui.contentSize.width;
         const h = ui.contentSize.height;
+        if (w <= 0 || h <= 0) return null;
         const ax = ui.anchorX;
         const ay = ui.anchorY;
-        // Corners in node local space → canvas local.
-        const corners = [
-            new Vec3(-w * ax, -h * ay, 0),
-            new Vec3(w * (1 - ax), -h * ay, 0),
-            new Vec3(-w * ax, h * (1 - ay), 0),
-            new Vec3(w * (1 - ax), h * (1 - ay), 0),
-        ];
-        let x0 = Infinity;
-        let y0 = Infinity;
-        let x1 = -Infinity;
-        let y1 = -Infinity;
-        const world = new Vec3();
-        const local = new Vec3();
-        for (let i = 0; i < corners.length; i++) {
-            ui.convertToWorldSpaceAR(corners[i]!, world);
-            canvasUi.convertToNodeSpaceAR(world, local);
-            if (local.x < x0) x0 = local.x;
-            if (local.y < y0) y0 = local.y;
-            if (local.x > x1) x1 = local.x;
-            if (local.y > y1) y1 = local.y;
+        // Pivot is stable under local scale; only walk parent scales for the
+        // pivot→center offset (Canvas UI parents stay at scale 1).
+        canvasUi.convertToNodeSpaceAR(node.worldPosition, this._localPt);
+        let psx = 1;
+        let psy = 1;
+        for (let p = node.parent; p && p !== this.node; p = p.parent) {
+            psx *= p.scale.x;
+            psy *= p.scale.y;
         }
-        return { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5, w: x1 - x0, h: y1 - y0 };
+        return {
+            x: this._localPt.x + w * (0.5 - ax) * psx,
+            y: this._localPt.y + h * (0.5 - ay) * psy,
+            w: w * Math.abs(psx),
+            h: h * Math.abs(psy),
+        };
     }
 
     /**
@@ -2263,10 +2494,11 @@ export class TutorialGuide extends Component {
                 fx = rippleHole.x;
                 fy = rippleHole.y + PLACE_ARROW_ABOVE;
             } else if (arrowDeg === 90) {
-                fx = this._hole.x - 56;
+                // Sit outside the hole (wide「学习」etc.) — not on the button face.
+                fx = this._hole.x - this._hole.w * 0.5 - 56;
                 fy = this._hole.y;
             } else if (arrowDeg === -90) {
-                fx = this._hole.x + 56;
+                fx = this._hole.x + this._hole.w * 0.5 + 56;
                 fy = this._hole.y;
             } else if (arrowDeg === 180) {
                 fy = this._hole.y - 56;
@@ -2394,21 +2626,29 @@ export class TutorialGuide extends Component {
         return n;
     }
 
-    /** 「点击」on yellow down-arrows (world / UI click aims — not edge walks / drag). */
+    /** 「点击」on yellow click-arrows (down / side UI aims — not edge walks / drag). */
     private syncClickLabel(on: boolean) {
         const lab = this._clickLab;
         if (!lab?.isValid) return;
         const host = lab.node;
+        const deg = this._idleArrowDeg ?? 0;
+        const side = deg === 90 || deg === -90;
+        const sideOrDown = deg === 0 || side;
         const show =
             on &&
             !!this._finger?.active &&
             this._guideMode === 'arrow' &&
-            (this._idleArrowDeg ?? 0) === 0 &&
+            sideOrDown &&
             !this._idleDragTo &&
             !this._idleEdgeWalk;
         host.active = show;
+        if (!show) return;
         // Keep text upright when the chevron rotates (edge cues hide it anyway).
-        if (show) host.setRotationFromEuler(0, 0, -(this._idleArrowDeg ?? 0));
+        host.setRotationFromEuler(0, 0, -deg);
+        // Local +Y is the shaft base. Side aims put the wide text edge against
+        // the chevron — clear half-width; down aims clear half-height.
+        const half = (side ? CLICK_LAB_W : CLICK_LAB_H) * 0.5;
+        host.setPosition(0, ARROW_EXTENT_UP + half + CLICK_LAB_GAP, 0);
     }
 
     /**
@@ -2539,6 +2779,21 @@ export class TutorialGuide extends Component {
         };
     }
 
+    /**
+     * Viewport for painting star-path motes. Wider than `playfieldBand` — that
+     * band reserves ~200px under the info board for arrows, which used to chop
+     * the trail mid-screen (empty top-right). Path only needs a thin edge inset.
+     */
+    private pathPaintBand() {
+        const { halfW, halfH } = this.canvasHalf();
+        return {
+            x0: -halfW + 12,
+            x1: halfW - 12,
+            y0: -halfH + 12,
+            y1: halfH - 12,
+        };
+    }
+
     private isInPlayfield(hole: HoleRect): boolean {
         return this.isInPlayfieldInset(hole, 0);
     }
@@ -2565,9 +2820,9 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Sticky weed aim for quest 1001 / HintGrass.
-     * Priority: baked `*_tut_*` cluster → front-yard band → near → any.
-     * Never aim at weeds inside the cottage body.
+     * Sticky weed aim for quest 1001 / HintGrass / craft-mats.
+     * Priority: baked `*_tut_*` → yard → near weeds → any weed → litter.
+     * Never aim at cottage body; prefer bushes/weeds over tiny twigs.
      */
     private pickHintGrass(): Node | null {
         const farm = this.farm;
@@ -2585,8 +2840,12 @@ export class TutorialGuide extends Component {
         let bestTutSq = Number.POSITIVE_INFINITY;
         let bestYard: Node | null = null;
         let bestYardSq = Number.POSITIVE_INFINITY;
+        let bestNearWeed: Node | null = null;
+        let bestNearWeedSq = Number.POSITIVE_INFINITY;
         let bestNear: Node | null = null;
         let bestNearSq = Number.POSITIVE_INFINITY;
+        let bestWeed: Node | null = null;
+        let bestWeedSq = Number.POSITIVE_INFINITY;
         let bestAny: Node | null = null;
         let bestAnySq = Number.POSITIVE_INFINITY;
         for (let i = 0; i < list.length; i++) {
@@ -2598,19 +2857,29 @@ export class TutorialGuide extends Component {
             const dx = nx - px;
             const dy = ny - py;
             const dSq = dx * dx + dy * dy;
+            const litter = /_(?:twig|fiber|tuft)_/.test(n.name);
             if (dSq < bestAnySq) {
                 bestAnySq = dSq;
                 bestAny = n;
             }
+            if (!litter && dSq < bestWeedSq) {
+                bestWeedSq = dSq;
+                bestWeed = n;
+            }
             if (dSq <= rangeSq && dSq < bestNearSq) {
                 bestNearSq = dSq;
                 bestNear = n;
+            }
+            if (!litter && dSq <= rangeSq && dSq < bestNearWeedSq) {
+                bestNearWeedSq = dSq;
+                bestNearWeed = n;
             }
             if (n.name.includes('_tut_') && dSq < bestTutSq) {
                 bestTutSq = dSq;
                 bestTut = n;
             }
             if (
+                !litter &&
                 nx >= YARD_GRASS.x0 &&
                 nx <= YARD_GRASS.x1 &&
                 ny >= YARD_GRASS.y0 &&
@@ -2621,7 +2890,7 @@ export class TutorialGuide extends Component {
                 bestYard = n;
             }
         }
-        const fresh = bestTut ?? bestYard ?? bestNear ?? bestAny;
+        const fresh = bestTut ?? bestYard ?? bestNearWeed ?? bestWeed ?? bestNear ?? bestAny;
         if (!fresh) return null;
 
         const key = 'grass';
@@ -2639,10 +2908,14 @@ export class TutorialGuide extends Component {
                         ? bestTutSq
                         : bestYardSq < Number.POSITIVE_INFINITY
                           ? bestYardSq
-                          : bestNearSq;
+                          : bestNearWeedSq < Number.POSITIVE_INFINITY
+                            ? bestNearWeedSq
+                            : bestWeedSq < Number.POSITIVE_INFINITY
+                              ? bestWeedSq
+                              : bestNearSq;
                 if (
                     rivalSq + STICKY_SWITCH_SQ >= stickySq ||
-                    !(bestTut ?? bestYard ?? bestNear)
+                    !(bestTut ?? bestYard ?? bestNearWeed ?? bestWeed ?? bestNear)
                 ) {
                     this._stickyUntil = now + STICKY_MS;
                     this._stickyPos = {
@@ -2749,9 +3022,9 @@ export class TutorialGuide extends Component {
         const clickN = new Node('ClickLab');
         clickN.layer = canvas.layer;
         clickN.setParent(finger);
-        // Above the chevron top (96px sprite → extent 48), not inside the stem.
-        clickN.setPosition(0, ARROW_EXTENT_UP + 28, 0);
-        clickN.addComponent(UITransform).setContentSize(110, 48);
+        // Default = down aim; syncClickLabel repositions for side aims.
+        clickN.setPosition(0, ARROW_EXTENT_UP + CLICK_LAB_H * 0.5 + CLICK_LAB_GAP, 0);
+        clickN.addComponent(UITransform).setContentSize(CLICK_LAB_W, CLICK_LAB_H);
         const clickLab = clickN.addComponent(Label);
         styleUiLabel(clickLab, {
             size: 34,
@@ -2832,12 +3105,10 @@ export class TutorialGuide extends Component {
     }
 
     /**
-     * Ground guide trail: player feet → quest world aim (A*).
-     * Continuous gold stroke inside the playfield (no dotted gaps);
-     * sparse sparks ride the line for sparkle only.
+     * Ground starlight trail: player feet → quest world aim (A*).
+     * World walk aims only (not hotbar / drag / silent tool-swap).
      */
     private syncGroundPath() {
-        // World walk aims only (not hotbar / drag / silent tool-swap).
         const want =
             this._idleOn &&
             !this._open &&
@@ -2852,10 +3123,12 @@ export class TutorialGuide extends Component {
         }
 
         const now = Date.now();
+        const px = player.position.x;
+        const py = player.position.y;
         const goalMoved =
             !this._pathGoal ||
             Math.hypot(this._pathGoal.x - goal.x, this._pathGoal.y - goal.y) > 18;
-        if (goalMoved || now >= this._pathRepathAt || !this._pathPts.length) {
+        if (goalMoved || now >= this._pathRepathAt || !this._pathWaypoints.length) {
             const ctrl = player.getComponent(PlayerController);
             if (!ctrl) {
                 this.hideGroundPath();
@@ -2863,48 +3136,96 @@ export class TutorialGuide extends Component {
             }
             // Solids may lag a frame after world rebuild — refresh cheaply.
             if (!ctrl.pathSolids.length) ctrl.rebuildSolids();
-            const path = ctrl.previewPath(goal.x, goal.y);
-            this._pathPts = this.densifyPath(
-                [{ x: player.position.x, y: player.position.y }, ...path],
-                PATH_DOT_STEP,
-                PATH_DOT_MAX,
-            );
+            // Cache sparse corridor only — paint samples rebuild from live feet below.
+            this._pathWaypoints = ctrl.previewPath(goal.x, goal.y);
             this._pathGoal = { x: goal.x, y: goal.y };
             this._pathRepathAt = now + PATH_REPATH_MS;
         }
 
-        const root = this.ensurePathRoot();
+        // Every frame: densify from current feet so the trail sticks while walking.
+        // A* stays on the PATH_REPATH_MS budget above.
+        this.trimPathWaypointsAhead(px, py);
+        this._pathPts = this.densifyPath(
+            [{ x: px, y: py }, ...this._pathWaypoints],
+            PATH_DOT_STEP,
+            PATH_DOT_MAX,
+        );
+        // Canvas place rings sit on top of props (craftbench desk / porch).
+        // A* stops outside solids, so extend the painted tip onto the ring —
+        // otherwise stars die at the table lip and look "occluded".
+        this.extendPathToCanvasRing();
+
+        const inWorld = this.shouldPathInWorld();
+        const root = this.ensurePathRoot(inWorld);
         if (!root) return;
-        root.active = true;
+        if (!inWorld) {
+            root.active = true;
+            this.assertGuidePathLayer();
+            // Already on canvas (no root rebuild) — still purge leftover World motes.
+            if (!this._orphanPathSweepDone) {
+                this.sweepOrphanWorldPathDots();
+                this._orphanPathSweepDone = true;
+            }
+        } else {
+            this._orphanPathSweepDone = false;
+        }
         this.loadPathDotFrames();
 
-        const band = this.playfieldBand();
-        const px = player.position.x;
-        const py = player.position.y;
-        const startI = this.pathTrailStartIndex(px, py);
-        const canvasPts = this.collectVisiblePathCanvas(startI, px, py, band);
-        this.paintGroundPathLine(canvasPts, now);
-
-        // Sparse sparks on top of the continuous stroke (accents, not the trail).
         const frames = this._pathDotFrames;
         const fallback = this._pathDotFrames[0] ?? null;
+        // Slow traveling shimmer along the trail (not a harsh per-dot blink).
         const t = now * 0.0042;
         const wave = now * 0.0031;
+        // Full viewport (not arrow playfieldBand) so the trail reaches screen edges.
+        const band = this.pathPaintBand();
+        // Trail starts ahead of the body toward the goal — never behind / through the sprite.
+        const startI = this.pathTrailStartIndex(px, py);
+        // Collect every on-screen sample first, then paint (thin evenly if over budget).
+        // Early PATH_VISIBLE_MAX break used to clip the trail mid-playfield.
+        const visible: { i: number; x: number; y: number }[] = [];
+        for (let i = startI; i < this._pathPts.length; i++) {
+            const pt = this._pathPts[i]!;
+            // Safety: skip zigzags that still skim the character AABB.
+            if (this.pathDotHitsBody(pt.x - px, pt.y - py)) continue;
+            const hole = this.worldPosHole(pt);
+            if (!hole) continue;
+            // Paint through the whole viewport; off-screen samples stay walk-only.
+            if (
+                hole.x < band.x0 ||
+                hole.x > band.x1 ||
+                hole.y < band.y0 ||
+                hole.y > band.y1
+            ) {
+                continue;
+            }
+            // World motes use world feet; canvas shares the place-ring stack.
+            visible.push(inWorld ? { i, x: pt.x, y: pt.y } : { i, x: hole.x, y: hole.y });
+        }
+        const pick = this.thinPathVisible(visible, PATH_VISIBLE_MAX);
+        const world = inWorld ? this.farm?.world ?? null : null;
         let shown = 0;
-        for (let i = 0; i < canvasPts.length && shown < PATH_VISIBLE_MAX; i += PATH_SPARK_EVERY) {
-            const pt = canvasPts[i]!;
-            const dot = this.ensurePathDot(shown);
+        for (let s = 0; s < pick.length; s++) {
+            const sample = pick[s]!;
+            const dot = this.ensurePathDot(shown, inWorld);
             if (!dot) break;
+            // Live world motes must be direct World children for per-dot Y-sort.
+            if (inWorld && world?.isValid && dot.parent !== world) {
+                dot.layer = world.layer;
+                dot.setParent(world);
+            }
             dot.active = true;
-            const bob = Math.sin(t + i * 0.55) * 1.2;
-            dot.setPosition(pt.x, pt.y + bob, 0);
-            const breath = 0.9 + Math.sin(t * 1.1 + i * 0.4) * 0.1;
+            // Soft float — tiny bob, no sideways jitter (that looked like dirt flecks).
+            const bob = Math.sin(t + sample.i * 0.55) * 1.4;
+            dot.setPosition(sample.x, sample.y - 4 + bob, 0);
+            const breath = 0.96 + Math.sin(t * 1.1 + sample.i * 0.4) * 0.08;
             dot.setScale(breath, breath, 1);
+            // Flowing bright crest — keep a high floor so dirt paths still read.
             const crest = 0.5 + 0.5 * Math.sin(wave * 2.2 - shown * 0.4);
             const op = dot.getComponent(UIOpacity);
-            if (op) op.opacity = Math.round(180 + crest * 60);
+            if (op) op.opacity = Math.round(210 + crest * 45);
             const sp = dot.getComponent(Sprite);
             if (sp && frames.length) {
+                // Soft / spark only — never the dim frame (vanishes on sand).
                 const fi = crest > 0.65 ? 2 : shown % 2 === 0 ? 0 : 3;
                 const frame = frames[fi] ?? fallback;
                 if (frame && sp.spriteFrame !== frame) sp.spriteFrame = frame;
@@ -2912,121 +3233,27 @@ export class TutorialGuide extends Component {
             shown++;
         }
         for (let i = shown; i < this._pathDots.length; i++) {
-            const n = this._pathDots[i];
-            if (n?.isValid) n.active = false;
+            this.parkPathDot(this._pathDots[i]);
         }
+        // Hierarchy size changed (pool ↔ world) — force a Y-sort rebuild.
+        if (inWorld) world?.getComponent(WorldYSort)?.sortNow();
     }
 
     /**
-     * Canvas polyline for the visible guide: contiguous samples from the feet
-     * until the playfield lip (or the goal). Never skips mid-path holes.
+     * Keep the full visible span of the star trail. If over budget, subsample
+     * evenly (always keep first + last) instead of truncating the tip.
      */
-    private collectVisiblePathCanvas(
-        startI: number,
-        px: number,
-        py: number,
-        band: { x0: number; x1: number; y0: number; y1: number },
-    ): { x: number; y: number }[] {
-        const x0 = band.x0 + 20;
-        const x1 = band.x1 - 20;
-        const y0 = band.y0 + 24;
-        const y1 = band.y1 - 24;
-        const out: { x: number; y: number }[] = [];
-        let prev: { x: number; y: number } | null = null;
-        let prevIn = false;
-
-        for (let i = startI; i < this._pathPts.length; i++) {
-            const pt = this._pathPts[i]!;
-            // Skip stand-point samples only before the trail has started.
-            if (!out.length && this.pathDotHitsBody(pt.x - px, pt.y - py)) continue;
-            const hole = this.worldPosHole(pt);
-            if (!hole) break;
-            const cx = hole.x;
-            const cy = hole.y - 4;
-            const inside = cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
-
-            if (inside) {
-                if (!prevIn && prev) {
-                    const enter = this.clipSegmentToBand(prev.x, prev.y, cx, cy, x0, y0, x1, y1);
-                    if (enter) out.push(enter);
-                }
-                out.push({ x: cx, y: cy });
-                prevIn = true;
-                prev = { x: cx, y: cy };
-                continue;
-            }
-
-            if (prevIn && prev) {
-                const exit = this.clipSegmentToBand(prev.x, prev.y, cx, cy, x0, y0, x1, y1);
-                if (exit) out.push(exit);
-                break;
-            }
-            prevIn = false;
-            prev = { x: cx, y: cy };
+    private thinPathVisible<T>(samples: T[], max: number): T[] {
+        const n = samples.length;
+        if (n <= max) return samples;
+        if (max <= 1) return samples.slice(0, max);
+        const out: T[] = [];
+        const last = max - 1;
+        for (let k = 0; k <= last; k++) {
+            const idx = Math.round((k * (n - 1)) / last);
+            out.push(samples[idx]!);
         }
         return out;
-    }
-
-    /** Boundary hit of segment A→B with the playfield rectangle (one end in, one out). */
-    private clipSegmentToBand(
-        ax: number,
-        ay: number,
-        bx: number,
-        by: number,
-        x0: number,
-        y0: number,
-        x1: number,
-        y1: number,
-    ): { x: number; y: number } | null {
-        const dx = bx - ax;
-        const dy = by - ay;
-        let bestT = Infinity;
-        const consider = (t: number, onEdge: boolean) => {
-            if (!onEdge || t < 0 || t > 1 || t >= bestT) return;
-            bestT = t;
-        };
-        if (Math.abs(dx) > 1e-8) {
-            let t = (x0 - ax) / dx;
-            let y = ay + dy * t;
-            consider(t, y >= y0 && y <= y1);
-            t = (x1 - ax) / dx;
-            y = ay + dy * t;
-            consider(t, y >= y0 && y <= y1);
-        }
-        if (Math.abs(dy) > 1e-8) {
-            let t = (y0 - ay) / dy;
-            let x = ax + dx * t;
-            consider(t, x >= x0 && x <= x1);
-            t = (y1 - ay) / dy;
-            x = ax + dx * t;
-            consider(t, x >= x0 && x <= x1);
-        }
-        if (bestT === Infinity) return null;
-        return { x: ax + dx * bestT, y: ay + dy * bestT };
-    }
-
-    /** Continuous warm gold stroke through canvas path samples. */
-    private paintGroundPathLine(pts: { x: number; y: number }[], now: number) {
-        const g = this._pathLineG;
-        if (!g) return;
-        g.clear();
-        if (pts.length < 2) return;
-
-        const pulse = 0.88 + 0.12 * Math.sin(now * 0.004);
-        const drawPoly = (width: number, color: Color) => {
-            g.lineWidth = width;
-            g.strokeColor = color;
-            g.moveTo(pts[0]!.x, pts[0]!.y);
-            for (let i = 1; i < pts.length; i++) {
-                g.lineTo(pts[i]!.x, pts[i]!.y);
-            }
-            g.stroke();
-        };
-
-        // Soft outer glow → main ribbon → bright core (reads solid on dirt/grass).
-        drawPoly(12, new Color(255, 210, 90, Math.round(40 * pulse)));
-        drawPoly(6, new Color(255, 228, 130, Math.round(150 * pulse)));
-        drawPoly(2.5, new Color(255, 248, 210, Math.round(230 * pulse)));
     }
 
     private densifyPath(pts: WorldPos[], step: number, maxDots: number): WorldPos[] {
@@ -3050,19 +3277,41 @@ export class TutorialGuide extends Component {
             carry = len - (d - step);
             if (carry < 0) carry = 0;
         }
-        // Always keep the true goal tip so the stroke reaches the aim.
         const last = pts[pts.length - 1]!;
         const tip = out[out.length - 1]!;
-        if (Math.hypot(tip.x - last.x, tip.y - last.y) > step * 0.35) {
-            if (out.length < maxDots) out.push({ x: last.x, y: last.y });
-            else out[out.length - 1] = { x: last.x, y: last.y };
+        if (Math.hypot(tip.x - last.x, tip.y - last.y) > step * 0.35 && out.length < maxDots) {
+            out.push({ x: last.x, y: last.y });
         }
         return out;
     }
 
     /**
-     * First path index a short step ahead of the feet (PATH_START_CLEAR).
-     * Keeps the trail leading forward without a big empty gap at the stand point.
+     * Canvas place rings (craftbench / doors / pier) float over props.
+     * Climb the star tip onto that ring so the trail doesn't stop at the lip.
+     */
+    private extendPathToCanvasRing() {
+        if (!this._idleGroundRipple || this._idleRippleInWorld) return;
+        const tip = this._idleRippleWorld;
+        if (!tip) return;
+        const pts = this._pathPts;
+        if (!pts.length) {
+            pts.push({ x: tip.x, y: tip.y });
+            return;
+        }
+        const last = pts[pts.length - 1]!;
+        if (Math.hypot(last.x - tip.x, last.y - tip.y) < PATH_DOT_STEP * 0.4) {
+            pts[pts.length - 1] = { x: tip.x, y: tip.y };
+            return;
+        }
+        const climb = this.densifyPath([last, tip], PATH_DOT_STEP, PATH_DOT_MAX);
+        for (let i = 1; i < climb.length && pts.length < PATH_DOT_MAX; i++) {
+            pts.push(climb[i]!);
+        }
+    }
+
+    /**
+     * First path index that is ahead of the player by PATH_START_CLEAR.
+     * Drops the segment under / behind the body so motes only lead toward the goal.
      */
     private pathTrailStartIndex(px: number, py: number): number {
         const pts = this._pathPts;
@@ -3093,51 +3342,196 @@ export class TutorialGuide extends Component {
         return Math.abs(dx) <= PATH_BODY_HW && dy >= -PATH_BODY_DOWN && dy <= PATH_BODY_UP;
     }
 
+    /**
+     * Drop corridor vertices the player has already passed so densify stays
+     * glued to the feet instead of stretching back to stale A* samples.
+     */
+    private trimPathWaypointsAhead(px: number, py: number) {
+        const wps = this._pathWaypoints;
+        while (wps.length > 1) {
+            const a = wps[0]!;
+            const b = wps[1]!;
+            const ax = a.x - px;
+            const ay = a.y - py;
+            const bx = b.x - px;
+            const by = b.y - py;
+            // Past vertex A when B is closer and A is behind the A→B direction.
+            if (ax * ax + ay * ay <= bx * bx + by * by + 4) break;
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            if (ax * abx + ay * aby > 0) break;
+            wps.shift();
+        }
+        // Single leftover tip already underfoot — keep it (densify + start clear).
+    }
+
     private hideGroundPath() {
         this._pathPts.length = 0;
+        this._pathWaypoints.length = 0;
         this._pathGoal = null;
         this._pathRepathAt = 0;
         const root = this._pathRoot;
-        if (root?.isValid) root.active = false;
-        if (this._pathLineG) this._pathLineG.clear();
+        if (root?.isValid && !this._pathInWorld) root.active = false;
         for (let i = 0; i < this._pathDots.length; i++) {
-            const n = this._pathDots[i];
-            if (n?.isValid) n.active = false;
+            this.parkPathDot(this._pathDots[i]);
+        }
+        if (this._pathInWorld) {
+            this.farm?.world?.getComponent(WorldYSort)?.sortNow();
         }
     }
 
-    private ensurePathRoot(): Node | null {
+    /**
+     * Destroy every tracked mote (+ any orphan World `guide_path_dot`).
+     * Required before world↔canvas root swaps — live motes are World children,
+     * so clearing `_pathDots` alone leaves ghost trails on the ground.
+     */
+    private releaseAllPathDots() {
+        for (let i = 0; i < this._pathDots.length; i++) {
+            const n = this._pathDots[i];
+            if (n?.isValid) n.destroy();
+        }
+        this._pathDots = [];
+        this.sweepOrphanWorldPathDots();
+    }
+
+    /** Remove stray `guide_path_dot` nodes left under World after failed parks. */
+    private sweepOrphanWorldPathDots() {
+        const world = this.farm?.world;
+        if (!world?.isValid) return;
+        const kids = world.children.slice();
+        let swept = false;
+        for (let i = 0; i < kids.length; i++) {
+            const c = kids[i]!;
+            if (c.isValid && c.name === 'guide_path_dot') {
+                c.destroy();
+                swept = true;
+            }
+        }
+        if (swept) world.getComponent(WorldYSort)?.sortNow();
+    }
+
+    /**
+     * World-ripple aims (ore / plots / plants / NPCs): each mote is a World
+     * child so timber / rocks / buildings occlude by footY. Soft garden decor
+     * is promoted past in WorldYSort so bushes don't punch holes in the trail.
+     * Canvas place rings (craftbench / doors / pier) keep the trail on Canvas
+     * so it can climb onto the floating ring over desk/porch sprites.
+     */
+    private shouldPathInWorld(): boolean {
+        if (this._idleGroundRipple && !this._idleRippleInWorld) return false;
+        return true;
+    }
+
+    private ensurePathRoot(inWorld = this.shouldPathInWorld()): Node | null {
+        if (inWorld) return this.ensureWorldPathPool();
+        return this.ensureCanvasPathRoot();
+    }
+
+    private ensureCanvasPathRoot(): Node | null {
         const root = this._root;
         if (!root?.isValid) return null;
         let n = this._pathRoot;
-        if (n?.isValid && n.parent === root && this._pathLineG?.isValid) return n;
+        if (n?.isValid && n.parent === root && !this._pathInWorld) {
+            this.assertGuidePathLayer();
+            return n;
+        }
+        // World→canvas: motes sit under World, not the pool — release first.
+        this.releaseAllPathDots();
         if (n?.isValid) n.destroy();
         n = new Node('GuidePath');
         n.layer = root.layer;
         n.setParent(root);
-        // Under Finger / Tip / place ripple; above dim.
-        n.setSiblingIndex(1);
         n.addComponent(UITransform).setContentSize(10, 10);
         n.active = false;
-        const line = new Node('PathLine');
-        line.layer = root.layer;
-        line.setParent(n);
-        line.addComponent(UITransform).setContentSize(10, 10);
-        this._pathLineG = line.addComponent(Graphics);
         this._pathRoot = n;
-        this._pathDots = [];
+        this._pathInWorld = false;
+        this.assertGuidePathLayer();
         return n;
     }
 
-    private ensurePathDot(index: number): Node | null {
-        const root = this.ensurePathRoot();
-        if (!root) return null;
-        let n = this._pathDots[index];
-        if (n?.isValid && n.parent === root) {
-            this.stylePathDot(n);
+    /**
+     * Off-world pool for unused motes. Live dots parent directly under World.
+     */
+    private ensureWorldPathPool(): Node | null {
+        const root = this._root;
+        const world = this.farm?.world;
+        if (!root?.isValid || !world?.isValid) return null;
+        let n = this._pathRoot;
+        if (n?.isValid && n.parent === root && this._pathInWorld && n.name === 'guide_path_pool') {
             return n;
         }
-        n = new Node(`PathDot_${index}`);
+        this.releaseAllPathDots();
+        if (n?.isValid) n.destroy();
+        n = new Node('guide_path_pool');
+        n.layer = root.layer;
+        n.setParent(root);
+        n.addComponent(UITransform).setContentSize(10, 10);
+        n.active = false;
+        this._pathRoot = n;
+        this._pathInWorld = true;
+        world.getComponent(WorldYSort)?.sortNow();
+        return n;
+    }
+
+    /** Deactivate a mote and keep it out of WorldYSort when unused. */
+    private parkPathDot(n: Node | null | undefined) {
+        if (!n?.isValid) return;
+        n.active = false;
+        const pool = this._pathRoot;
+        if (this._pathInWorld && pool?.isValid && n.parent !== pool) {
+            n.layer = pool.layer;
+            n.setParent(pool);
+        }
+    }
+
+    /**
+     * Star path shares the canvas place-ring stack: just under the circle,
+     * circle just under the chevron — same layer story as guide_ground_ripple.
+     */
+    private assertGuidePathLayer() {
+        const path = this._pathRoot;
+        const root = this._root;
+        if (!path?.isValid || !root?.isValid || path.parent !== root || this._pathInWorld) {
+            return;
+        }
+        const ripple = this._rippleN;
+        const finger = this._finger;
+        if (ripple?.isValid && ripple.active && ripple.parent === root) {
+            const want = Math.max(0, ripple.getSiblingIndex());
+            if (path.getSiblingIndex() !== want) path.setSiblingIndex(want);
+            // Inserting path at ripple's index pushes the ring up — keep ring above.
+            if (ripple.getSiblingIndex() <= path.getSiblingIndex()) {
+                ripple.setSiblingIndex(path.getSiblingIndex() + 1);
+            }
+            this.assertCanvasRippleUnderArrow(ripple);
+            return;
+        }
+        if (finger?.isValid && finger.parent === root) {
+            const want = Math.max(0, finger.getSiblingIndex() - 1);
+            if (path.getSiblingIndex() !== want) path.setSiblingIndex(want);
+            return;
+        }
+        if (path.getSiblingIndex() !== 1) path.setSiblingIndex(1);
+    }
+
+    private ensurePathDot(index: number, inWorld = this._pathInWorld): Node | null {
+        const root = this.ensurePathRoot(inWorld);
+        if (!root) return null;
+        let n = this._pathDots[index];
+        if (n?.isValid) {
+            // World live parent is World; pool/canvas parent is root.
+            const okParent =
+                (!inWorld && n.parent === root) ||
+                (inWorld && (n.parent === root || n.parent === this.farm?.world));
+            if (okParent) {
+                if (inWorld && n.name !== 'guide_path_dot') n.name = 'guide_path_dot';
+                this.stylePathDot(n);
+                return n;
+            }
+            // Wrong parent — replace, don't leave the old mote on World.
+            n.destroy();
+        }
+        n = new Node(inWorld ? 'guide_path_dot' : `PathDot_${index}`);
         n.layer = root.layer;
         n.setParent(root);
         n.addComponent(UITransform).setContentSize(PATH_DOT_SIZE, PATH_DOT_SIZE);
@@ -3210,6 +3604,20 @@ export class TutorialGuide extends Component {
         if (Math.hypot(wx - aim.x, wy - aim.y) > radius) return null;
         // Portal aims lock on the beam but walk to door feet (pathWorld).
         const dest = this._idlePathWorld ?? aim;
+        return { x: dest.x, y: dest.y };
+    }
+
+    /**
+     * Quest-only click-to-move: when the idle guide has a world feet goal
+     * (starlight path / place ring), empty-ground taps walk there. Hotbar /
+     * claim UI docks return null — stick remains the only free roam move.
+     */
+    questClickMoveDest(wx: number, wy: number): { x: number; y: number } | null {
+        if (!this._idleOn || this._idleUiDock) return null;
+        const snapped = this.snapPlaceAim(wx, wy);
+        if (snapped) return snapped;
+        const dest = this._idlePathWorld;
+        if (!dest) return null;
         return { x: dest.x, y: dest.y };
     }
 

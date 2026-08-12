@@ -42,6 +42,7 @@ const BUILDING_STORY: Record<string, ScriptId> = {
     carpenter: 'carpenter_nails',
     community: 'community_bell',
     clinic: 'clinic_advice',
+    oreshop: 'oreshop_pass',
 };
 
 const BUILDING_FLAG: Record<string, string> = {
@@ -49,6 +50,7 @@ const BUILDING_FLAG: Record<string, string> = {
     carpenter: 'visit_carpenter',
     community: 'visit_community',
     clinic: 'visit_clinic',
+    oreshop: 'visit_oreshop',
 };
 
 /**
@@ -271,6 +273,17 @@ export class StoryDialogue extends Component implements IStoryChatHost {
                 }
             }
             this.drain();
+            return;
+        }
+
+        if (this._map === 'mine') {
+            const active = this.quests?.activeQuest?.id ?? 0;
+            // enter_mine parks 1025 on claim — wait for claim→1026 intro via onQuestChange.
+            if (active && !this.quests?.isAwaitingClaim) {
+                const intro = questIntroScript(active);
+                if (intro) this.enqueueQuestIntro(active, intro);
+            }
+            this.drain();
         }
     }
 
@@ -329,7 +342,8 @@ export class StoryDialogue extends Component implements IStoryChatHost {
             (key === 'mayor' && (active === 1010 || unseen)) ||
             (key === 'carpenter' && (active === 1012 || unseen)) ||
             (key === 'community' && (active === 1013 || unseen)) ||
-            (key === 'clinic' && (active === 1023 || unseen));
+            (key === 'clinic' && (active === 1023 || unseen)) ||
+            (key === 'oreshop' && (active === 1024 || unseen));
         if (!unseen && !relevant) return false;
 
         const flag = BUILDING_FLAG[key];

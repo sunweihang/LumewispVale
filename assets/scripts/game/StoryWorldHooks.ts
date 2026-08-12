@@ -10,6 +10,7 @@ import {
     assetManager,
 } from 'cc';
 import { ClickMoveMarker } from './ClickMoveMarker';
+import { DoorPortalAnimator } from './DoorPortalAnimator';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
 import { GameState, StoryMapId } from './GameState';
@@ -22,6 +23,7 @@ import { TownWorldLayout } from './TownWorldLayout';
 const { ccclass } = _decorator;
 
 const SIGN_FRAME_UUID = '6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941';
+const DOOR_PORTAL_UUID = '646bfc2e-e2a7-49b4-a483-28910cd64d3c@f9941';
 
 /** East road toward town (yard → right-edge gate). Keep in sync with bake_farm_scene.TOWN_GATE. */
 const FARM_TOWN_PORTAL = { x: 13 * 64, y: 4 * 64 + 36 };
@@ -73,12 +75,30 @@ export class StoryWorldHooks extends Component {
             GameState.unlock('town');
         }
         if (opts.isTown) {
+            opts.quests.onChange(() => {
+                if (this.world?.isValid) TownWorldLayout.syncTravelPortalFx(this.world);
+            });
             return;
         }
         this.ensureTownPortal();
+        this.syncTownPortalFx();
+        opts.quests.onChange(() => this.syncTownPortalFx());
         // Drop any leftover meteor node from older builds / baked layout.
         const leftover = this.world?.getChildByName('meteor');
         if (leftover) leftover.destroy();
+    }
+
+    /**
+     * Farm → town: hide sign + portal light until town is unlocked.
+     * Call after unlock changes (quest claim / flag).
+     */
+    syncTownPortalFx() {
+        if (!this.world?.isValid || this.isTown) return;
+        const unlocked = canTravel('town');
+        const sign = this.world.getChildByName('portal_town');
+        if (sign) sign.active = unlocked;
+        const fx = this.world.getChildByName('door_portal_town');
+        if (fx) fx.active = unlocked;
     }
 
     update() {
@@ -154,8 +174,9 @@ export class StoryWorldHooks extends Component {
     /** Farm: tap town portal sign — walk up first, then travel. */
     tryFarmPortalTap(wx: number, wy: number): boolean {
         if (this.isTown || !this.world || !this.player?.isValid) return false;
+        if (!canTravel('town')) return false;
         const sign = this.world.getChildByName('portal_town');
-        if (!sign) return false;
+        if (!sign?.active) return false;
         const p = sign.position;
         const dx = wx - p.x;
         const dy = wy - p.y;
@@ -194,10 +215,22 @@ export class StoryWorldHooks extends Component {
      */
     static standForInteract(target: Node): { x: number; y: number } {
         const p = target.position;
-        if (target.name === 'portal_town') {
+        if (target.name === 'portal_town' || target.name === 'door_portal_town') {
             return { x: p.x - 40, y: p.y };
         }
-        // Indoor south door — stand just inside (north of threshold) before leave.
+        // Map travel gates — approach from the plaza side.
+        if (target.name === 'sign_mine' || target.name === 'door_portal_mine') {
+            return { x: p.x - 40, y: p.y };
+        }
+        if (target.name === 'sign_farm' || target.name === 'door_portal_farm') {
+            // South farm gate — stand north of the sign (toward plaza / saloon).
+            return { x: p.x, y: p.y + 40 };
+        }
+        // Mine exit sign — approach from the cavern (north of the south lip).
+        if (target.name === 'sign_town') {
+            return { x: p.x, y: p.y + 48 };
+        }
+        // Indoor / mine south door — stand just inside (north of threshold) before leave.
         if (
             target.name === 'door_exit' ||
             target.name === 'exit_floor_glow' ||
@@ -321,19 +354,44 @@ export class StoryWorldHooks extends Component {
             });
         }
         node.setPosition(FARM_TOWN_PORTAL.x, FARM_TOWN_PORTAL.y, 0);
-        if (node.getChildByName('PortalLabel')) return;
+        this.ensureTownPortalFx();
+        if (!node.getChildByName('PortalLabel')) {
+            const labNode = new Node('PortalLabel');
+            labNode.layer = this.world.layer;
+            labNode.setParent(node);
+            labNode.setPosition(0, 96, 0);
+            labNode.addComponent(UITransform).setContentSize(200, 28);
+            const lab = labNode.addComponent(Label);
+            lab.string = '通往小镇';
+            lab.fontSize = 22;
+            lab.lineHeight = 26;
+            lab.color = new Color(255, 236, 170, 230);
+            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        }
+        // Animate baked / runtime portal light (idempotent).
+        TownWorldLayout.mountDoorFx(this.world);
+        this.syncTownPortalFx();
+    }
 
-        const labNode = new Node('PortalLabel');
-        labNode.layer = this.world.layer;
-        labNode.setParent(node);
-        labNode.setPosition(0, 96, 0);
-        labNode.addComponent(UITransform).setContentSize(200, 28);
-        const lab = labNode.addComponent(Label);
-        lab.string = '通往小镇';
-        lab.fontSize = 22;
-        lab.lineHeight = 26;
-        lab.color = new Color(255, 236, 170, 230);
-        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+    /** Runtime fallback if bake missed door_portal_town. */
+    private ensureTownPortalFx() {
+        if (!this.world) return;
+        let fx = this.world.getChildByName('door_portal_town');
+        if (!fx) {
+            fx = new Node('door_portal_town');
+            fx.layer = this.world.layer;
+            fx.setParent(this.world);
+            const ui = fx.addComponent(UITransform);
+            ui.setContentSize(80, 144);
+            ui.setAnchorPoint(0.5, 0);
+            const sp = fx.addComponent(Sprite);
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            assetManager.loadAny({ uuid: DOOR_PORTAL_UUID }, (err, asset) => {
+                if (!err && asset && sp.isValid) sp.spriteFrame = asset as SpriteFrame;
+            });
+            DoorPortalAnimator.mountAll(this.world);
+        }
+        fx.setPosition(FARM_TOWN_PORTAL.x, FARM_TOWN_PORTAL.y - 4, 0);
     }
 
     /** Apply pending spawn after scene load. */

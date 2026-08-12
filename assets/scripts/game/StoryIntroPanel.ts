@@ -539,7 +539,11 @@ export class StoryIntroPanel extends Component {
         for (const name of HUD_CHROME) {
             const n = canvas.getChildByName(name);
             if (!n?.isValid) continue;
-            if (!this._chromeWas.has(name)) this._chromeWas.set(name, n.active);
+            if (!this._chromeWas.has(name)) {
+                // Always-on HUD pieces: don't snapshot Loading's temporary hide.
+                const alwaysOn = name === 'FarmHotbar' || name === 'StickVisual';
+                this._chromeWas.set(name, alwaysOn ? true : n.active);
+            }
             if (n.active) n.active = false;
         }
     }
@@ -551,6 +555,18 @@ export class StoryIntroPanel extends Component {
             if (n?.isValid) n.active = was;
         }
         this._chromeWas.clear();
+        const questUi = this.node.getComponent('QuestPanel') as {
+            revealQuestHud?: () => void;
+        } | null;
+        questUi?.revealQuestHud?.();
+        const hud = this.node.getComponent('FarmHUD') as {
+            ensureDockVisible?: () => void;
+        } | null;
+        hud?.ensureDockVisible?.();
+        const stick = canvas
+            .getChildByName('TouchControls')
+            ?.getComponent('TouchJoystick') as { showFixedStick?: () => void } | null;
+        stick?.showFixedStick?.();
     }
 
     private bringToFront() {

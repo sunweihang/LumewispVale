@@ -77,6 +77,7 @@ export class InputBridge {
     /**
      * Bottom hotbar band / info board — drag-to-move must not start here.
      * `uiX/uiY` are UI coords with origin at bottom-left.
+     * Left dock stick sits above this band (canvas Y ≈ -560 → uiY ≈ 400).
      */
     static isActionZone(uiX?: number, uiY?: number): boolean {
         if (InputBridge.moveLocked || InputBridge.uiBlocking) return true;

@@ -107,8 +107,9 @@ export class FarmInfoBoard extends Component {
             this.goldLab.isItalic = false;
             this.goldLab.node.setRotationFromEuler(0, 0, 0);
             this.goldLab.node.setScale(1, 1, 1);
-            this.goldLab.node.getComponent(UITransform)?.setContentSize(180, 52);
-            this.goldLab.node.setPosition(48, 0, 0);
+            // Wider for "x N"; G coin stays in the left well of ui-info-gold.
+            this.goldLab.node.getComponent(UITransform)?.setContentSize(200, 52);
+            this.goldLab.node.setPosition(52, 0, 0);
         }
         if (this.toastLab) {
             styleUiLabel(this.toastLab, {
@@ -333,7 +334,8 @@ export class FarmInfoBoard extends Component {
     }
 
     private refreshGold() {
-        if (this.goldLab) this.goldLab.string = String(this.farm?.gold ?? 0);
+        // Bar sprite already shows the G coin — label is "x N" only.
+        if (this.goldLab) this.goldLab.string = `x ${this.farm?.gold ?? 0}`;
     }
 
     /**

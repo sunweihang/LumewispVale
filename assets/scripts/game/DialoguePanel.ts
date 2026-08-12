@@ -477,7 +477,8 @@ export class DialoguePanel extends Component {
             const n = canvas.getChildByName(name);
             if (!n?.isValid) continue;
             if (!this._chromeWas.has(name)) {
-                this._chromeWas.set(name, n.active);
+                // Always-on dock: don't snapshot Loading's temporary hide as "was off".
+                this._chromeWas.set(name, name === 'FarmHotbar' ? true : n.active);
             }
             if (n.active) n.active = false;
         }
@@ -490,6 +491,16 @@ export class DialoguePanel extends Component {
             if (n?.isValid) n.active = was;
         }
         this._chromeWas.clear();
+        // Claim chip may have become active while chrome was suppressed
+        // (e.g. town boot noteFlag enter_town) — never restore a stale hidden QuestHud.
+        const questUi = this.node.getComponent('QuestPanel') as {
+            revealQuestHud?: () => void;
+        } | null;
+        questUi?.revealQuestHud?.();
+        const hud = this.node.getComponent('FarmHUD') as {
+            ensureDockVisible?: () => void;
+        } | null;
+        hud?.ensureDockVisible?.();
     }
 
     private bringToFront() {

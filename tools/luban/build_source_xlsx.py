@@ -116,6 +116,8 @@ def main():
         [None, "TGoto", "CGoto", True, "goto.xlsx", None, "map", "c", "引导跳转", None, None],
         [None, "TFlag", "CFlag", True, "flag.xlsx", None, "map", "c", "剧情旗标", None, None],
         [None, "TItem", "CItem", True, "item.xlsx", None, "map", "c", "物品显示名", None, None],
+        [None, "TDialogue", "CDialogue", True, "dialogue.xlsx", None, "map", "c", "对白脚本目录", None, None],
+        [None, "TChat", "CChat", True, "chat.xlsx", None, "map", "c", "对白台词行", None, None],
     ]:
         ws.append(row)
     wb.save(DATAS / "__tables__.xlsx")
@@ -172,7 +174,7 @@ def main():
             [19, "None", "打开商店，点「出售」卖掉一件收获物"],
             [20, "None", "回到社区中心，在春厅收集包上签字"],
             [21, "None", "前往微光诊所，听取矿洞叮嘱"],
-            [22, "None", "走进矿脉商会（矿石店），打听浅层矿洞"],
+            [22, "None", "走进矿脉商会，向掌柜打听浅层矿洞放行"],
             [23, "None", "点击北山「通往浅层矿洞」路牌进入"],
             [24, "None", "选中锄头，点击铜矿石开采"],
             [25, "None", "带着铜矿回到社区中心，点亮春厅"],
@@ -211,13 +213,9 @@ def main():
         ],
         [
             ["seed_from_grass", "种子", "把草料搓成可播种的种子", "seeds", 1, 12, 10, 1003, "reached"],
-            ["seed_mix", "混合种子", "泥土与草料拌成的种子袋", "seeds", 2, 18, 20, 1003, "completed"],
             ["can_basic", "水壶", "石片与泥土捏成的浇水壶", "can", 1, 16, 25, 1031, "reached"],
             ["axe_basic", "斧头", "石刃裹草绳，能砍倒松树与橡树", "axe", 1, 18, 26, 1032, "reached"],
             ["rod_basic", "鱼竿", "木杆缠草线，湖边抛竿用", "rod", 1, 18, 27, 1034, "reached"],
-            ["wood_bundle", "精制木料", "用草绳捆扎，多出一根可用木料", "wood", 3, 20, 30, 1033, "completed"],
-            ["stone_pack", "加固石料", "泥土粘合碎石，得到更多石料", "stone", 2, 22, 40, 1031, "completed"],
-            ["fish_bait_seed", "鱼肥种子", "鱼骨与草料沤成的肥沃种子", "seeds", 3, 28, 50, 1007, "completed"],
         ],
     )
 
@@ -230,20 +228,12 @@ def main():
         ["ID", "配方ID", "消耗物品", "数量"],
         [
             [1, "seed_from_grass", "grass", 3],
-            [2, "seed_mix", "dirt", 2],
-            [3, "seed_mix", "grass", 2],
-            [4, "wood_bundle", "wood", 2],
-            [5, "wood_bundle", "grass", 1],
-            [6, "stone_pack", "stone", 1],
-            [7, "stone_pack", "dirt", 2],
-            [8, "fish_bait_seed", "fish", 1],
-            [9, "fish_bait_seed", "grass", 2],
-            [10, "can_basic", "stone", 2],
-            [11, "can_basic", "dirt", 3],
-            [12, "axe_basic", "stone", 2],
-            [13, "axe_basic", "grass", 3],
-            [14, "rod_basic", "wood", 3],
-            [15, "rod_basic", "grass", 2],
+            [6, "can_basic", "stone", 2],
+            [7, "can_basic", "dirt", 3],
+            [8, "axe_basic", "stone", 2],
+            [9, "axe_basic", "grass", 3],
+            [10, "rod_basic", "wood", 3],
+            [11, "rod_basic", "grass", 2],
         ],
     )
 
@@ -331,7 +321,7 @@ def main():
             [1021, "出手盈余", "在商店切换到「出售」，卖掉一件背包里的收获物。", 10, "shop_sell", 1, 19, 40, "", 0, 1022, 150, "quest_1021", "", "market", "town"],
             [1022, "春厅立项", "回到社区中心，在春厅收集包上签字立项。", 10, "accept_spring_pack", 1, 20, 60, "", 0, 1023, 160, "quest_1022", "", "spring", "town"],
             [1023, "诊所的叮嘱", "拜访微光诊所，听医生说说矿洞安全。", 10, "visit_clinic", 1, 21, 40, "", 0, 1024, 170, "quest_1023", "", "spring", "town"],
-            [1024, "矿脉通行证", "前往矿脉商会（矿石店），取得浅层矿洞放行。", 10, "visit_oreshop", 1, 22, 50, "", 0, 1025, 180, "quest_1024", "", "spring", "mine"],
+            [1024, "矿脉通行证", "前往矿脉商会，向掌柜·赤铜打听浅层矿洞放行。", 10, "visit_oreshop", 1, 22, 50, "", 0, 1025, 180, "quest_1024", "", "spring", "town"],
             [1025, "浅层铜脉", "点击北山矿洞路牌，进入浅层矿洞。", 10, "enter_mine", 1, 23, 40, "", 0, 1026, 190, "quest_1025", "", "spring", "mine"],
             [1026, "采一袋铜", "在矿洞里选中锄头，挖取铜矿石。", 1, "copper", 3, 24, 80, "", 0, 1027, 200, "quest_1026", "", "spring", "mine"],
             [1027, "春厅微光", "把铜矿送回社区中心，点亮春厅的第一盏灯。", 10, "light_spring_hall", 1, 25, 120, "", 0, 0, 210, "quest_1027", "ch2_done", "spring", "mine"],

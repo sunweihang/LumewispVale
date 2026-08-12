@@ -56,6 +56,10 @@ export interface TownBoardQuest {
     desc: string;
     rewardGold: number;
     source: 'police' | 'post';
+    /** TownWorldLayout building/sign key — must interact there to deliver. */
+    deliverKey: string;
+    /** Short journal hint (where to go). */
+    deliverHint: string;
 }
 
 export const TOWN_SHOPS: TownShopDef[] = [
@@ -151,6 +155,8 @@ export const POLICE_QUEST_POOL: TownBoardQuest[] = [
         desc: '有人在广场附近看见一群乱跑的鸡，帮忙把它们哄回去。',
         rewardGold: 40,
         source: 'police',
+        deliverKey: 'community',
+        deliverHint: '社区中心门口',
     },
     {
         id: 'pol_noise',
@@ -158,6 +164,8 @@ export const POLICE_QUEST_POOL: TownBoardQuest[] = [
         desc: '酒馆打烊后仍有喧哗，去打听一下发生了什么。',
         rewardGold: 35,
         source: 'police',
+        deliverKey: 'saloon',
+        deliverHint: '星露酒馆',
     },
     {
         id: 'pol_ore',
@@ -165,6 +173,8 @@ export const POLICE_QUEST_POOL: TownBoardQuest[] = [
         desc: '矿脉商会少了一车铜矿，沿南路搜查线索。',
         rewardGold: 60,
         source: 'police',
+        deliverKey: 'oreshop',
+        deliverHint: '矿脉商会',
     },
     {
         id: 'pol_cat',
@@ -172,6 +182,8 @@ export const POLICE_QUEST_POOL: TownBoardQuest[] = [
         desc: '镇长家的花猫又爬上了社区中心屋顶。',
         rewardGold: 45,
         source: 'police',
+        deliverKey: 'community',
+        deliverHint: '社区中心门口',
     },
 ];
 
@@ -182,6 +194,8 @@ export const POST_QUEST_POOL: TownBoardQuest[] = [
         desc: '把这封盖章信件送到镇长家门口。',
         rewardGold: 30,
         source: 'post',
+        deliverKey: 'mayor',
+        deliverHint: '镇长府大门',
     },
     {
         id: 'post_clinic',
@@ -189,6 +203,8 @@ export const POST_QUEST_POOL: TownBoardQuest[] = [
         desc: '诊所订了一批草药，帮邮局跑一趟。',
         rewardGold: 35,
         source: 'post',
+        deliverKey: 'clinic',
+        deliverHint: '微光诊所',
     },
     {
         id: 'post_school',
@@ -196,6 +212,8 @@ export const POST_QUEST_POOL: TownBoardQuest[] = [
         desc: '学校开学在即，把包裹交给校门口。',
         rewardGold: 28,
         source: 'post',
+        deliverKey: 'school',
+        deliverHint: '镇立小学',
     },
     {
         id: 'post_farm',
@@ -203,8 +221,19 @@ export const POST_QUEST_POOL: TownBoardQuest[] = [
         desc: '把丰收节海报带到南边通往农场的路牌旁。',
         rewardGold: 40,
         source: 'post',
+        deliverKey: 'sign_farm',
+        deliverHint: '通往农场的路牌',
     },
 ];
+
+/** Lookup pool row by id (accept / restore backfill). */
+export function townBoardQuestById(id: string): TownBoardQuest | null {
+    return (
+        POLICE_QUEST_POOL.find((q) => q.id === id) ??
+        POST_QUEST_POOL.find((q) => q.id === id) ??
+        null
+    );
+}
 
 export function shopByBuilding(kind: string): TownShopDef | null {
     return TOWN_SHOPS.find((s) => s.building === kind) ?? null;

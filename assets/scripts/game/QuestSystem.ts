@@ -10,12 +10,13 @@ import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmMaterial, FarmSystem } from './FarmSystem';
 import { BoardCommissionSnapshot, GameState, StoryMapId } from './GameState';
-import type { TownBoardQuest } from './TownCatalog';
+import { townBoardQuestById, type TownBoardQuest } from './TownCatalog';
 import {
     craftRecipeUsesScroll,
     getCraftRecipes,
     isCraftRecipeEarned,
 } from './CraftRecipes';
+import { formatGoldAmount } from './UiGoldAmount';
 
 /** Chapter order for GM jumps — matches `CQuest.chapter` values in TQuest. */
 const CHAPTER_ORDER = ['farm', 'town', 'market', 'spring'] as const;
@@ -136,7 +137,7 @@ export class QuestSystem extends Component {
     private restoreFromGameState() {
         const boards = GameState.commissions;
         if (boards) {
-            this._boards = boards.map((c) => ({ ...c }));
+            this._boards = boards.map((c) => this.normalizeBoard(c));
         }
         const snap = GameState.quest;
         if (!snap) return;
@@ -266,14 +267,21 @@ export class QuestSystem extends Component {
             for (const r of getCraftRecipes()) {
                 if (this.craftCount(r.id) > 0) this._learnedRecipes.add(r.id);
             }
-            // Drop stale pending that are already learned / no longer earned.
+            // Drop stale pending that are already learned / no longer earned /
+            // removed from config (e.g. retired seed_mix).
             for (const id of [...this._pendingRecipes]) {
-                if (this._learnedRecipes.has(id) || !isCraftRecipeEarned(id, q)) {
+                const gone = !getCraftRecipes().some((r) => r.id === id);
+                if (gone || this._learnedRecipes.has(id) || !isCraftRecipeEarned(id, q)) {
                     this._pendingRecipes.delete(id);
+                    if (gone) {
+                        this._learnedRecipes.delete(id);
+                        this.hud?.revokeRecipeScroll(id);
+                    }
                 }
             }
         }
         this.syncCraftRecipeUnlocks(false);
+        this.hud?.purgeUnknownRecipeScrolls();
         this._craftUnlockReady = true;
     }
 
@@ -445,23 +453,48 @@ export class QuestSystem extends Component {
     }
 
     /**
-     * Accept a board job into the journal. Does not pay gold yet —
-     * player delivers via the「委托」tab (walk-to objectives later).
+     * Accept a board job into the journal. Gold pays only after the player
+     * walks to `deliverKey` and interacts (see tryDeliverBoardAt).
      */
     acceptBoardQuest(q: TownBoardQuest): boolean {
         if (!q?.id) return false;
         if (this.hasBoardQuest(q.id)) return false;
         if (this._boards.length >= MAX_BOARD_COMMISSIONS) return false;
-        this._boards.push({
+        this._boards.push(this.normalizeBoard({
             id: q.id,
             title: q.title,
             desc: q.desc,
             rewardGold: q.rewardGold,
             source: q.source,
-        });
+            deliverKey: q.deliverKey,
+            deliverHint: q.deliverHint,
+        }));
         this.persistToGameState();
         this.emitChange();
         return true;
+    }
+
+    /**
+     * World interact at a town building/sign — completes matching commission(s).
+     * Returns true if at least one job was delivered.
+     */
+    tryDeliverBoardAt(key: string): boolean {
+        if (!key) return false;
+        const matches = this._boards.filter((c) => (c.deliverKey || '') === key);
+        if (matches.length <= 0) return false;
+        let any = false;
+        for (const q of matches) {
+            if (this.completeBoardQuest(q.id)) any = true;
+        }
+        return any;
+    }
+
+    /** Journal hint for where to walk (empty if unknown). */
+    boardDeliverHint(id: string): string {
+        const q = this._boards.find((c) => c.id === id);
+        if (!q) return '';
+        if (q.deliverHint) return q.deliverHint;
+        return townBoardQuestById(id)?.deliverHint ?? '';
     }
 
     /** Deliver / complete a board commission and grant gold. */
@@ -471,10 +504,28 @@ export class QuestSystem extends Component {
         const q = this._boards[idx]!;
         this._boards.splice(idx, 1);
         if (q.rewardGold > 0) this.farm?.addGold(q.rewardGold);
-        this.infoBoard?.showToast(`完成「${q.title}」+${q.rewardGold}G`);
+        this.infoBoard?.showToast(
+            q.rewardGold > 0
+                ? `完成「${q.title}」 ${formatGoldAmount(q.rewardGold, { sign: '+' })}`
+                : `完成「${q.title}」`,
+        );
         this.persistToGameState();
         this.emitChange();
         return true;
+    }
+
+    /** Backfill deliver fields for old saves / partial snapshots. */
+    private normalizeBoard(c: BoardCommissionSnapshot): BoardCommissionSnapshot {
+        const meta = townBoardQuestById(c.id);
+        return {
+            id: c.id,
+            title: c.title || meta?.title || '委托',
+            desc: c.desc || meta?.desc || '',
+            rewardGold: c.rewardGold || meta?.rewardGold || 0,
+            source: c.source || meta?.source || 'post',
+            deliverKey: c.deliverKey || meta?.deliverKey || '',
+            deliverHint: c.deliverHint || meta?.deliverHint || '',
+        };
     }
 
     private questsInChapter(chapter: QuestChapter): CQuest[] {

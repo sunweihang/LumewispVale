@@ -1,4 +1,5 @@
-import { Node } from 'cc';
+import { Node, UIOpacity, tween } from 'cc';
+import { DoorPortalAnimator } from './DoorPortalAnimator';
 
 /**
  * Shallow mine map constants / interaction queries.
@@ -8,11 +9,30 @@ export class MineWorldLayout {
     /** Inside timber mouth chamber (pure underground). */
     static readonly PLAYER_SPAWN = { x: 0, y: -192 };
 
-    /** Town-side portal spawn when returning from mine (near oreshop). */
-    static readonly TOWN_RETURN = { x: 8 * 64, y: -2 * 64 - 40 };
+    /** Town-side portal spawn when returning from mine (east mine gate). */
+    static readonly TOWN_RETURN = { x: 15 * 64 - 48, y: 0 * 64 + 36 };
 
     static isBaked(world: { getChildByName: (n: string) => unknown }): boolean {
         return !!world.getChildByName('__mine_baked');
+    }
+
+    /** Play exit portal frame loop + soft opacity breathe (idempotent). */
+    static mountExitFx(world: Node): void {
+        if ((world as Node & { __mineExitFx?: boolean }).__mineExitFx) return;
+        (world as Node & { __mineExitFx?: boolean }).__mineExitFx = true;
+        DoorPortalAnimator.mountAll(world);
+        const fx = world.getChildByName('door_portal_beam');
+        if (!fx?.isValid) return;
+        let op = fx.getComponent(UIOpacity);
+        if (!op) op = fx.addComponent(UIOpacity);
+        op.opacity = 255;
+        tween(op)
+            .repeatForever(
+                tween(op)
+                    .to(1.6, { opacity: 200 }, { easing: 'sineInOut' })
+                    .to(1.6, { opacity: 255 }, { easing: 'sineInOut' }),
+            )
+            .start();
     }
 
     static findInteract(
@@ -41,6 +61,7 @@ export class MineWorldLayout {
 
     private static interactKey(name: string): string | null {
         if (name === 'sign_town') return 'sign_town';
+        if (name === 'door_portal_beam') return 'sign_town';
         if (name === 'bld_elevator') return 'elevator';
         if (name === 'bld_mine_mouth') return 'mouth';
         if (name === 'bld_sorting') return 'sorting';

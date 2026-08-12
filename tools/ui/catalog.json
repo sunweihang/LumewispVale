@@ -1909,6 +1909,38 @@
         "recipe",
         "scroll"
       ]
+    },
+    {
+      "id": "ui-joystick-base",
+      "kind": "chrome",
+      "group": "joystick",
+      "path": "assets/textures/ui/ui-joystick-base.png",
+      "spriteFrame": "adc17e02-d7c4-469d-b928-1598ba44c722@f9941",
+      "size": [
+        192,
+        192
+      ],
+      "tags": [
+        "joystick",
+        "base",
+        "ai"
+      ]
+    },
+    {
+      "id": "ui-joystick-knob",
+      "kind": "chrome",
+      "group": "joystick",
+      "path": "assets/textures/ui/ui-joystick-knob.png",
+      "spriteFrame": "2d92b766-ed44-4585-8604-ad1951a4795a@f9941",
+      "size": [
+        96,
+        96
+      ],
+      "tags": [
+        "joystick",
+        "knob",
+        "ai"
+      ]
     }
   ],
   "assets": [

@@ -65,6 +65,9 @@ export type BoardCommissionSnapshot = {
     desc: string;
     rewardGold: number;
     source: 'police' | 'post';
+    /** Must interact at this town key to deliver (absent on old saves). */
+    deliverKey?: string;
+    deliverHint?: string;
 };
 
 /**

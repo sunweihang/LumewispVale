@@ -4,6 +4,7 @@ import { FARMER_FRAMES } from './FarmerFrames';
 import { FARM_FRAMES } from './FarmFrames';
 import { FISHING_FRAMES } from './FishingFrames';
 import { INFO_BOARD_FRAMES, INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
+import { JOYSTICK_FRAMES } from './JoystickFrames';
 import { MATERIAL_FRAMES } from './MaterialFrames';
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { NPC_FRAMES } from './NpcFrames';
@@ -50,6 +51,7 @@ function collectCriticalSpriteUuids(): string[] {
     flattenUuids(FARM_FRAMES, set);
     flattenUuids(QUEST_FRAMES, set);
     flattenUuids(INFO_BOARD_FRAMES, set);
+    flattenUuids(JOYSTICK_FRAMES, set);
     for (const u of STORY_UUIDS) set.add(u);
     // Array.from — web-mobile downlevel turns [...set] into [].concat(set).
     return Array.from(set);

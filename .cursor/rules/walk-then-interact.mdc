@@ -44,8 +44,10 @@ if (hit) {
 ## Exceptions (do NOT wrap)
 
 - UI / HUD / modal taps (`handleTap` on panels, quest dock claim, dialogue advance)
-- Empty-ground click-to-move (`ClickMoveMarker` / `finishWorldTap`)
+- Free-roam empty-ground taps — stick only (`TouchJoystick`); no click-to-move
+- Quest idle world aims — `TutorialGuide.questClickMoveDest` + `ClickMoveMarker.go` walk to the guide feet goal (starlight path / place ring)
 - Farm gather/chop/dig already walks via `FarmSystem` + `PlayerController.walkTo` — keep that path; do not double-wrap
+- `ClickMoveMarker` / `walkTo` also for approachInteract / approachNpc
 
 Indoor leave (`door_exit` / `exit_floor_glow`) is tap-driven like outdoor enter — never collision/`EXIT_ZONE` auto-travel.
 

@@ -1,5 +1,6 @@
 import { Node, Sprite, UIOpacity, UITransform, Vec3, tween } from 'cc';
 import { DoorPortalAnimator } from './DoorPortalAnimator';
+import { canTravel } from './MapTravel';
 import { NPC_FRAMES } from './NpcFrames';
 import { NpcAnimator, NpcDir } from './NpcAnimator';
 import { shopByBuilding } from './TownCatalog';
@@ -22,6 +23,12 @@ export class TownWorldLayout {
     /** South of the plaza fountain, on the stone apron. */
     static readonly PLAYER_SPAWN = { x: 0, y: -96 };
 
+    /** East map-edge mine gate — keep in sync with bake_town_scene sign_mine. */
+    static readonly MINE_GATE = { x: 15 * 64, y: 0 * 64 + 36 };
+
+    /** South farm gate (past saloon) — keep in sync with bake_town_scene sign_farm. */
+    static readonly FARM_GATE = { x: 0 * 64, y: -8 * 64 + 36 };
+
     /**
      * Foot positions for runtime NPC actors (south of building doors / plaza).
      * Mayor / doctor / caretaker / carpenter live indoors — not outdoors.
@@ -38,8 +45,8 @@ export class TownWorldLayout {
 
     /** Play portal frame loop + soft opacity breathe (idempotent). */
     static mountDoorFx(world: Node): void {
-        if ((world as Node & { __townDoorFx?: boolean }).__townDoorFx) return;
-        (world as Node & { __townDoorFx?: boolean }).__townDoorFx = true;
+        if ((world as Node & { __doorPortalFx?: boolean }).__doorPortalFx) return;
+        (world as Node & { __doorPortalFx?: boolean }).__doorPortalFx = true;
         DoorPortalAnimator.mountAll(world);
         for (const child of world.children) {
             if (!child.name.startsWith('door_portal_') && !child.name.startsWith('door_light_')) {
@@ -56,6 +63,18 @@ export class TownWorldLayout {
                 )
                 .start();
         }
+        this.syncTravelPortalFx(world);
+    }
+
+    /**
+     * Hide map-travel portal lights when the destination is still locked.
+     * Building enter FX (mayor/clinic/…) stay visible.
+     */
+    static syncTravelPortalFx(world: Node): void {
+        const mineFx = world.getChildByName('door_portal_mine');
+        if (mineFx) mineFx.active = canTravel('mine');
+        const farmFx = world.getChildByName('door_portal_farm');
+        if (farmFx) farmFx.active = true;
     }
 
     /** Spawn idle town NPCs once (idempotent). */

@@ -45,6 +45,7 @@ import {
     placePanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
+import { formatGoldAmount } from './UiGoldAmount';
 
 const { ccclass, property } = _decorator;
 
@@ -1129,16 +1130,26 @@ export class QuestPanel extends Component {
             size: FONT_BODY,
             color: INK,
         });
-        this.addRowLine(row, 'Goal', `目标  来自${src}`, textLeft, y2, bodyW, {
+        const hint = this.quests?.boardDeliverHint(q.id) || '目标地点';
+        this.addRowLine(row, 'Goal', `目标  前往${hint}`, textLeft, y2, bodyW, {
             size: FONT_DESC,
             color: INK_MUTE,
         });
-        this.addRowLine(row, 'Reward', `奖励  金币 x ${q.rewardGold}`, textLeft, y3, bodyW, {
-            size: FONT_DESC,
-            color: new Color(168, 108, 36, 255),
-        });
+        this.addRowLine(
+            row,
+            'Reward',
+            `奖励  ${formatGoldAmount(q.rewardGold)} · ${src}`,
+            textLeft,
+            y3,
+            bodyW,
+            {
+                size: FONT_DESC,
+                color: new Color(168, 108, 36, 255),
+            },
+        );
 
-        const badge = this.addActionBadge(row, actionX, y2, '交付', true);
+        // Hint only — gold pays when the player interacts at deliverKey in town.
+        const badge = this.addActionBadge(row, actionX, y2, '前往', true);
         this._boardActions.set(q.id, badge);
     }
 
@@ -1146,8 +1157,9 @@ export class QuestPanel extends Component {
         if (!this.quests || this._tab !== 'board') return false;
         for (const [id, node] of this._boardActions) {
             if (!this.hitNodeNested(node, lx, ly)) continue;
-            this.quests.completeBoardQuest(id);
-            this.refreshPanel();
+            const hint = this.quests.boardDeliverHint(id) || '任务描述里的地点';
+            this.quests.infoBoard?.showToast(`去${hint}交互交付`);
+            this.setOpen(false);
             return true;
         }
         return false;
@@ -1435,7 +1447,7 @@ export class QuestPanel extends Component {
 
     private rewardTextOf(q: CQuest): string {
         const parts: string[] = [];
-        if (q.rewardGold > 0) parts.push(`金币 x ${q.rewardGold}`);
+        if (q.rewardGold > 0) parts.push(formatGoldAmount(q.rewardGold));
         if (q.rewardItem && q.rewardCount > 0) {
             parts.push(`${this.rewardItemName(q.rewardItem)} x ${q.rewardCount}`);
         }
@@ -1566,9 +1578,6 @@ export class QuestPanel extends Component {
         const dock = this.node.getChildByName('QuestHud');
         if (dock) dock.active = show;
         else if (this._tracker) this._tracker.active = show;
-        // Action cue sits under the panel in Y but often above it in sibling order.
-        const hint = this.node.getChildByName('FarmActionHint');
-        if (hint) hint.active = visible;
     }
 
     /** Claim chip only when mainline objective is done and unlocked. */

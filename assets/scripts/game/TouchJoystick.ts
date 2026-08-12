@@ -10,7 +10,6 @@ import {
     game,
     input,
     sys,
-    view,
 } from 'cc';
 import { clientToUiLocation, portraitVisibleSize } from './PortraitFit';
 import { FishingMinigame } from './FishingMinigame';
@@ -24,11 +23,21 @@ const { ccclass, property } = _decorator;
  */
 const TAP_DEDUP_MS = 140;
 
+/** Rest dock: canvas-local X (0 = portrait center). */
+const REST_STICK_X = 0;
 /**
- * Drag-to-move stick + tap detection:
- * - Finger down → wait
- * - Move beyond threshold → drag stick (move)
- * - Release without dragging → tap (farm tool use / UI)
+ * Rest dock Y from canvas center. With 1080×1920 → hh=960, -600 ≈ 360px
+ * above the bottom edge (above the hotbar).
+ */
+const REST_STICK_Y = -600;
+/** Extra hit padding beyond `radius` so the rest dock is easy to grab. */
+const STICK_HIT_PAD = 36;
+
+/**
+ * On-screen move stick + tap detection:
+ * - Rest dock (main HUD): always visible at center-bottom
+ * - Press + drag (free ground): stick jumps to the finger and walks
+ * - Short tap outside a drag → farm / UI / interact; never click-to-move
  *
  * On web-mobile, Cocos `input` often delivers DOWN but drops UP. DOM owns
  * completion: any in-flight press can be finished by pointerup, and a lone
@@ -49,6 +58,13 @@ export class TouchJoystick extends Component {
     @property(Node)
     knob: Node | null = null;
 
+    /**
+     * Always-visible rest dock (center-bottom). Drag relocates the stick to
+     * the finger; release snaps back to rest.
+     */
+    @property
+    fixedStick = true;
+
     /** Fired on short tap (ui coords, origin bottom-left). */
     onTap: ((uiX: number, uiY: number) => void) | null = null;
 
@@ -59,6 +75,8 @@ export class TouchJoystick extends Component {
     private _dragging = false;
     /** Finger slid inside UI zone — suppress world/UI tap (item drag handled elsewhere). */
     private _uiSlid = false;
+    /** Press began on the rest dock (short dock taps are not world clicks). */
+    private _onStick = false;
     private _id = -1;
     private _ox = 0;
     private _oy = 0;
@@ -80,7 +98,8 @@ export class TouchJoystick extends Component {
         input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
         this.bindDomFallback(true);
         InputBridge.abortStick = () => this.abortTracking();
-        this.hideVisual();
+        if (this.fixedStick) this.showFixedStick();
+        else this.hideVisual();
     }
 
     onDisable() {
@@ -100,6 +119,22 @@ export class TouchJoystick extends Component {
     update() {
         // Mid-press cast open: kill the stick so hold-to-lift can't drag-walk.
         if (this._tracking && this.fishingOpen()) this.abortTracking();
+    }
+
+    /** Place the rest dock in canvas-local space (call after parenting StickVisual). */
+    layoutFixedStick() {
+        if (!this.visualRoot?.isValid) return;
+        const rest = this.restLocal();
+        this.visualRoot.setPosition(rest.x, rest.y, 0);
+        if (this.knob) this.knob.setPosition(0, 0, 0);
+    }
+
+    /** Re-show the dock after Loading / intro chrome restore. */
+    showFixedStick() {
+        if (!this.fixedStick || !this.visualRoot?.isValid) return;
+        this.layoutFixedStick();
+        this.visualRoot.active = true;
+        if (this.knob) this.knob.setPosition(0, 0, 0);
     }
 
     /** Web-only: canvas/window pointer → reliable begin/move/end on hosts that drop Cocos UP. */
@@ -230,13 +265,14 @@ export class TouchJoystick extends Component {
         this._tracking = false;
         this._dragging = false;
         this._uiSlid = false;
+        this._onStick = false;
         this._id = -1;
         // Stamp gesture time so a following DOM pointerup cannot synth a tap
         // (e.g. mid-drag abort → mouse-up over a building must not enter).
         this._lastGestureAt = Date.now();
         this.releaseCapture();
         InputBridge.clear();
-        this.hideVisual();
+        this.resetKnob();
     }
 
     private fishingOpen(): boolean {
@@ -258,6 +294,7 @@ export class TouchJoystick extends Component {
         this._tracking = true;
         this._dragging = false;
         this._uiSlid = false;
+        this._onStick = this.hitFixedStick(x, y);
         this._id = id;
         this._ox = x;
         this._oy = y;
@@ -342,6 +379,7 @@ export class TouchJoystick extends Component {
                 return;
             }
             this._dragging = true;
+            // Follow-finger: jump the whole stick to the press origin.
             this.showVisualAt(this._ox, this._oy);
             this.onDragStart?.();
         }
@@ -363,24 +401,33 @@ export class TouchJoystick extends Component {
     private end(x: number, y: number) {
         const wasDrag = this._dragging;
         const uiSlid = this._uiSlid;
+        const onStick = this._onStick;
         const tracking = this._tracking;
         const ox = this._ox;
         const oy = this._oy;
         this._tracking = false;
         this._dragging = false;
         this._uiSlid = false;
+        this._onStick = false;
         this._id = -1;
         this.releaseCapture();
         InputBridge.clear();
-        this.hideVisual();
+        this.resetKnob();
         this._lastGestureAt = Date.now();
         // True short tap only — UI slides / item drags must not fire onTap.
         // Also reject when down→up displacement exceeds the drag threshold even
         // if MOVE events were dropped (common on web-mobile): drag mouse-up
         // over a building must never count as a click-to-enter.
+        // Rest-dock taps never fall through as world clicks.
         // moveLocked intro still needs onTap → StoryIntroPanel.handleTap.
         const displaced = Math.hypot(x - ox, y - oy);
-        if (tracking && !wasDrag && !uiSlid && displaced < this.dragThreshold) {
+        if (
+            tracking &&
+            !wasDrag &&
+            !uiSlid &&
+            !(this.fixedStick && onStick) &&
+            displaced < this.dragThreshold
+        ) {
             this.fireTap(x, y);
         }
     }
@@ -406,7 +453,46 @@ export class TouchJoystick extends Component {
     }
 
     private hideVisual() {
+        if (this.fixedStick) {
+            this.resetKnob();
+            return;
+        }
         if (this.visualRoot) this.visualRoot.active = false;
         if (this.knob) this.knob.setPosition(0, 0, 0);
+    }
+
+    private resetKnob() {
+        if (this.knob) this.knob.setPosition(0, 0, 0);
+        if (this.fixedStick && this.visualRoot?.isValid) {
+            this.layoutFixedStick();
+            // Keep dock visible unless a chrome owner hid the node.
+            if (!InputBridge.moveLocked) this.visualRoot.active = true;
+        }
+    }
+
+    private hitFixedStick(uiX: number, uiY: number): boolean {
+        if (!this.fixedStick || !this.visualRoot?.isValid || !this.visualRoot.active) {
+            return !this.fixedStick;
+        }
+        const c = this.stickCenterUi();
+        const hitR = this.radius + STICK_HIT_PAD;
+        return Math.hypot(uiX - c.x, uiY - c.y) <= hitR;
+    }
+
+    private restLocal(): { x: number; y: number } {
+        return { x: REST_STICK_X, y: REST_STICK_Y };
+    }
+
+    private stickCenterUi(): { x: number; y: number } {
+        const canvas = this.node.parent;
+        const canvasUi = canvas?.getComponent(UITransform);
+        const vis = portraitVisibleSize();
+        const hw = (canvasUi?.contentSize.width || vis.width) * 0.5;
+        const hh = (canvasUi?.contentSize.height || vis.height) * 0.5;
+        const rest = this.restLocal();
+        const p = this.visualRoot?.position;
+        const cx = p?.x ?? rest.x;
+        const cy = p?.y ?? rest.y;
+        return { x: cx + hw, y: cy + hh };
     }
 }

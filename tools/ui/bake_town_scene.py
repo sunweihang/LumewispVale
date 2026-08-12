@@ -255,6 +255,8 @@ class TownBake:
         self.mark_path_h(self.dirt, 4, 6, 11, width=2)       # → seed
         self.mark_path_v(self.dirt, 8, -6, 1, width=2)       # SE → ore / carpenter bend
         self.mark_path_h(self.dirt, -6, 8, 13, width=2)      # → carpenter
+        # East gate → shallow mine (right edge of map)
+        self.mark_path_h(self.dirt, 0, 6, 15, width=2)
         self.mark_path_v(self.dirt, -7, -3, 1, width=2)      # services spine
         self.mark_path_h(self.dirt, -6, -12, -4, width=2)    # → museum
         self.mark_path_v(self.dirt, -4, -9, -6, width=2)     # → library
@@ -262,8 +264,9 @@ class TownBake:
         self.mark_path_h(self.dirt, 5, -14, -7, width=2)
         self.mark_path_v(self.dirt, -9, 1, 8, width=2)
         self.mark_path_h(self.dirt, 8, -13, -9, width=2)
-        # South waterfront + farm exit
+        # South waterfront + farm exit (plaza → south gate; stay north of river)
         self.mark_path_h(self.dirt, -7, -4, 5, width=2)
+        self.mark_path_v(self.dirt, 0, -8, -5, width=2)     # → south farm gate
         self.mark_path_v(self.dirt, 4, -11, -6, width=2)
         self.mark_path_h(self.dirt, 1, -14, -7, width=2)
         # North meadow (~1/3 screen above civic terrace)
@@ -333,6 +336,7 @@ class TownBake:
         for ix, iy0, iy1 in (
             (0, 5, 19), (6, 2, 7), (8, -6, 1), (-7, -3, 1), (-9, 1, 8), (4, -11, -6),
             (-11, 12, 18), (10, 12, 17),
+            (0, -8, -5),  # south farm road
         ):
             for iy in range(min(iy0, iy1), max(iy0, iy1) + 1):
                 dirt_spine.add(f"{ix},{iy}")
@@ -341,6 +345,7 @@ class TownBake:
             (11, -7, 7), (4, 6, 11), (-6, 8, 13), (5, -14, -7), (8, -13, -9),
             (-7, -4, 5), (1, -14, -7), (-6, -12, -4),
             (16, -11, 11), (20, 10, 14),
+            (0, 6, 15),  # east mine road
         ):
             for ix in range(min(x0, x1), max(x0, x1) + 1):
                 dirt_spine.add(f"{ix},{iy}")
@@ -665,16 +670,28 @@ class TownBake:
         for i, (x, y) in enumerate(benches):
             self._bld("bench", x, y, f"bench_{i}")
 
+        # Travel gates — keep in sync with TownWorldLayout.MINE_GATE / FARM_GATE
+        mine_x, mine_y = 15 * TILE, 0 * TILE + 36
+        # South of saloon (north of river) — farm return; not the old west fringe
+        farm_x, farm_y = 0 * TILE, -8 * TILE + 36
         signs = [
-            (-12 * TILE, 40, "sign_farm"),
+            (farm_x, farm_y, "sign_farm"),
             (0, -6 * TILE, "sign_beach"),
             (0, 7 * TILE, "sign_civic"),
-            # North of oreshop — shallow mine road
-            (8 * TILE, 1 * TILE + 36, "sign_mine"),
+            # East map edge — shallow mine road (not on oreshop)
+            (mine_x, mine_y, "sign_mine"),
             (0, 13 * TILE + 36, "sign_meadow"),
         ]
         for x, y, name in signs:
             self._bld("sign", x, y, name)
+
+        # Map-travel portal VFX (runtime hides mine FX until unlock)
+        sf_portal = self.sf("prop-door-portal")
+        if sf_portal:
+            self.add_actor("door_portal_mine", sf_portal, mine_x, mine_y - 4, 80, 144, 0.0)
+            self.add_actor("door_portal_farm", sf_portal, farm_x, farm_y - 4, 80, 144, 0.0)
+        else:
+            print("WARN missing prop-door-portal — skip travel portal FX")
 
         # Short fence runs framing home yards / school lot / orchard
         for i, (x, y) in enumerate([

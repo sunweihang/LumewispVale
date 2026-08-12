@@ -677,7 +677,15 @@ class MineBake:
             return tx * TILE, ty * TILE + foot
 
         # Landmark props — mouth sits on south lip; throat north of it stays open
-        self._prop("mouth", *at(0, -5), "bld_mine_mouth")
+        mouth_x, mouth_y = at(0, -5)
+        self._prop("mouth", mouth_x, mouth_y, "bld_mine_mouth")
+        # Exit portal VFX in the timber mouth void (return → town).
+        # Ring sits on the track threshold (~+48px into the 224px facade).
+        sf_portal = self.sf("prop-door-portal") or self.sf("prop-door-portal-beam")
+        if sf_portal:
+            self.add_actor("door_portal_beam", sf_portal, mouth_x, mouth_y + 48, 80, 144, 0.0)
+        else:
+            print("WARN missing prop-door-portal — skip mine exit portal FX")
         self._prop("sign", *at(0, -7), "sign_town")
         self._prop("ladder", *at(-5, 0), "bld_elevator")
         self._prop("cart", *at(6, 1), "prop_minecart")

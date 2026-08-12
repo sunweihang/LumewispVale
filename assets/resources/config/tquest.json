@@ -380,7 +380,7 @@
   {
     "id": 1024,
     "name": "矿脉通行证",
-    "desc": "前往矿脉商会（矿石店），取得浅层矿洞放行。",
+    "desc": "前往矿脉商会，向掌柜·赤铜打听浅层矿洞放行。",
     "condition_id": 10,
     "param": "visit_oreshop",
     "num": 1,
@@ -393,7 +393,7 @@
     "intro_script": "quest_1024",
     "outro_script": "",
     "chapter": "spring",
-    "unlock_map": "mine"
+    "unlock_map": "town"
   },
   {
     "id": 1025,

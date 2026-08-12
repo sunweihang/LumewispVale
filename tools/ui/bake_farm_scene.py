@@ -28,6 +28,8 @@ BRIDGE_RAIL_H = 40
 BRIDGE_UUID = "7aa6cfc8-27bf-4b43-b089-e517d86b64a2@f9941"
 BRIDGE_RAIL_S_UUID = "42966d38-2c6d-44fb-b938-bf882cb6890f@f9941"
 SIGN_UUID = "6bf7ecb9-7750-4efd-9f82-84534ceaef25@f9941"
+# Door portal VFX — keep in sync with tools/ui/uuid-map.json prop-door-portal
+DOOR_PORTAL_UUID = "646bfc2e-e2a7-49b4-a483-28910cd64d3c@f9941"
 # East town gate — keep in sync with StoryWorldHooks.FARM_TOWN_PORTAL
 TOWN_GATE = (13 * TILE, 4 * TILE + 36)
 # Hero cottage feet — skip soft clutter inside the building body
@@ -617,6 +619,10 @@ class FarmBake:
         gx, gy = TOWN_GATE
         self.nodes.append(
             ("portal_town", SIGN_UUID, gx, gy, 64, 80, 0.5, 0.0, False)
+        )
+        # Town-gate portal light — runtime hides until town unlock
+        self.nodes.append(
+            ("door_portal_town", DOOR_PORTAL_UUID, gx, gy - 4, 80, 144, 0.5, 0.0, False)
         )
 
     def place_craftbench(self) -> None:

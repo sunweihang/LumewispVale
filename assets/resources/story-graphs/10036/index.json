@@ -1,0 +1,7 @@
+{
+  "storyId": 10036,
+  "name": "商会放行",
+  "description": "scriptId=oreshop_pass; Lock→StartChat(10036)→Unlock→End",
+  "category": "mainline",
+  "exportFlag": true
+}

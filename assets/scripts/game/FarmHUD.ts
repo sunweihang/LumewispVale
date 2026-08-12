@@ -408,10 +408,11 @@ export class FarmHUD extends Component {
     }
 
     /**
-     * Wired from TouchJoystick: short tap (not drag).
-     * @returns true when UI / farm action consumed the tap; false = empty ground.
+     * Hotbar / bag / quest btn / modals only — never farm jobs.
+     * Call this BEFORE world NPC / building / portal hit-tests so dock chrome
+     * cannot click-through into approachInteract / approachNpc.
      */
-    handleTap(uiX: number, uiY: number): boolean {
+    handleUiTap(uiX: number, uiY: number): boolean {
         if (this.node.getComponent(FishingMinigame)?.isOpen) return true;
         if (this._suppressTap) {
             this._suppressTap = false;
@@ -470,12 +471,6 @@ export class FarmHUD extends Component {
                 return true;
             }
             if (this.hitCraftPanel(uiX, uiY)) {
-                // Await-close guide used to swallow panel taps that missed the X
-                // (arrow tip sits above the button) and soft-locked the modal.
-                if (this._tutorialCraftAwaitClose) {
-                    playUiClick();
-                    this.setCraftOpen(false);
-                }
                 return true;
             }
             playUiClick();
@@ -532,6 +527,15 @@ export class FarmHUD extends Component {
             playUiClick();
             return true;
         }
+        return false;
+    }
+
+    /**
+     * Wired from TouchJoystick: short tap (not drag).
+     * @returns true when UI / farm action consumed the tap; false = empty ground.
+     */
+    handleTap(uiX: number, uiY: number): boolean {
+        if (this.handleUiTap(uiX, uiY)) return true;
         this.hideTip();
         // true = farm job / tip consumed the tap; false = empty ground (click-to-move).
         return !!this.farm?.tryActAtUi(uiX, uiY);
@@ -625,17 +629,16 @@ export class FarmHUD extends Component {
     }
 
     /**
-     * Keep TutorialGuide arrows while the workbench is open:
-     * recipe point (can / seed / axe / rod) or close-after-craft for claim.
+     * Keep TutorialGuide arrows while the workbench is open on the recipe button.
+     * Busy / claim / short mats stay quiet — no close-panel nag.
      */
     needsCraftQuestGuide() {
         if (!this._craftOpen) return false;
-        if (this.isTutorialCraftBusy || this._tutorialCraftAwaitClose) return true;
+        if (this.isTutorialCraftBusy || this._tutorialCraftAwaitClose) return false;
         const q = this._quests?.activeQuest;
-        if (!q) return false;
-        // Craft finished but panel still open — guide to close, then claim.
-        if (this._quests!.isAwaitingClaim) return true;
-        return q.conditionId === 3 && !!q.param;
+        if (!q || this._quests!.isAwaitingClaim) return false;
+        if (q.conditionId !== 3 || !q.param) return false;
+        return this.canAffordRecipe(q.param);
     }
 
     /** Active craft-quest recipe that must be the only clickable row. */
@@ -657,16 +660,10 @@ export class FarmHUD extends Component {
     }
 
     /**
-     * Pre-craft only: objective recipe is affordable — only its「制作」accepts taps.
-     * Once that job is ticking (or done), lock lifts so the player can close freely.
-     * Missing mats: lock lifts so the player can close and gather.
+     * Soft craft guide only — never lock other rows / close while a quest recipe is up.
      */
     private isForcedCraftInputLock(): boolean {
-        if (this._tutorialCraftAwaitClose) return false;
-        if (this.isTutorialCraftBusy) return false;
-        const recipe = this.guidedCraftRecipe();
-        if (!recipe) return false;
-        return this.canAfford(recipe);
+        return false;
     }
 
     /** Craft-row «制作» button for tutorial holes. */
@@ -822,6 +819,46 @@ export class FarmHUD extends Component {
         });
     }
 
+    /** Drop a bag recipe scroll (retired recipes / save cleanup). */
+    revokeRecipeScroll(recipeId: string) {
+        if (!recipeId) return;
+        let changed = false;
+        for (let i = 0; i < this._backpack.length; i++) {
+            const s = this._backpack[i];
+            if (s?.id === 'recipeScroll' && s.recipeId === recipeId) {
+                this._backpack[i] = null;
+                changed = true;
+            }
+        }
+        if (this._learnOpen && this._learnRecipeId === recipeId) {
+            this.setLearnOpen(false);
+        }
+        if (changed) {
+            this.refreshInvIcons();
+            this.refreshChestIcons();
+        }
+    }
+
+    /** Remove scrolls whose recipe id no longer exists in config. */
+    purgeUnknownRecipeScrolls() {
+        const known = new Set(getCraftRecipes().map((r) => r.id));
+        let changed = false;
+        for (let i = 0; i < this._backpack.length; i++) {
+            const s = this._backpack[i];
+            if (s?.id === 'recipeScroll' && s.recipeId && !known.has(s.recipeId)) {
+                this._backpack[i] = null;
+                changed = true;
+                if (this._learnOpen && this._learnRecipeId === s.recipeId) {
+                    this.setLearnOpen(false);
+                }
+            }
+        }
+        if (changed) {
+            this.refreshInvIcons();
+            this.refreshChestIcons();
+        }
+    }
+
     /** @deprecated Use needsBagHotbarGuide — kept for call-site clarity during boost steps. */
     needsHarvestBoostGuide() {
         return this.needsBagHotbarGuide() && this.teachHotbarItem() === 'boost';
@@ -849,8 +886,7 @@ export class FarmHUD extends Component {
         if (this.bagCount('hoe') <= 0) {
             this.mergeOrPlaceInBag({ id: 'hoe', count: 1 });
         }
-        // Never auto-bind during the bag→hotbar lesson / first farm session.
-        this.ensureHotbarShortcut('hoe');
+        // Leave bag-only — TutorialGuide teaches bag → hotbar drag.
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         farm.notifyInventoryChanged();
@@ -985,8 +1021,7 @@ export class FarmHUD extends Component {
         for (const [id, on] of ids) {
             if (!on || this.bagCount(id) > 0) continue;
             this.mergeOrPlaceInBag({ id, count: 1 });
-            // First session / live teach: leave in bag for drag-to-hotbar guide.
-            this.ensureHotbarShortcut(id);
+            // Leave bag-only — TutorialGuide teaches bag → hotbar for each tool.
         }
     }
 
@@ -1092,6 +1127,10 @@ export class FarmHUD extends Component {
             'FarmBagPanel',
             'FarmChestDimmer',
             'FarmChestPanel',
+            'FarmCraftDimmer',
+            'FarmCraftPanel',
+            'FarmLearnDimmer',
+            'FarmLearnPanel',
             'FarmDragGhost',
             'FarmLootFx',
         ]) {
@@ -1238,6 +1277,22 @@ export class FarmHUD extends Component {
         this.syncBagEntryVisible();
     }
 
+    /**
+     * Force the hotkey dock visible after Loading / dialogue chrome restore.
+     * Suppressors can snapshot FarmHotbar while it was still hidden and leave
+     * it inactive (mine / town boot especially).
+     */
+    ensureDockVisible() {
+        if (this._bar?.isValid) this._bar.active = !this._learnOpen;
+        if (this._barBg?.isValid) {
+            this._barBg.active =
+                !this._bagOpen && !this._chestOpen && !this._craftOpen && !this._learnOpen;
+        }
+        this.syncBagEntryVisible();
+        this.syncQuestEntryVisible();
+        this.orderLayers();
+    }
+
     /** Wire journal open without importing QuestPanel (avoids circular deps). */
     bindQuestPanel(opts: { isOpen: () => boolean; open: () => void } | null) {
         this._questPanelOpen = opts?.isOpen ?? null;
@@ -1271,6 +1326,7 @@ export class FarmHUD extends Component {
             this._bagOpen ||
             this._chestOpen ||
             this._craftOpen ||
+            this._learnOpen ||
             !!this._questPanelOpen?.();
         const unlocked = this._quests?.isQuestHudUnlocked() ?? false;
         this._questBtn.active = unlocked && !modal;
@@ -1283,7 +1339,8 @@ export class FarmHUD extends Component {
             this._bagBtn.active = false;
             return;
         }
-        const modal = this._bagOpen || this._chestOpen || this._craftOpen;
+        const modal =
+            this._bagOpen || this._chestOpen || this._craftOpen || this._learnOpen;
         this._bagBtn.active = this.isBagHudUnlocked() && !modal;
     }
 
@@ -1331,7 +1388,7 @@ export class FarmHUD extends Component {
         this.syncQuestEntryVisible();
     }
 
-    /** Dimmer < panels < hotbar < tip < drag ghost < loot fly */
+    /** Dimmer < panels < hotbar < learn (covers bag+dock) < tip < drag ghost < loot fly */
     private orderLayers() {
         const nodes = [
             this._dimmer,
@@ -1340,9 +1397,9 @@ export class FarmHUD extends Component {
             this._chestPanel,
             this._craftDimmer,
             this._craftPanel,
+            this._bar,
             this._learnDimmer,
             this._learnPanel,
-            this._bar,
             this._tip,
             this._ghost,
             this._lootFxRoot,
@@ -1989,8 +2046,9 @@ export class FarmHUD extends Component {
         if (!open) this.setLearnOpen(false);
         InputBridge.uiBlocking =
             open || this._chestOpen || this._craftOpen || this._learnOpen;
-        if (this._dimmer) this._dimmer.active = open;
-        if (this._panel) this._panel.active = open;
+        // Learn modal owns the single scrim while open — don't stack bag+learn dims.
+        if (this._dimmer) this._dimmer.active = open && !this._learnOpen;
+        if (this._panel) this._panel.active = open && !this._learnOpen;
         // Unified bag chrome covers the standalone hotbar plate + bag tab.
         if (this._barBg) {
             this._barBg.active =
@@ -2912,11 +2970,22 @@ export class FarmHUD extends Component {
         if (this._learnCloseBtn) this._learnCloseBtn.active = open;
         InputBridge.uiBlocking =
             open || this._bagOpen || this._chestOpen || this._craftOpen;
+        // One scrim only: learn dimmer while open, bag dimmer when bag returns.
+        if (this._dimmer) this._dimmer.active = this._bagOpen && !open;
+        // Occlude bag + dock while learning — only the recipe modal stays up.
+        if (this._panel) this._panel.active = this._bagOpen && !open;
+        if (this._closeBtn) this._closeBtn.active = this._bagOpen && !open;
+        if (this._bar) this._bar.active = !open;
+        if (this._barBg) {
+            this._barBg.active =
+                !open && !this._bagOpen && !this._chestOpen && !this._craftOpen;
+        }
         if (!open) {
             this._learnBagIndex = -1;
             this._learnRecipeId = '';
-            return;
         }
+        this.syncBagEntryVisible();
+        this.syncQuestEntryVisible();
         this.orderLayers();
     }
 
@@ -2970,6 +3039,22 @@ export class FarmHUD extends Component {
         return recipe.cost.every((c) => this.bagCount(c.id) >= c.count);
     }
 
+    /** True when the bag covers every cost for this recipe id. */
+    canAffordRecipe(recipeId: string): boolean {
+        const recipe = getCraftRecipes().find((r) => r.id === recipeId);
+        return !!recipe && this.canAfford(recipe);
+    }
+
+    /** First missing craft cost item, or null when affordable / unknown. */
+    firstMissingCraftCost(recipeId: string): CraftItemId | null {
+        const recipe = getCraftRecipes().find((r) => r.id === recipeId);
+        if (!recipe) return null;
+        for (const c of recipe.cost) {
+            if (this.bagCount(c.id) < c.count) return c.id;
+        }
+        return null;
+    }
+
     private consumeFromBag(id: CraftItemId, count: number): boolean {
         let left = count;
         for (let i = 0; i < this._backpack.length && left > 0; i++) {
@@ -2987,11 +3072,12 @@ export class FarmHUD extends Component {
 
     private refreshCraftRows() {
         const guided = this.liveGuidedCraftRecipeId();
+        // Only dim sibling rows before the objective craft starts — never while a job ticks.
+        const forceLock = this.isForcedCraftInputLock();
         for (const row of this._craftRows) {
             const job = this._craftJobs.get(row.recipe.id);
             const busy = !!job;
-            // Forced craft quest: only the objective recipe stays clickable.
-            const forcedOff = !!guided && row.recipe.id !== guided && !busy;
+            const forcedOff = forceLock && !!guided && row.recipe.id !== guided;
             const can = !busy && !forcedOff && this.canAfford(row.recipe);
             row.recipe.cost.forEach((c, i) => {
                 const lab = row.costLabs[i];
@@ -3027,13 +3113,15 @@ export class FarmHUD extends Component {
                     : new Color(220, 210, 190, 160);
             }
         }
+        // Keep the X in sync — starting a craft used to leave it stuck dimmed.
+        this.applyTutorialCraftCloseVisual();
     }
 
     private tryCraftRecipe(recipe: CraftRecipe) {
         if (this._craftJobs.has(recipe.id)) return;
         const guided = this.liveGuidedCraftRecipeId();
-        // Forced craft quest: reject every other recipe.
-        if (guided && recipe.id !== guided) return;
+        // Forced craft quest: reject siblings only before the objective craft starts.
+        if (this.isForcedCraftInputLock() && guided && recipe.id !== guided) return;
         if (!this.canAfford(recipe)) return;
         for (const c of recipe.cost) {
             if (!this.consumeFromBag(c.id, c.count)) {
@@ -3049,7 +3137,6 @@ export class FarmHUD extends Component {
                 : recipe.craftSeconds,
         );
         if (isGuided) {
-            // Countdown is free — player may close; guide resumes after done.
             this._tutorialCraftAwaitClose = false;
             this._tutorialCraftAwaitFly = false;
             this._guidedCraftRecipeId = recipe.id;
@@ -3064,7 +3151,7 @@ export class FarmHUD extends Component {
         this.refreshHotbarIcons();
         this.refreshInvIcons();
         this.refreshSelection();
-        this.applyTutorialCraftCloseVisual();
+        // Keep the panel open — player closes when they want (no auto-dismiss).
     }
 
     private tickCraftJobs(dt: number) {
@@ -3100,18 +3187,14 @@ export class FarmHUD extends Component {
         const outId = job.out.id as InvItemId;
         this.mergeOrPlaceInBag({ id: outId, count: job.out.count });
         this.noteOwnedTool(outId);
-        this.ensureHotbarShortcut(outId);
+        // Do not auto-dock — TutorialGuide teaches bag → hotbar drag for tools / seeds / boost.
         this.syncFarmFromBag();
         this._quests?.noteCraft(recipeId, 1);
         if (wasGuided) {
             this._guidedCraftRecipeId = null;
-            if (this._craftOpen) {
-                // Panel still open → guide close, then claim.
-                this._tutorialCraftAwaitClose = true;
-                this._tutorialCraftAwaitFly = false;
-            } else {
+            this._tutorialCraftAwaitClose = false;
+            if (!this._craftOpen) {
                 // Panel already closed → fly into bag, then claim.
-                this._tutorialCraftAwaitClose = false;
                 this.playGuidedCraftDeliverFly(outId, job.out.count);
             }
         }
@@ -3161,14 +3244,13 @@ export class FarmHUD extends Component {
         this.refreshCraftRows();
     }
 
-    /** Dim the X only while pre-craft force aims the recipe row. */
+    /** Dim the X only while pre-craft force aims the recipe row (never during a job). */
     private applyTutorialCraftCloseVisual() {
         const btn = this._craftCloseBtn;
         if (!btn?.isValid) return;
         let op = btn.getComponent(UIOpacity);
         if (!op) op = btn.addComponent(UIOpacity);
-        const dimClose = this.isForcedCraftInputLock();
-        op.opacity = dimClose ? 90 : 255;
+        op.opacity = this.isForcedCraftInputLock() ? 90 : 255;
     }
 
     private finishCraftAdBoost(recipeId: string) {
@@ -3364,20 +3446,6 @@ export class FarmHUD extends Component {
         }
         const empty = this._backpack.findIndex((s) => !s);
         if (empty >= 0) this._backpack[empty] = { id: stack.id, count: stack.count };
-    }
-
-    /** Bind a newly crafted / granted item onto the first empty hotkey slot. */
-    private ensureHotbarShortcut(id: InvItemId) {
-        if (id === 'hand' || id === 'recipeScroll' || this.isHotbarBound(id)) return;
-        // Tools + seeds / boost are the ones players expect on the dock.
-        if (!isFarmTool(id) && id !== 'seeds' && id !== 'boost') return;
-        for (let i = 0; i < this._hotbar.length; i++) {
-            if (isHandHot(i)) continue;
-            if (!this._hotbar[i]) {
-                this._hotbar[i] = id;
-                return;
-            }
-        }
     }
 
     /** Persist crafted tools on FarmSystem so map travel keeps them. */

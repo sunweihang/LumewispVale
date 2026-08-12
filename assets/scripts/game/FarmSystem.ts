@@ -10,6 +10,7 @@ import {
     UIOpacity,
     UITransform,
     Vec3,
+    Tween,
     tween,
     view,
 } from 'cc';
@@ -44,9 +45,15 @@ const ARRIVE_PLOT = 20;
 /** Soft weeds — walk up to the foot (must look close). */
 const ARRIVE_NATURE_SOFT = 18;
 /**
+ * Early-arrive / actFocus for plots & fish stands — must look next to the tile
+ * before hoe / plant crouch. Keep well under one TILE (64) so we don't swing
+ * from the neighboring cell mid-walk.
+ */
+const ACT_FOCUS_PLOT = 24;
+/**
  * After arrive, refuse to act if still farther than this (safety).
  * Adjacent-tile stands (~64) must still count — too-tight 36 made boost/water
- * walk→stop→need a second tap.
+ * walk→stop→need a second tap. Do NOT reuse this for actFocus / readyDist.
  */
 const ACT_MAX_PLOT = 56;
 const ACT_MAX_NATURE = 56;
@@ -222,10 +229,6 @@ export class FarmSystem extends Component {
     onLoad() {
         if (!ALL_TOOLS.includes(this.tool)) this.tool = 'hand';
         this.loadFrames();
-        loadUiFont().then((font) => {
-            if (!font || !this._actionHint) return;
-            applyUiFont(this._actionHint);
-        });
     }
 
     start() {
@@ -378,8 +381,8 @@ export class FarmSystem extends Component {
 
     /**
      * Tap a screen point (UI coords, origin bottom-left) → walk over, play action, then apply.
-     * Soft weeds / garden flowers yield to an actable plot under the same tap (hoe/seeds/can);
-     * trees and rocks still win. Guide arrows sit above the tile — near-miss still farms.
+     * Resolve by what the world point actually hits: decor sprite AABB, then fish stand,
+     * then the plot tile under the point. No type-vs-type priority stacking.
      * @returns true when the tap was consumed (job / tip / modal); false = empty ground.
      */
     tryActAtUi(uiX: number, uiY: number): boolean {
@@ -400,7 +403,7 @@ export class FarmSystem extends Component {
                     `→ world=(${worldPt.x.toFixed(1)},${worldPt.y.toFixed(1)})`,
             );
         }
-        // Grow-boost ad chip wins over plot / nature under the same tap.
+        // Grow-boost ad chip is its own UI hit box under the tap.
         const adKey = this.hitGrowAdKey(worldPt.x, worldPt.y);
         if (adKey) {
             if (this.rejectTutorialAct('grow')) return true;
@@ -420,40 +423,28 @@ export class FarmSystem extends Component {
             return true;
         }
 
-        const plotKey = this.plotKeyNear(worldPt.x, worldPt.y);
-        const plot = plotKey ? this._plots.get(plotKey) ?? null : null;
-        const plotOk =
-            !!plotKey && !!plot && !this.tutorialBlocks('plot') && this.canActOnPlot(plot);
-
-        // Tree / rock / weed — never steal a tap the current tool can farm with.
-        // (Old: only weeds yielded; canopy AABB + "需选择：斧头" made boost feel broken.)
+        // Point-in-sprite first — if the tap is inside a decor AABB, that is the target.
         const nature = this.resolveNatureHit(worldPt.x, worldPt.y);
         if (nature) {
-            if (plotOk) {
-                console.log(
-                    `[FarmTap] ${nature.node.name} on actable plot ${plotKey} → prefer plot`,
-                );
-            } else {
-                const natureBlock = this.tutorialBlocks('nature');
-                if (natureBlock) {
-                    this.floatTip(natureBlock);
-                    return true;
-                }
-                const ok = this.toolMatchesNature(nature.act);
-                console.log(
-                    `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
-                        `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
-                        `toolOk=${ok}`,
-                );
-                if (!ok) {
-                    const tip = this.wrongToolTipFor(nature.act);
-                    console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
-                    this.floatTip(tip);
-                    return true;
-                }
-                this.queueNatureJob(nature);
+            const natureBlock = this.tutorialBlocks('nature');
+            if (natureBlock) {
+                this.floatTip(natureBlock);
                 return true;
             }
+            const ok = this.toolMatchesNature(nature.act);
+            console.log(
+                `[FarmTap] tool=${this.tool} → ${nature.act} ${nature.node.name} ` +
+                    `foot=(${nature.node.position.x.toFixed(1)},${nature.node.position.y.toFixed(1)}) ` +
+                    `toolOk=${ok}`,
+            );
+            if (!ok) {
+                const tip = this.wrongToolTipFor(nature.act);
+                console.log(`[FarmTap] REJECT wrong tool → tip="${tip}"`);
+                this.floatTip(tip);
+                return true;
+            }
+            this.queueNatureJob(nature);
+            return true;
         }
         const fish = FarmWorldLayout.findFishingStand(worldPt.x, worldPt.y);
         if (fish) {
@@ -462,6 +453,9 @@ export class FarmSystem extends Component {
             this.tryFishAt(fish);
             return true;
         }
+        // No decor under the point — resolve the soil tile at that coordinate.
+        const plotKey = this.plotKeyAt(worldPt.x, worldPt.y);
+        const plot = plotKey ? this._plots.get(plotKey) ?? null : null;
         if (plot && plotKey) {
             if (this.rejectTutorialAct('plot')) return true;
             console.log(`[FarmTap] → plot ${plotKey} phase=${plot.phase}`);
@@ -476,20 +470,19 @@ export class FarmSystem extends Component {
     }
 
     /**
-     * Exact tile under the tap, or a nearby actable plot.
-     * Quest chevrons / grow timers sit above the soil center — a raw round()
-     * often lands on the northern neighbor. Prefer a plot the current tool can
-     * act on so boost / water / plant taps don't keep hitting idle soil.
+     * Plot under the world point. Prefer the exact tile; only search nearby when
+     * the tap lands on empty ground above grow UI / chevron chrome (not on a plot).
      */
-    private plotKeyNear(wx: number, wy: number): string | null {
+    private plotKeyAt(wx: number, wy: number): string | null {
         const direct = `${Math.round(wx / TILE)},${Math.round(wy / TILE)}`;
-        // Chevron + "N秒" stack sit ~1.5–2.5 tiles above the sprout.
-        const maxSq = (TILE * 2.5) * (TILE * 2.5);
+        if (this._plots.has(direct)) return direct;
+
+        // Grow timer / ad stack sits above the sprout — tap may miss the soil cell.
+        const maxSq = (TILE * 1.25) * (TILE * 1.25);
         let bestAct: string | null = null;
         let bestActSq = maxSq;
-        let bestAny: string | null = null;
-        let bestAnySq = maxSq;
         for (const [key, p] of this._plots) {
+            if (!this.canActOnPlot(p)) continue;
             const parts = key.split(',');
             const ix = Number(parts[0]);
             const iy = Number(parts[1]);
@@ -497,92 +490,25 @@ export class FarmSystem extends Component {
             const dx = ix * TILE - wx;
             const dy = iy * TILE - wy;
             const dSq = dx * dx + dy * dy;
-            if (dSq < bestAnySq) {
-                bestAnySq = dSq;
-                bestAny = key;
-            }
-            if (this.canActOnPlot(p) && dSq < bestActSq) {
+            if (dSq < bestActSq) {
                 bestActSq = dSq;
                 bestAct = key;
             }
         }
-        if (bestAct) return bestAct;
-        if (this._plots.has(direct)) return direct;
-        return bestAny;
+        return bestAct;
     }
 
     /**
-     * Mainline quests only allow the current goto action (walk / tool / craft…).
-     * Returns true when the tap was swallowed with a redirect tip.
+     * Soft guide only: idle arrows still point at the objective, but quests never
+     * swallow world taps with「先跟着星光…」redirect tips.
      */
-    private rejectTutorialAct(kind: TutorialActKind): boolean {
-        const tip = this.tutorialBlocks(kind);
-        if (!tip) return false;
-        this.floatTip(tip);
-        return true;
+    private rejectTutorialAct(_kind: TutorialActKind): boolean {
+        return false;
     }
 
-    /** Tip when the live quest forbids this world interaction; null = allowed. */
-    private tutorialBlocks(kind: TutorialActKind): string | null {
-        const quests = this.node.getComponent('QuestSystem') as {
-            activeQuest?: { id: number } | null;
-            isAwaitingClaim?: boolean;
-            activeGotoAction?: () => GotoAction;
-        } | null;
-        if (!quests?.activeQuest || quests.isAwaitingClaim) return null;
-        // Quest 1001: no action gating until 露穗 talk starts the yard spotlight.
-        if (
-            quests.activeQuest.id === 1001 &&
-            !GameState.hasSeenDialogue('guide_wake_yard')
-        ) {
-            return null;
-        }
-        const action = quests.activeGotoAction?.() ?? GotoAction.None;
-        switch (action) {
-            case GotoAction.HintMeteor:
-            case GotoAction.HintTownGate:
-                return '跟着星光往右走，点东侧路牌';
-            case GotoAction.HintMayor:
-                return '跟着星光前往镇长府进屋';
-            case GotoAction.SelectRod:
-            case GotoAction.HintFish:
-                if (kind === 'fish') return null;
-                return '先跟着星光去钓鱼';
-            case GotoAction.SelectHoe:
-                if (kind === 'plot') return null;
-                return '先跟着星光开垦田地';
-            case GotoAction.HintRock:
-                if (kind === 'nature') return null;
-                return '先跟着星光挖取石料';
-            case GotoAction.SelectAxe:
-                if (kind === 'nature') return null;
-                return '先跟着星光砍伐树木';
-            case GotoAction.SelectSeeds:
-                if (kind === 'plot') return null;
-                return '先跟着星光播种';
-            case GotoAction.SelectCan:
-                if (kind === 'plot') return null;
-                return '先跟着星光浇水';
-            case GotoAction.SelectHand:
-                // Item boost on the plot — not the world ad chip.
-                if (kind === 'plot') return null;
-                if (kind === 'grow') return '请使用催熟剂催熟作物';
-                return '先跟着星光催熟并收获作物';
-            case GotoAction.HintGrass:
-                if (kind === 'nature') return null;
-                return '先跟着星光拔除杂草';
-            case GotoAction.HintCraft:
-            case GotoAction.OpenCraft:
-                if (kind === 'craft') return null;
-                return '先走到工作台制作道具';
-            case GotoAction.OpenBag:
-                return '先打开背包查看物品';
-            case GotoAction.HintFarm:
-                if (kind === 'plot') return null;
-                return '先跟着星光操作农田';
-            default:
-                return null;
-        }
+    /** Always null — player may act freely; TutorialGuide owns soft cues. */
+    private tutorialBlocks(_kind: TutorialActKind): string | null {
+        return null;
     }
 
     private tryFishAt(spot: {
@@ -767,7 +693,7 @@ export class FarmSystem extends Component {
         const readyDist = softNature
             ? ACT_MAX_SOFT_PULL
             : job.kind === 'plot' || job.kind === 'fish'
-              ? ACT_MAX_PLOT
+              ? ACT_FOCUS_PLOT
               : job.kind === 'chest' ||
                   job.kind === 'craft' ||
                   (job.kind === 'nature' &&
@@ -837,9 +763,9 @@ export class FarmSystem extends Component {
                     `(must be ≤ ${ACT_MAX_SOFT_PULL} after arrive)`,
             );
         } else if (job.kind === 'plot' || job.kind === 'fish') {
-            // Early-arrive beside the tile (same pattern as props) so a short path
-            // that stops one cell away still fires boost / water / harvest.
-            actFocus = { x: job.targetX, y: job.targetY, dist: ACT_MAX_PLOT };
+            // Early-arrive next to the tile — tighter than ACT_MAX_PLOT so plant /
+            // hoe don't crouch from a cell away. Abort retry still uses ACT_MAX_PLOT.
+            actFocus = { x: job.targetX, y: job.targetY, dist: ACT_FOCUS_PLOT };
         }
 
         const softActMax = softNature ? ACT_MAX_SOFT_PULL : ACT_MAX_NATURE;
@@ -1142,6 +1068,7 @@ export class FarmSystem extends Component {
             if (hits < need) {
                 this._natureHits.set(id, hits);
                 playFarmTool();
+                if (act === 'chop') this.shakeChopTarget(target, hits, need);
                 return true;
             }
             this._natureHits.delete(id);
@@ -1149,11 +1076,50 @@ export class FarmSystem extends Component {
         this.grantNatureLoot(target, act);
         playFarmGather();
         const wasSolid = act === 'chop' || target.name.includes('_solid_');
+        if (act === 'chop') {
+            this.fellChopTarget(target, wasSolid);
+            return false;
+        }
         target.destroy();
         if (wasSolid) {
             this.player.getComponent(PlayerController)?.rebuildSolids();
         }
         return false;
+    }
+
+    /** Trunk-anchored sway — grows as the tree takes more axe hits. */
+    private shakeChopTarget(target: Node, hits: number, need: number) {
+        if (!target.isValid) return;
+        Tween.stopAllByTarget(target);
+        target.angle = 0;
+        const t = Math.max(0, Math.min(1, hits / Math.max(1, need)));
+        const amp = 4.5 + t * 7;
+        tween(target)
+            .to(0.03, { angle: amp })
+            .to(0.04, { angle: -amp })
+            .to(0.035, { angle: amp * 0.75 })
+            .to(0.035, { angle: -amp * 0.5 })
+            .to(0.04, { angle: amp * 0.25 })
+            .to(0.045, { angle: 0 })
+            .start();
+    }
+
+    /** Final chop: lean over, then remove (solids rebuild after the node is gone). */
+    private fellChopTarget(target: Node, wasSolid: boolean) {
+        if (!target.isValid) {
+            if (wasSolid) this.player?.getComponent(PlayerController)?.rebuildSolids();
+            return;
+        }
+        Tween.stopAllByTarget(target);
+        const lean = Math.random() < 0.5 ? 22 : -22;
+        tween(target)
+            .to(0.05, { angle: lean * 0.35 })
+            .to(0.14, { angle: lean }, { easing: 'quadIn' })
+            .call(() => {
+                if (target.isValid) target.destroy();
+                if (wasSolid) this.player?.getComponent(PlayerController)?.rebuildSolids();
+            })
+            .start();
     }
 
     private hitsToClear(target: Node, act: NatureAct): number {
@@ -1304,6 +1270,8 @@ export class FarmSystem extends Component {
 
     /** Live gather goto → prefer that nature act under mixed taps. */
     private guideNatureAct(): NatureAct | null {
+        // Craft-mats / TutorialGuide clearance wins over quest goto labels.
+        if (this._gatherClearAct) return this._gatherClearAct;
         const quests = this.node.getComponent('QuestSystem') as {
             activeQuest?: { id: number } | null;
             isAwaitingClaim?: boolean;
@@ -1516,10 +1484,15 @@ export class FarmSystem extends Component {
     /** First matching world child (exact name or prefix). */
     findWorldNode(...names: string[]): Node | null {
         if (!this.world) return null;
-        for (const child of this.world.children) {
-            if (!child.isValid) continue;
-            for (const n of names) {
-                if (child.name === n || child.name.startsWith(n)) return child;
+        // Exact match first — `bld_mayor` must not resolve to `bld_mayor_yard`.
+        for (const n of names) {
+            for (const child of this.world.children) {
+                if (child.isValid && child.name === n) return child;
+            }
+        }
+        for (const n of names) {
+            for (const child of this.world.children) {
+                if (child.isValid && child.name.startsWith(n)) return child;
             }
         }
         return null;
@@ -1670,8 +1643,9 @@ export class FarmSystem extends Component {
         let best: Node | null = null;
         let bestSq = Infinity;
         let bestArea = Infinity;
-        const pad = 6;
         const taperTree = nameRe === TREE_NAME_RE;
+        // Trees: tiny pad — large pad made neighboring canopies steal taps.
+        const pad = taperTree ? 1 : 6;
         const list = this.decorListFor(nameRe);
         for (let i = 0; i < list.length; i++) {
             const child = list[i]!;
@@ -1687,14 +1661,23 @@ export class FarmSystem extends Component {
             const bottom = p.y - h * ui.anchorY - pad;
             const top = p.y + h * (1 - ui.anchorY) + pad;
             if (wx < left || wx > right || wy < bottom || wy > top) continue;
-            // Pine/oak art is mostly empty at the sides — use a trunk→canopy taper so
-            // neighboring weeds/bushes don't sit inside a huge rectangular hit box.
+            // Pine/oak: triangular trunk→canopy. Among overlaps, pick nearest trunk
+            // axis — never "smallest sprite" (pine always beat oak before).
             if (taperTree) {
                 const boxH = Math.max(1, top - bottom);
                 const relY = (wy - bottom) / boxH;
                 const halfW = (right - left) * 0.5;
-                const halfAllow = relY < 0.28 ? halfW * 0.4 : halfW * 0.78;
+                const halfAllow = halfW * (0.2 + relY * 0.5); // foot ~20% → crown ~70%
                 if (Math.abs(wx - p.x) > halfAllow) continue;
+                const trunkDx = wx - p.x;
+                const footDy = wy - p.y;
+                const score = trunkDx * trunkDx * 4 + footDy * footDy;
+                if (score < bestSq) {
+                    best = child;
+                    bestSq = score;
+                    bestArea = w * h;
+                }
+                continue;
             }
             const cx = (left + right) * 0.5;
             const cy = (bottom + top) * 0.5;
@@ -2200,28 +2183,11 @@ export class FarmSystem extends Component {
     }
 
     private spawnHudLabels() {
-        const canvas = this.node;
-        const mk = (name: string, y: number, size: number, color: Color, outlineW?: number) => {
-            const n = new Node(name);
-            n.layer = canvas.layer;
-            n.setParent(canvas);
-            n.setPosition(0, y, 0);
-            n.addComponent(UITransform).setContentSize(1000, 56);
-            const lab = n.addComponent(Label);
-            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-            lab.verticalAlign = Label.VerticalAlign.CENTER;
-            lab.overflow = Label.Overflow.SHRINK;
-            styleUiLabel(lab, {
-                size,
-                color,
-                outline: true,
-                outlineWidth: outlineW,
-                outlineColor: new Color(20, 28, 22, 235),
-            });
-            return lab;
-        };
-        // Above quest HUD dock (~y −622 top) so "拔除灌木" isn't covered by the tracker.
-        this._actionHint = mk('FarmActionHint', -560, 34, new Color(255, 252, 235, 255), 5);
+        // Bottom cue used to sit at y −560 ("点击锄地" etc.) and stacked on the
+        // always-visible move stick (TouchJoystick REST_STICK_Y −600). Drop it.
+        const old = this.node.getChildByName('FarmActionHint');
+        if (old) old.destroy();
+        this._actionHint = null;
     }
 
     private refreshHud() {

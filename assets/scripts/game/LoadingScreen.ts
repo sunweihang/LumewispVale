@@ -489,6 +489,28 @@ export class LoadingScreen extends Component {
             if (n?.isValid) n.active = was;
         }
         this._chromeWas.clear();
+        // Always-on HUD can be snapshotted while still building / suppressed —
+        // force the dock + stick back on after the splash.
+        const bar = canvas.getChildByName('FarmHotbar');
+        if (bar?.isValid) bar.active = true;
+        const touchHost = canvas.getChildByName('TouchControls');
+        if (touchHost?.isValid) touchHost.active = true;
+        const stickVisual = canvas.getChildByName('StickVisual');
+        if (stickVisual?.isValid) stickVisual.active = true;
+        const hud = this.node.getComponent('FarmHUD') as {
+            ensureDockVisible?: () => void;
+        } | null;
+        hud?.ensureDockVisible?.();
+        const stick = canvas
+            .getChildByName('TouchControls')
+            ?.getComponent('TouchJoystick') as { showFixedStick?: () => void } | null;
+        stick?.showFixedStick?.();
+        // Town/mine boot may flag claimable quests while the splash hid HUD —
+        // resync so QuestHud isn't stuck on the pre-flag inactive snapshot.
+        const questUi = this.node.getComponent('QuestPanel') as {
+            revealQuestHud?: () => void;
+        } | null;
+        questUi?.revealQuestHud?.();
     }
 
     private paintVeil(w: number, h: number) {

@@ -37,6 +37,7 @@ import { TsStory10032 } from './TsStory10032';
 import { TsStory10033 } from './TsStory10033';
 import { TsStory10034 } from './TsStory10034';
 import { TsStory10035 } from './TsStory10035';
+import { TsStory10036 } from './TsStory10036';
 
 const MAP: Record<number, () => AbsStory> = {
   10001: () => new TsStory10001(),
@@ -74,6 +75,7 @@ const MAP: Record<number, () => AbsStory> = {
   10033: () => new TsStory10033(),
   10034: () => new TsStory10034(),
   10035: () => new TsStory10035(),
+  10036: () => new TsStory10036(),
 };
 
 export function createTsStory(storyId: number): AbsStory | null {

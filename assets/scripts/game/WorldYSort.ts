@@ -110,6 +110,9 @@ export class WorldYSort extends Component {
         // Door FX use a south bias so they clear porch/yard sprites; that also
         // parks them over the hero. Pull overlapping movers back in front.
         this.promoteMoversPastDoorFx(desired);
+        // Garden bushes / soft props must not punch holes in the quest star trail.
+        // Buildings, timber, trees, and NPCs still occlude by normal footY.
+        this.promoteGuidePathPastSoftDecor(desired);
 
         for (let i = 0; i < desired.length; i++) {
             const n = desired[i]!;
@@ -119,6 +122,53 @@ export class WorldYSort extends Component {
             }
             if (n.getSiblingIndex() !== i) n.setSiblingIndex(i);
         }
+    }
+
+    /**
+     * Pull star-path motes in front of overlapping soft decor so the trail
+     * stays continuous in the playfield (bushes used to eat mid-path dots).
+     */
+    private promoteGuidePathPastSoftDecor(desired: Node[]): void {
+        let i = 0;
+        while (i < desired.length) {
+            const dot = desired[i]!;
+            if (dot.name !== 'guide_path_dot' || !dot.active) {
+                i++;
+                continue;
+            }
+            let dest = i;
+            for (let j = i + 1; j < desired.length; j++) {
+                const n = desired[j]!;
+                if (!this.isSoftPathOccluder(n.name)) continue;
+                if (!this.softOccluderOverlapsDot(dot, n)) continue;
+                dest = j;
+            }
+            if (dest === i) {
+                i++;
+                continue;
+            }
+            // After remove-at-i, old `dest` still indexes "insert after last occluder".
+            desired.splice(i, 1);
+            desired.splice(dest, 0, dot);
+            i++;
+        }
+    }
+
+    /** Yard/garden fluff that should never break the quest star trail. */
+    private isSoftPathOccluder(name: string): boolean {
+        if (name.startsWith('decor_garden_')) return true;
+        if (name.startsWith('decor_soft_')) return true;
+        if (name.startsWith('decor_rock_solid') && !name.includes('rockBig')) return true;
+        return false;
+    }
+
+    private softOccluderOverlapsDot(dot: Node, prop: Node): boolean {
+        const dx = Math.abs(dot.position.x - prop.position.x);
+        const dy = Math.abs(dot.position.y - prop.position.y);
+        const ui = prop.getComponent(UITransform);
+        const hw = ui ? Math.max(28, ui.contentSize.width * 0.55) : 36;
+        const hh = ui ? Math.max(24, ui.contentSize.height * 0.65) : 40;
+        return dx <= hw && dy <= hh;
     }
 
     /**
@@ -191,7 +241,9 @@ export class WorldYSort extends Component {
             name === 'Player' ||
             name === 'Crop' ||
             name === 'CropGrowUi' ||
-            name.startsWith('npc_')
+            name.startsWith('npc_') ||
+            // Star-path motes — per-dot footY so timber/buildings still occlude.
+            name === 'guide_path_dot'
         );
     }
 
@@ -199,6 +251,7 @@ export class WorldYSort extends Component {
         // Soft litter above fringe so flowers/weeds aren't buried under sod lips.
         if (this.isGroundLitter(name)) return 6;
         // Quest aim ring: over soil/tiles, under weeds / flowers / actors.
+        // Star path uses per-dot movers (`guide_path_dot`), not a ground slab.
         if (name === 'guide_aim_ripple') return 5;
         if (name.startsWith('fringe_')) return 5;
         if (name === 'lake_bridge' || name.startsWith('pond_pier_')) return 4;
@@ -245,8 +298,11 @@ export class WorldYSort extends Component {
     }
 
     private isGround(name: string): boolean {
-        // Tutorial click ring — ground band so it sits on soil but under crops/props.
+        // Tutorial click ring — ground band under crops/props/buildings.
+        // Star path motes are movers (`guide_path_dot`), not a ground slab.
         if (name === 'guide_aim_ripple') return true;
+        // Legacy pooled holder (inactive) — keep underfoot if it still exists.
+        if (name === 'guide_path' || name === 'guide_path_pool') return true;
         // lake_bridge_rail_s is an actor (Y-sorted) so the south rail occludes correctly.
         if (name === 'lake_bridge_rail_s') return false;
         // Tall mine seal faces are props — must Y-sort with timber/ore/player.

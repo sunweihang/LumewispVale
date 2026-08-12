@@ -11,17 +11,6 @@
     "unlock_mode": "reached"
   },
   {
-    "id": "seed_mix",
-    "name": "混合种子",
-    "desc": "泥土与草料拌成的种子袋",
-    "out_item": "seeds",
-    "out_count": 2,
-    "craft_seconds": 18,
-    "sort": 20,
-    "unlock_quest": 1003,
-    "unlock_mode": "completed"
-  },
-  {
     "id": "can_basic",
     "name": "水壶",
     "desc": "石片与泥土捏成的浇水壶",
@@ -53,38 +42,5 @@
     "sort": 27,
     "unlock_quest": 1034,
     "unlock_mode": "reached"
-  },
-  {
-    "id": "wood_bundle",
-    "name": "精制木料",
-    "desc": "用草绳捆扎，多出一根可用木料",
-    "out_item": "wood",
-    "out_count": 3,
-    "craft_seconds": 20,
-    "sort": 30,
-    "unlock_quest": 1033,
-    "unlock_mode": "completed"
-  },
-  {
-    "id": "stone_pack",
-    "name": "加固石料",
-    "desc": "泥土粘合碎石，得到更多石料",
-    "out_item": "stone",
-    "out_count": 2,
-    "craft_seconds": 22,
-    "sort": 40,
-    "unlock_quest": 1031,
-    "unlock_mode": "completed"
-  },
-  {
-    "id": "fish_bait_seed",
-    "name": "鱼肥种子",
-    "desc": "鱼骨与草料沤成的肥沃种子",
-    "out_item": "seeds",
-    "out_count": 3,
-    "craft_seconds": 28,
-    "sort": 50,
-    "unlock_quest": 1007,
-    "unlock_mode": "completed"
   }
 ]

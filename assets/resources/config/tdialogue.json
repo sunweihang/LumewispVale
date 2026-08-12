@@ -208,5 +208,11 @@
     "script_id": "girl_chat",
     "kind": "dialogue",
     "name": "露穗闲聊"
+  },
+  {
+    "id": 10036,
+    "script_id": "oreshop_pass",
+    "kind": "dialogue",
+    "name": "商会放行"
   }
 ]

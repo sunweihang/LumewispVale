@@ -25,32 +25,47 @@ import {
     PANEL_CLOSE_BTN,
     PANEL_CLOSE_PAD,
     UI_CREAM,
+    UI_GOLD,
     UI_INK,
     UI_INK_MUTE,
     UI_PRICE,
+    UI_STROKE,
     drawParchmentRow,
     drawWoodButton,
     drawWoodParchmentPanel,
     mountPanelCloseButton,
 } from './UiChrome';
 import { styleUiLabel } from './UiFont';
+import { GoldAmountHandle, formatGoldAmount, mountGoldAmount } from './UiGoldAmount';
 
 const { ccclass } = _decorator;
 
 const PANEL_W = 720;
 const PANEL_H = 980;
-const ROW_H = 96;
-/** Header Y (panel-local) — airy top stack so title / gold / tabs aren't crammed. */
-const TITLE_Y = PANEL_H * 0.5 - 72;
-const GOLD_Y = PANEL_H * 0.5 - 132;
-const TAB_Y = PANEL_H * 0.5 - 200;
+const ROW_H = 92;
+/** Compact header: title → purse → buy/sell tabs → list. */
+const TITLE_Y = PANEL_H * 0.5 - 64;
+const GOLD_Y = PANEL_H * 0.5 - 118;
+const TAB_Y = PANEL_H * 0.5 - 178;
 const TAB_H = 48;
 /** Top edge of first shop row (panel-local). */
-const LIST_TOP_SHOP = PANEL_H * 0.5 - 280;
-/** Accept / OK button center Y (panel-local). */
-const ACTION_Y = -PANEL_H * 0.35;
+const LIST_TOP_SHOP = PANEL_H * 0.5 - 248;
+const ROW_GAP = 8;
+/** Footer: hint above qty / confirm dock. */
+const HINT_Y = -PANEL_H * 0.5 + 168;
+/** Accept / OK / trade-confirm button center Y (panel-local). */
+const ACTION_Y = -PANEL_H * 0.5 + 88;
 const ACTION_W = 320;
 const ACTION_H = 72;
+/** Qty stepper (±) while a shop row is selected. */
+const QTY_BTN = 56;
+const QTY_Y = ACTION_Y;
+const MINUS_X = -250;
+const PLUS_X = -90;
+const QTY_LAB_X = -170;
+const CONFIRM_X = 160;
+const CONFIRM_W = 300;
+const TRADE_QTY_MAX = 99;
 
 /**
  * Town shop / board UI — FarmHUD wood + parchment chrome, gold → FarmSystem.
@@ -63,17 +78,23 @@ export class TownShopPanel extends Component {
     private _root: Node | null = null;
     private _dimmer: Node | null = null;
     private _title: Label | null = null;
-    private _goldLab: Label | null = null;
+    private _goldAmt: GoldAmountHandle | null = null;
     private _hint: Label | null = null;
     private _body: Label | null = null;
     private _bodyCard: Node | null = null;
     private _actionBtn: Node | null = null;
     private _actionLab: Label | null = null;
+    /** Verb + gold chip on the trade confirm button. */
+    private _tradeVerbLab: Label | null = null;
+    private _tradeGold: GoldAmountHandle | null = null;
     private _buyTab: Node | null = null;
     private _sellTab: Node | null = null;
     private _buyTabLab: Label | null = null;
     private _sellTabLab: Label | null = null;
     private _closeBtn: Node | null = null;
+    private _minusBtn: Node | null = null;
+    private _plusBtn: Node | null = null;
+    private _qtyLab: Label | null = null;
     private _rows: Node[] = [];
     private _sellRows: TownSellGoods[] = [];
     private _shop: TownShopDef | null = null;
@@ -81,6 +102,8 @@ export class TownShopPanel extends Component {
     private _quest: TownBoardQuest | null = null;
     private _mode: 'shop' | 'board' | 'info' = 'shop';
     private _shopSide: 'buy' | 'sell' = 'buy';
+    private _selIndex = -1;
+    private _tradeQty = 1;
     private _infoTitle = '';
     private _infoBody = '';
     private _prevBlocking = false;
@@ -101,10 +124,21 @@ export class TownShopPanel extends Component {
         return this._shopSide;
     }
 
-    /** Accept / OK chrome — TutorialGuide points here while the board is open. */
+    /** True when a buy/sell row is selected (qty dock + confirm live). */
+    get hasTradeSelection(): boolean {
+        return this.isShopOpen && this._selIndex >= 0;
+    }
+
+    /** Accept / OK / trade-confirm — TutorialGuide points here. */
     acceptBtnNode(): Node | null {
         if (!this.isOpen || !this._actionBtn?.active) return null;
         return this._actionBtn;
+    }
+
+    /** Shop confirm after a row is selected (same chrome as accept). */
+    confirmBtnNode(): Node | null {
+        if (!this.isShopOpen || this._selIndex < 0) return null;
+        return this.acceptBtnNode();
     }
 
     buyTabNode(): Node | null {
@@ -137,8 +171,8 @@ export class TownShopPanel extends Component {
     }
 
     /**
-     * Quest 1020 / 1021: keep the idle arrow over the shop and lock taps to the
-     * guided control (tab or first row) until buy / sell completes.
+     * Quest 1020 / 1021 while shop is open and trade not yet done — force tab →
+     * row → confirm (TutorialGuide hollow + guided taps).
      */
     needsShopTradeGuide(): boolean {
         if (!this.isShopOpen) return false;
@@ -174,11 +208,14 @@ export class TownShopPanel extends Component {
         if (!shop) return;
         this._mode = 'shop';
         const active = this.quests?.activeQuest?.id ?? 0;
-        // Prefer sell tab when the live mainline step is「出手盈余」.
-        this._shopSide = active === 1021 ? 'sell' : 'buy';
+        // Open on the opposite tab so TutorialGuide can teach「购买/出售」页签.
+        if (active === 1020) this._shopSide = 'sell';
+        else if (active === 1021) this._shopSide = 'buy';
+        else this._shopSide = 'buy';
         this._shop = shop;
         this._board = null;
         this._quest = null;
+        this.clearTradeSelection();
         this.refresh();
         this.show();
     }
@@ -187,6 +224,7 @@ export class TownShopPanel extends Component {
         this._mode = 'board';
         this._board = kind;
         this._shop = null;
+        this.clearTradeSelection();
         const pool = kind === 'police' ? POLICE_QUEST_POOL : POST_QUEST_POOL;
         const fresh = pool.filter((q) => !this.quests?.hasBoardQuest(q.id));
         const pick = fresh.length > 0 ? fresh : pool;
@@ -202,6 +240,7 @@ export class TownShopPanel extends Component {
         this._shop = null;
         this._board = null;
         this._quest = null;
+        this.clearTradeSelection();
         this.refresh();
         this.show();
     }
@@ -243,32 +282,38 @@ export class TownShopPanel extends Component {
                 if (local.x > -220 && local.x < -20) {
                     playUiClick();
                     this._shopSide = 'buy';
+                    this.clearTradeSelection();
                     this.refresh();
                     return true;
                 }
                 if (local.x > 20 && local.x < 220) {
                     playUiClick();
                     this._shopSide = 'sell';
+                    this.clearTradeSelection();
                     this.refresh();
                     return true;
                 }
             }
+            // Qty stepper + confirm (only when a row is selected).
+            if (this._selIndex >= 0 && this.hitQtyDock(local.x, local.y)) {
+                return true;
+            }
             const listTop = LIST_TOP_SHOP;
             if (this._shopSide === 'buy') {
                 for (let i = 0; i < this._shop.goods.length; i++) {
-                    const rowY = listTop - i * (ROW_H + 10) - ROW_H * 0.5;
+                    const rowY = listTop - i * (ROW_H + ROW_GAP) - ROW_H * 0.5;
                     if (Math.abs(local.y - rowY) < ROW_H * 0.5 && Math.abs(local.x) < PANEL_W * 0.42) {
                         playUiClick();
-                        this.buy(this._shop.goods[i]);
+                        this.selectTradeRow(i);
                         return true;
                     }
                 }
             } else {
                 for (let i = 0; i < this._sellRows.length; i++) {
-                    const rowY = listTop - i * (ROW_H + 10) - ROW_H * 0.5;
+                    const rowY = listTop - i * (ROW_H + ROW_GAP) - ROW_H * 0.5;
                     if (Math.abs(local.y - rowY) < ROW_H * 0.5 && Math.abs(local.x) < PANEL_W * 0.42) {
                         playUiClick();
-                        this.sell(this._sellRows[i]);
+                        this.selectTradeRow(i);
                         return true;
                     }
                 }
@@ -292,61 +337,93 @@ export class TownShopPanel extends Component {
     }
 
     /** Forced control while quest 1020 / 1021 is live inside the shop. */
-    private tradeGuideTarget(): 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row' | null {
+    private tradeGuideTarget(): 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row' | 'confirm' | null {
         if (!this.needsShopTradeGuide() || !this._shop) return null;
         const qid = this.quests?.activeQuest?.id ?? 0;
         if (qid === 1021) {
             if (this._shopSide !== 'sell') return 'sell-tab';
-            return this._sellRows.length > 0 ? 'sell-row' : null;
+            if (this._sellRows.length === 0) return null;
+            if (this._selIndex !== 0) return 'sell-row';
+            return 'confirm';
         }
         if (qid === 1020) {
             if (this._shopSide !== 'buy') return 'buy-tab';
-            return this._shop.goods.length > 0 ? 'buy-row' : null;
+            if (this._shop.goods.length === 0) return null;
+            if (this._selIndex !== 0) return 'buy-row';
+            return 'confirm';
         }
         return null;
     }
 
-    /** Swallow every tap except the guided tab / first list row. */
+    /** Swallow every tap except the guided tab / first list row / confirm. */
     private handleGuidedShopTap(
         lx: number,
         ly: number,
-        guide: 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row',
+        guide: 'buy-tab' | 'sell-tab' | 'buy-row' | 'sell-row' | 'confirm',
     ) {
         if (guide === 'buy-tab' || guide === 'sell-tab') {
             if (ly > TAB_Y - TAB_H * 0.5 - 6 && ly < TAB_Y + TAB_H * 0.5 + 6) {
                 if (guide === 'buy-tab' && lx > -220 && lx < -20) {
                     playUiClick();
                     this._shopSide = 'buy';
+                    this.clearTradeSelection();
                     this.refresh();
                     return;
                 }
                 if (guide === 'sell-tab' && lx > 20 && lx < 220) {
                     playUiClick();
                     this._shopSide = 'sell';
+                    this.clearTradeSelection();
                     this.refresh();
                     return;
                 }
             }
             return;
         }
+        if (guide === 'confirm') {
+            if (this.hitConfirm(lx, ly)) {
+                playUiClick();
+                this.confirmTrade();
+            }
+            return;
+        }
         const listTop = LIST_TOP_SHOP;
         const rowY = listTop - ROW_H * 0.5;
         if (Math.abs(ly - rowY) >= ROW_H * 0.5 || Math.abs(lx) >= PANEL_W * 0.42) return;
-        if (guide === 'buy-row') {
-            const g = this._shop?.goods[0];
-            if (!g) return;
-            playUiClick();
-            this.buy(g);
-            return;
-        }
-        const g = this._sellRows[0];
-        if (!g) return;
         playUiClick();
-        this.sell(g);
+        this.selectTradeRow(0);
     }
 
     private hitAction(lx: number, ly: number): boolean {
         return Math.abs(lx) < ACTION_W * 0.5 && Math.abs(ly - ACTION_Y) < ACTION_H * 0.5 + 8;
+    }
+
+    private hitConfirm(lx: number, ly: number): boolean {
+        return (
+            Math.abs(lx - CONFIRM_X) < CONFIRM_W * 0.5 &&
+            Math.abs(ly - QTY_Y) < ACTION_H * 0.5 + 8
+        );
+    }
+
+    /** Qty − / + / confirm. Returns true if a control was hit. */
+    private hitQtyDock(lx: number, ly: number): boolean {
+        if (Math.abs(ly - QTY_Y) > QTY_BTN * 0.55 + 8) return false;
+        if (Math.abs(lx - MINUS_X) < QTY_BTN * 0.55) {
+            playUiClick();
+            this.nudgeTradeQty(-1);
+            return true;
+        }
+        if (Math.abs(lx - PLUS_X) < QTY_BTN * 0.55) {
+            playUiClick();
+            this.nudgeTradeQty(1);
+            return true;
+        }
+        if (this.hitConfirm(lx, ly)) {
+            playUiClick();
+            this.confirmTrade();
+            return true;
+        }
+        return false;
     }
 
     private uiToCanvasLocal(uiX: number, uiY: number): { x: number; y: number } {
@@ -386,37 +463,105 @@ export class TownShopPanel extends Component {
         InputBridge.clear();
     }
 
-    private buy(g: TownGoods) {
-        const farm = this.farm;
-        if (!farm) return;
-        if (farm.gold < g.price) {
-            this.setHint('金币不足');
-            return;
-        }
-        if (!farm.spendGold(g.price)) {
-            this.setHint('金币不足');
-            return;
-        }
-        this.grant(g);
-        farm.notifyInventoryChanged();
-        this.quests?.noteFlag('shop_buy');
-        this.setHint(`已购买 ${g.title} ×${g.count}`);
-        this.refreshGold();
+    private clearTradeSelection() {
+        this._selIndex = -1;
+        this._tradeQty = 1;
     }
 
-    private sell(g: TownSellGoods) {
+    private selectTradeRow(index: number) {
+        this._selIndex = index;
+        this._tradeQty = 1;
+        this.clampTradeQty();
+        this.refresh();
+    }
+
+    private nudgeTradeQty(delta: number) {
+        this._tradeQty += delta;
+        this.clampTradeQty();
+        this.refreshTradeDock();
+    }
+
+    private clampTradeQty() {
+        const max = this.maxTradeQty();
+        if (max < 1) {
+            this._tradeQty = 1;
+            return;
+        }
+        this._tradeQty = Math.max(1, Math.min(max, this._tradeQty));
+    }
+
+    private maxTradeQty(): number {
+        if (this._selIndex < 0) return 0;
+        if (this._shopSide === 'buy') {
+            const g = this._shop?.goods[this._selIndex];
+            if (!g || g.price <= 0) return 0;
+            return Math.min(TRADE_QTY_MAX, Math.floor((this.farm?.gold ?? 0) / g.price));
+        }
+        const g = this._sellRows[this._selIndex];
+        if (!g) return 0;
+        return Math.min(TRADE_QTY_MAX, this.sellCount(g.id));
+    }
+
+    private confirmTrade() {
+        if (this._selIndex < 0) return;
+        this.clampTradeQty();
+        if (this._shopSide === 'buy') {
+            const g = this._shop?.goods[this._selIndex];
+            if (g) this.buy(g, this._tradeQty);
+            return;
+        }
+        const g = this._sellRows[this._selIndex];
+        if (g) this.sell(g, this._tradeQty);
+    }
+
+    private buy(g: TownGoods, packs: number) {
         const farm = this.farm;
         if (!farm) return;
+        const n = Math.max(1, Math.floor(packs));
+        const total = g.price * n;
+        if (farm.gold < total) {
+            this.setHint('金币不足');
+            return;
+        }
+        if (!farm.spendGold(total)) {
+            this.setHint('金币不足');
+            return;
+        }
+        this.grant(g, n);
+        farm.notifyInventoryChanged();
+        this.quests?.noteFlag('shop_buy');
+        this.setHint(`已购买 ${g.title} ×${g.count * n}`);
+        this.clampTradeQty();
+        this.refreshGold();
+        this.refreshTradeDock();
+    }
+
+    private sell(g: TownSellGoods, count: number) {
+        const farm = this.farm;
+        if (!farm) return;
+        const n = Math.max(1, Math.floor(count));
         const have = this.sellCount(g.id);
         if (have < 1) {
             this.setHint('没有可出售的库存');
             return;
         }
-        this.takeSell(g.id, 1);
-        farm.addGold(g.price);
+        const take = Math.min(n, have);
+        this.takeSell(g.id, take);
+        const gain = g.price * take;
+        farm.addGold(gain);
         farm.notifyInventoryChanged();
         this.quests?.noteFlag('shop_sell');
-        this.setHint(`已出售 ${g.title} +${g.price}G`);
+        this.setHint(`已出售 ${g.title} ×${take}  ${formatGoldAmount(gain, { sign: '+' })}`);
+        // Rebuild list — drop emptied rows; keep selection if still valid.
+        const keepId = g.id;
+        this._sellRows = TOWN_SELL_GOODS.filter((row) => this.sellCount(row.id) > 0);
+        const next = this._sellRows.findIndex((row) => row.id === keepId);
+        if (next >= 0) {
+            this._selIndex = next;
+            this.clampTradeQty();
+        } else {
+            this.clearTradeSelection();
+        }
         this.refresh();
     }
 
@@ -467,34 +612,35 @@ export class TownShopPanel extends Component {
         }
     }
 
-    private grant(g: TownGoods) {
+    private grant(g: TownGoods, packs = 1) {
         const farm = this.farm!;
+        const n = g.count * packs;
         switch (g.id) {
             case 'seed_parsnip':
             case 'seed_potato':
             case 'seed_cauli':
             case 'seed_berry':
             case 'seed_pumpkin':
-                farm.seeds += g.count;
-                farm.noteSeedPurchase(g.id, g.count);
+                farm.seeds += n;
+                farm.noteSeedPurchase(g.id, n);
                 break;
             case 'ore_stone':
-                farm.stone += g.count;
+                farm.stone += n;
                 break;
             case 'ore_copper':
-                farm.copper += g.count;
+                farm.copper += n;
                 break;
             case 'ore_iron':
-                farm.iron += g.count;
+                farm.iron += n;
                 break;
             case 'ore_gold':
-                farm.goldOre += g.count;
+                farm.goldOre += n;
                 break;
             case 'wood_pack':
-                farm.wood += g.count;
+                farm.wood += n;
                 break;
             case 'fiber_pack':
-                farm.grass += g.count;
+                farm.grass += n;
                 break;
             case 'bait':
             case 'snack':
@@ -512,7 +658,7 @@ export class TownShopPanel extends Component {
             this.setHint(
                 this.quests.hasBoardQuest(q.id)
                     ? '这份委托已经在任务里了'
-                    : '委托栏已满，先去任务里交付几份吧',
+                    : '委托栏已满，先去目标地点交付几份吧',
             );
             return;
         }
@@ -532,10 +678,9 @@ export class TownShopPanel extends Component {
         if (this._sellTab) this._sellTab.active = tabsOn;
         const boardOrInfo = this._mode === 'board' || this._mode === 'info';
         if (this._bodyCard) this._bodyCard.active = boardOrInfo;
-        if (this._actionBtn) this._actionBtn.active = boardOrInfo;
-        if (this._goldLab) {
-            // Board / info still show purse — reward text references gold.
-            this._goldLab.node.active = this._mode !== 'info';
+        if (this._goldAmt) {
+            // Board still shows purse; info dialogs hide it.
+            this._goldAmt.setVisible(this._mode !== 'info');
         }
         if (this._mode === 'shop' && this._shop) {
             this._title.string = this._shop.title;
@@ -543,36 +688,56 @@ export class TownShopPanel extends Component {
             this.paintTab(this._sellTab, this._sellTabLab, this._shopSide === 'sell');
             if (this._body) this._body.string = '';
             if (this._shopSide === 'buy') {
-                this._hint.string = '点击商品行购买';
                 this.buildShopRows(this._shop.goods, LIST_TOP_SHOP);
+                if (this._selIndex >= this._shop.goods.length) this.clearTradeSelection();
+                this._hint.string =
+                    this._selIndex < 0 ? '点选商品，调节数量后确认' : '确认购买';
             } else {
                 this._sellRows = TOWN_SELL_GOODS.filter((g) => this.sellCount(g.id) > 0);
+                if (this._selIndex >= this._sellRows.length) this.clearTradeSelection();
                 if (this._sellRows.length === 0) {
-                    this._hint.string = '背包里暂无可出售的收获物\n（作物、鱼、草料、木石矿）';
+                    this._hint.string = '暂无可出售的收获物';
                 } else {
-                    this._hint.string = '点击一行出售 1 件';
                     this.buildSellRows(this._sellRows, LIST_TOP_SHOP);
+                    this._hint.string =
+                        this._selIndex < 0 ? '点选收获物，调节数量后确认' : '确认出售';
                 }
             }
+            this.refreshTradeDock();
+            this.ensureHintLayout();
         } else if (this._mode === 'board' && this._quest) {
+            this.setQtyDockActive(false);
+            if (this._actionBtn) {
+                this._actionBtn.active = true;
+                this._actionBtn.setPosition(0, ACTION_Y, 0);
+                const ut = this._actionBtn.getComponent(UITransform);
+                ut?.setContentSize(ACTION_W, ACTION_H);
+            }
             const head = this._board === 'police' ? '警察局任务板' : '邮局急件';
             this._title.string = head;
             if (this._body) {
                 this._body.string =
                     `「${this._quest.title}」\n\n` +
                     `${this._quest.desc}\n\n` +
-                    `报酬  ${this._quest.rewardGold}G`;
+                    `报酬  ${formatGoldAmount(this._quest.rewardGold)}`;
             }
-            this._hint.string = '接取后可在任务「委托」页查看与交付';
-            this.setActionLabel('接受委托');
+            this._hint.string = '接取后走到目标地点交互交付（任务「委托」可查看）';
+            this.setPlainAction('接受委托');
             this.paintAction(true);
             this.ensureBodyLayout();
             this.ensureHintLayout();
         } else if (this._mode === 'info') {
+            this.setQtyDockActive(false);
+            if (this._actionBtn) {
+                this._actionBtn.active = true;
+                this._actionBtn.setPosition(0, ACTION_Y, 0);
+                const ut = this._actionBtn.getComponent(UITransform);
+                ut?.setContentSize(ACTION_W, ACTION_H);
+            }
             this._title.string = this._infoTitle;
             if (this._body) this._body.string = this._infoBody;
             this._hint.string = '';
-            this.setActionLabel('知道了');
+            this.setPlainAction('知道了');
             this.paintAction(false);
             this.ensureBodyLayout();
             this.ensureHintLayout();
@@ -600,7 +765,7 @@ export class TownShopPanel extends Component {
         const ut = n.getComponent(UITransform);
         if (!ut) return;
         const w = 640;
-        const h = 72;
+        const h = 48;
         if (ut.contentSize.width < w - 1 || ut.contentSize.width > w + 1) {
             ut.setContentSize(w, Math.max(ut.contentSize.height, h));
         } else if (ut.contentSize.height < h) {
@@ -608,16 +773,56 @@ export class TownShopPanel extends Component {
         }
     }
 
-    private setActionLabel(s: string) {
-        if (this._actionLab) this._actionLab.string = s;
+    /** Plain centered label (board accept / info OK / disabled trade). */
+    private setPlainAction(s: string) {
+        if (this._actionLab) {
+            this._actionLab.node.active = true;
+            this._actionLab.string = s;
+        }
+        if (this._tradeVerbLab) this._tradeVerbLab.node.active = false;
+        this._tradeGold?.setVisible(false);
+    }
+
+    /** Trade confirm: verb + [G] x N. */
+    private setTradeAction(verb: string, total: number, sign: '+' | '' = '') {
+        if (this._actionLab) this._actionLab.node.active = false;
+        if (this._tradeVerbLab) {
+            this._tradeVerbLab.node.active = true;
+            this._tradeVerbLab.string = verb;
+            this._tradeVerbLab.color = UI_INK;
+        }
+        if (this._tradeGold) {
+            this._tradeGold.setVisible(true);
+            this._tradeGold.setAmount(total, { sign });
+            this.layoutTradeConfirm(verb);
+        }
+    }
+
+    private layoutTradeConfirm(verb: string) {
+        const verbN = this._tradeVerbLab?.node;
+        const gold = this._tradeGold;
+        if (!verbN || !gold) return;
+        const fontSize = 28;
+        const verbW = Math.max(56, Math.ceil(fontSize * 0.95 * verb.length));
+        verbN.getComponent(UITransform)?.setContentSize(verbW, ACTION_H - 8);
+        const goldW = gold.root.getComponent(UITransform)?.contentSize.width ?? 100;
+        const gap = 10;
+        const total = verbW + gap + goldW;
+        const left = -total * 0.5;
+        verbN.setPosition(left + verbW * 0.5, 0, 0);
+        gold.root.setPosition(left + verbW + gap + goldW * 0.5, 0, 0);
     }
 
     private paintAction(primary: boolean) {
         const gfx = this._actionBtn?.getComponent(Graphics);
         if (!gfx) return;
-        drawWoodButton(gfx, ACTION_W, ACTION_H, primary ? 'primary' : 'muted');
-        if (this._actionLab) {
+        const w = this._actionBtn?.getComponent(UITransform)?.contentSize.width ?? ACTION_W;
+        drawWoodButton(gfx, w, ACTION_H, primary ? 'primary' : 'muted');
+        if (this._actionLab?.node.active) {
             this._actionLab.color = primary ? UI_INK : UI_CREAM;
+        }
+        if (this._tradeVerbLab?.node.active) {
+            this._tradeVerbLab.color = primary ? UI_INK : UI_CREAM;
         }
     }
 
@@ -628,10 +833,62 @@ export class TownShopPanel extends Component {
         if (lab) lab.color = on ? UI_CREAM : UI_INK;
     }
 
-    private refreshGold() {
-        if (this._goldLab) {
-            this._goldLab.string = `金币 ${this.farm?.gold ?? 0}`;
+    private setQtyDockActive(on: boolean) {
+        if (this._minusBtn) this._minusBtn.active = on;
+        if (this._plusBtn) this._plusBtn.active = on;
+        if (this._qtyLab) this._qtyLab.node.active = on;
+        if (!on && this._actionBtn && this._mode === 'shop') {
+            this._actionBtn.active = false;
+            if (this._tradeVerbLab) this._tradeVerbLab.node.active = false;
+            this._tradeGold?.setVisible(false);
         }
+    }
+
+    private refreshTradeDock() {
+        const on = this._mode === 'shop' && this._selIndex >= 0;
+        this.setQtyDockActive(on);
+        if (!on || !this._actionBtn || !this._qtyLab) return;
+
+        this.clampTradeQty();
+        this._qtyLab.string = `${this._tradeQty}`;
+
+        this._actionBtn.active = true;
+        this._actionBtn.setPosition(CONFIRM_X, QTY_Y, 0);
+        const ut = this._actionBtn.getComponent(UITransform);
+        ut?.setContentSize(CONFIRM_W, ACTION_H);
+        const labUt = this._actionLab?.node.getComponent(UITransform);
+        labUt?.setContentSize(CONFIRM_W - 20, ACTION_H - 8);
+
+        const max = this.maxTradeQty();
+        const can = max >= 1 && this._tradeQty >= 1 && this._tradeQty <= max;
+        if (this._shopSide === 'buy') {
+            const g = this._shop?.goods[this._selIndex];
+            const total = g ? g.price * this._tradeQty : 0;
+            if (can) this.setTradeAction('购买', total);
+            else this.setPlainAction('金币不足');
+            this.paintAction(can);
+        } else {
+            const g = this._sellRows[this._selIndex];
+            const total = g ? g.price * this._tradeQty : 0;
+            if (can) this.setTradeAction('出售', total, '+');
+            else this.setPlainAction('无法出售');
+            this.paintAction(can);
+        }
+
+        this.paintQtyBtn(this._minusBtn, this._tradeQty > 1);
+        this.paintQtyBtn(this._plusBtn, this._tradeQty < max);
+    }
+
+    private paintQtyBtn(node: Node | null, enabled: boolean) {
+        if (!node) return;
+        const gfx = node.getComponent(Graphics);
+        if (gfx) drawWoodButton(gfx, QTY_BTN, QTY_BTN, enabled ? 'primary' : 'muted');
+        const lab = node.getChildByName('Label')?.getComponent(Label);
+        if (lab) lab.color = enabled ? UI_INK : UI_CREAM;
+    }
+
+    private refreshGold() {
+        this._goldAmt?.setAmount(this.farm?.gold ?? 0);
     }
 
     private setHint(s: string) {
@@ -648,10 +905,12 @@ export class TownShopPanel extends Component {
             this._rows.push(
                 this.makeRow(
                     `row_${g.id}_${i}`,
-                    listTop - i * (ROW_H + 10) - ROW_H * 0.5,
-                    `${g.title}  ×${g.count}`,
-                    g.desc,
-                    `${g.price}G`,
+                    listTop - i * (ROW_H + ROW_GAP) - ROW_H * 0.5,
+                    g.title,
+                    `每份 ×${g.count}`,
+                    g.price,
+                    '',
+                    i === this._selIndex,
                 ),
             );
         });
@@ -663,16 +922,27 @@ export class TownShopPanel extends Component {
             this._rows.push(
                 this.makeRow(
                     `sell_${g.id}_${i}`,
-                    listTop - i * (ROW_H + 10) - ROW_H * 0.5,
-                    `${g.title}  ×${n}`,
-                    g.desc,
-                    `+${g.price}G`,
+                    listTop - i * (ROW_H + ROW_GAP) - ROW_H * 0.5,
+                    g.title,
+                    `持有 ×${n}`,
+                    g.price,
+                    '+',
+                    i === this._selIndex,
                 ),
             );
         });
     }
 
-    private makeRow(name: string, y: number, title: string, desc: string, priceText: string): Node {
+    /** Shop list row — title / stock hint / unit price chip; selected gets gold rim. */
+    private makeRow(
+        name: string,
+        y: number,
+        title: string,
+        meta: string,
+        price: number,
+        sign: '+' | '',
+        selected: boolean,
+    ): Node {
         const row = new Node(name);
         row.layer = this.node.layer;
         row.setParent(this._root!);
@@ -682,37 +952,73 @@ export class TownShopPanel extends Component {
         ut.setContentSize(rowW, ROW_H);
         const gfx = row.addComponent(Graphics);
         drawParchmentRow(gfx, rowW, ROW_H, 12);
+        if (selected) {
+            gfx.strokeColor = UI_GOLD;
+            gfx.lineWidth = 4;
+            gfx.roundRect(-rowW * 0.5, -ROW_H * 0.5, rowW, ROW_H, 12);
+            gfx.stroke();
+            gfx.strokeColor = UI_STROKE;
+            gfx.lineWidth = 2;
+            gfx.roundRect(-rowW * 0.5 + 3, -ROW_H * 0.5 + 3, rowW - 6, ROW_H - 6, 10);
+            gfx.stroke();
+        }
 
+        const textLeft = -rowW * 0.5 + 28;
         const labN = new Node('lab');
         labN.layer = row.layer;
         labN.setParent(row);
-        labN.setPosition(-20, 8, 0);
-        labN.addComponent(UITransform).setContentSize(480, 40);
+        labN.setPosition(textLeft + 200, 12, 0);
+        labN.addComponent(UITransform).setContentSize(400, 36);
         const lab = labN.addComponent(Label);
         lab.string = title;
+        lab.overflow = Label.Overflow.CLAMP;
         lab.horizontalAlign = Label.HorizontalAlign.LEFT;
         styleUiLabel(lab, { size: 28, color: UI_INK, outline: false });
 
         const descN = new Node('desc');
         descN.layer = row.layer;
         descN.setParent(row);
-        descN.setPosition(-20, -22, 0);
-        descN.addComponent(UITransform).setContentSize(480, 28);
+        descN.setPosition(textLeft + 200, -20, 0);
+        descN.addComponent(UITransform).setContentSize(400, 28);
         const descLab = descN.addComponent(Label);
-        descLab.string = desc;
+        descLab.string = meta;
+        descLab.overflow = Label.Overflow.CLAMP;
         descLab.horizontalAlign = Label.HorizontalAlign.LEFT;
         styleUiLabel(descLab, { size: 20, color: UI_INK_MUTE, outline: false });
 
-        const priceN = new Node('price');
-        priceN.layer = row.layer;
-        priceN.setParent(row);
-        priceN.setPosition(260, 0, 0);
-        priceN.addComponent(UITransform).setContentSize(120, 40);
-        const price = priceN.addComponent(Label);
-        price.string = priceText;
-        price.horizontalAlign = Label.HorizontalAlign.RIGHT;
-        styleUiLabel(price, { size: 28, color: UI_PRICE, outline: false });
+        mountGoldAmount(row, {
+            name: 'Price',
+            x: rowW * 0.5 - 88,
+            y: 0,
+            iconSize: 34,
+            fontSize: 26,
+            color: UI_PRICE,
+            align: 'right',
+            amount: price,
+            sign,
+        });
         return row;
+    }
+
+    private makeQtyBtn(name: string, x: number, label: string): Node {
+        const btn = new Node(name);
+        btn.layer = this._root!.layer;
+        btn.setParent(this._root!);
+        btn.setPosition(x, QTY_Y, 0);
+        btn.addComponent(UITransform).setContentSize(QTY_BTN, QTY_BTN);
+        btn.addComponent(Graphics);
+        const labN = new Node('Label');
+        labN.layer = btn.layer;
+        labN.setParent(btn);
+        labN.addComponent(UITransform).setContentSize(QTY_BTN - 8, QTY_BTN - 8);
+        const lab = labN.addComponent(Label);
+        lab.string = label;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, { size: 34, color: UI_INK, outline: false });
+        this.paintQtyBtn(btn, true);
+        btn.active = false;
+        return btn;
     }
 
     private build() {
@@ -751,15 +1057,16 @@ export class TownShopPanel extends Component {
         styleUiLabel(title, { size: 36, color: UI_INK, outline: false });
         this._title = title;
 
-        const goldN = new Node('Gold');
-        goldN.layer = root.layer;
-        goldN.setParent(root);
-        goldN.setPosition(0, GOLD_Y, 0);
-        goldN.addComponent(UITransform).setContentSize(400, 36);
-        const gold = goldN.addComponent(Label);
-        gold.horizontalAlign = Label.HorizontalAlign.CENTER;
-        styleUiLabel(gold, { size: 26, color: UI_PRICE, outline: false });
-        this._goldLab = gold;
+        this._goldAmt = mountGoldAmount(root, {
+            name: 'Gold',
+            x: 0,
+            y: GOLD_Y,
+            iconSize: 36,
+            fontSize: 28,
+            color: UI_PRICE,
+            align: 'center',
+            amount: 0,
+        });
 
         const buyTab = new Node('BuyTab');
         buyTab.layer = root.layer;
@@ -829,7 +1136,7 @@ export class TownShopPanel extends Component {
         const hintN = new Node('Hint');
         hintN.layer = root.layer;
         hintN.setParent(root);
-        hintN.setPosition(0, -PANEL_H * 0.5 + 168, 0);
+        hintN.setPosition(0, HINT_Y, 0);
         const hintUt = hintN.addComponent(UITransform);
         const hint = hintN.addComponent(Label);
         hint.overflow = Label.Overflow.CLAMP;
@@ -837,8 +1144,24 @@ export class TownShopPanel extends Component {
         hint.horizontalAlign = Label.HorizontalAlign.CENTER;
         hint.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(hint, { size: 22, color: UI_INK_MUTE, outline: false });
-        hintUt.setContentSize(640, 72);
+        hintUt.setContentSize(640, 48);
         this._hint = hint;
+
+        this._minusBtn = this.makeQtyBtn('QtyMinus', MINUS_X, '−');
+        this._plusBtn = this.makeQtyBtn('QtyPlus', PLUS_X, '+');
+
+        const qtyN = new Node('QtyValue');
+        qtyN.layer = root.layer;
+        qtyN.setParent(root);
+        qtyN.setPosition(QTY_LAB_X, QTY_Y, 0);
+        qtyN.addComponent(UITransform).setContentSize(80, 48);
+        const qtyLab = qtyN.addComponent(Label);
+        qtyLab.string = '1';
+        qtyLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        qtyLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(qtyLab, { size: 32, color: UI_INK, outline: false });
+        qtyN.active = false;
+        this._qtyLab = qtyLab;
 
         const action = new Node('ActionBtn');
         action.layer = root.layer;
@@ -854,9 +1177,33 @@ export class TownShopPanel extends Component {
         actionLab.string = '接受委托';
         actionLab.horizontalAlign = Label.HorizontalAlign.CENTER;
         actionLab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(actionLab, { size: 30, color: UI_INK, outline: false });
+        styleUiLabel(actionLab, { size: 28, color: UI_INK, outline: false });
         this._actionBtn = action;
         this._actionLab = actionLab;
+
+        const tradeVerbN = new Node('TradeVerb');
+        tradeVerbN.layer = action.layer;
+        tradeVerbN.setParent(action);
+        tradeVerbN.addComponent(UITransform).setContentSize(80, ACTION_H - 8);
+        const tradeVerb = tradeVerbN.addComponent(Label);
+        tradeVerb.string = '购买';
+        tradeVerb.horizontalAlign = Label.HorizontalAlign.CENTER;
+        tradeVerb.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(tradeVerb, { size: 28, color: UI_INK, outline: false });
+        tradeVerbN.active = false;
+        this._tradeVerbLab = tradeVerb;
+
+        this._tradeGold = mountGoldAmount(action, {
+            name: 'TradeGold',
+            x: 40,
+            y: 0,
+            iconSize: 32,
+            fontSize: 26,
+            color: UI_INK,
+            align: 'left',
+            amount: 0,
+        });
+        this._tradeGold.setVisible(false);
 
         this._closeBtn = mountPanelCloseButton(root, PANEL_W, PANEL_H, { name: 'Close' });
     }

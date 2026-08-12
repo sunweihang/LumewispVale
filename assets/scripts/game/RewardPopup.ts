@@ -293,14 +293,14 @@ export class RewardPopup extends Component {
             this.loadIcon(r.uuid, sp);
         }
 
-        // Single line: 金币 x 20
+        // Gold: icon already above → "x 20". Items keep "名称 x N".
         const labN = new Node('Label');
         labN.layer = host.layer;
         labN.setParent(chip);
         labN.setPosition(0, -48, 0);
         labN.addComponent(UITransform).setContentSize(chipW - 4, 36);
         const lab = labN.addComponent(Label);
-        lab.string = `${r.name} x ${r.count}`;
+        lab.string = r.kind === 'gold' ? `x ${r.count}` : `${r.name} x ${r.count}`;
         lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
         lab.overflow = Label.Overflow.SHRINK;
