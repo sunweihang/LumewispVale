@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "graphId": "guide_27",
+  "profile": {
+    "name": "guide",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "GuideEntranceBlueprint",
+        "TryBagToHotbarBlueprint",
+        "TrySelectToolBlueprint",
+        "TryOpenBagBlueprint",
+        "TryWorldPlotBlueprint",
+        "TryWorldDecorBlueprint",
+        "TryWorldNodeBlueprint",
+        "TryFishBlueprint",
+        "TryCraftBenchBlueprint",
+        "TryHarvestBoostBlueprint",
+        "TryHintFarmBlueprint",
+        "TryTownGateBlueprint",
+        "TryMayorBlueprint",
+        "TryTownOutdoorBlueprint",
+        "TryIndoorOrDoorBlueprint",
+        "TryMineCopperBlueprint",
+        "AimQuestDockBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "GuideEntranceBlueprint",
+      "title": "引导入口",
+      "position": {
+        "x": 40,
+        "y": 80,
+        "w": 220,
+        "h": 120
+      },
+      "minWidth": 220,
+      "minHeight": 120,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "解析",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_0",
+      "typeName": "TryBagToHotbarBlueprint",
+      "title": "TryBagToHotbarBlueprint",
+      "position": {
+        "x": 320,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "itemId": "axe",
+        "ensureHoe": false,
+        "openTip": "露穗：点开背包，把斧头拿出来"
+      }
+    },
+    {
+      "id": "node_1",
+      "typeName": "TrySelectToolBlueprint",
+      "title": "TrySelectToolBlueprint",
+      "position": {
+        "x": 600,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "tool": "axe"
+      }
+    },
+    {
+      "id": "node_2",
+      "typeName": "TryWorldDecorBlueprint",
+      "title": "TryWorldDecorBlueprint",
+      "position": {
+        "x": 880,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "kind": "tree",
+        "tip": "露穗：点树砍几下，攒木料"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_0",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_0",
+      "fromPortIndex": 1,
+      "toNodeId": "node_1",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_1",
+      "fromPortIndex": 1,
+      "toNodeId": "node_2",
+      "toPortIndex": 0
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "guideId": 3,
+  "name": "播种·种子",
+  "description": "打开背包，把种子拖到快捷栏，再点击翻好地块播种",
+  "category": "goto",
+  "exportFlag": true
+}

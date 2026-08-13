@@ -1,0 +1,7 @@
+{
+  "guideId": 7,
+  "name": "打开背包",
+  "description": "打开背包查看物品",
+  "category": "goto",
+  "exportFlag": true
+}

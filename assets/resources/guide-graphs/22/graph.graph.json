@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "graphId": "guide_22",
+  "profile": {
+    "name": "guide",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "GuideEntranceBlueprint",
+        "TryBagToHotbarBlueprint",
+        "TrySelectToolBlueprint",
+        "TryOpenBagBlueprint",
+        "TryWorldPlotBlueprint",
+        "TryWorldDecorBlueprint",
+        "TryWorldNodeBlueprint",
+        "TryFishBlueprint",
+        "TryCraftBenchBlueprint",
+        "TryHarvestBoostBlueprint",
+        "TryHintFarmBlueprint",
+        "TryTownGateBlueprint",
+        "TryMayorBlueprint",
+        "TryTownOutdoorBlueprint",
+        "TryIndoorOrDoorBlueprint",
+        "TryMineCopperBlueprint",
+        "AimQuestDockBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "GuideEntranceBlueprint",
+      "title": "引导入口",
+      "position": {
+        "x": 40,
+        "y": 80,
+        "w": 220,
+        "h": 120
+      },
+      "minWidth": 220,
+      "minHeight": 120,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "解析",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_0",
+      "typeName": "TryTownOutdoorBlueprint",
+      "title": "TryTownOutdoorBlueprint",
+      "position": {
+        "x": 320,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "names": "bld_oreshop",
+        "nearTip": "点矿脉商会，向掌柜·赤铜打听放行",
+        "farTip": "往矿脉商会走，再点一下找掌柜"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_0",
+      "toPortIndex": 0
+    }
+  ]
+}

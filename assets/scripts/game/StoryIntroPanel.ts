@@ -8,6 +8,7 @@ import {
     Input,
     Label,
     Node,
+    Prefab,
     Sprite,
     SpriteFrame,
     UIOpacity,
@@ -15,6 +16,7 @@ import {
     Vec3,
     assetManager,
     input,
+    instantiate,
     sys,
     tween,
     Tween,
@@ -23,6 +25,10 @@ import { clientToUiLocation, DESIGN_H, DESIGN_W, portraitVisibleSize } from './P
 import { InputBridge } from './InputBridge';
 import { StoryIntroAudio } from './StoryIntroAudio';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
+import {
+    STORY_INTRO_PANEL_LAYOUT as L,
+    STORY_INTRO_PANEL_PREFAB_UUID,
+} from './StoryIntroPanelFrames';
 import { playUiClick } from './UiAudio';
 import { UI_CREAM, UI_STROKE, drawDialogueChrome, drawWoodButton } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
@@ -35,13 +41,8 @@ export type StoryIntroPage = {
     text: string;
 };
 
-/** Match DialoguePanel chrome exactly. */
-const BOX_W = 1000;
-const BOX_H = 260;
-const BOX_Y = -780;
 /** Characters per second — slow, breathable prologue. */
 const TYPE_CPS = 7;
-const FADE_IN = 0.18;
 const FADE_OUT = 0.12;
 /** Short guard — long enough to ignore the open gesture, short enough for snappy taps. */
 const INPUT_GUARD_SEC = 0.28;
@@ -61,8 +62,8 @@ const HUD_CHROME = [
     'DialogueBox',
     'QuestPanel',
     'RewardPopup',
-    'RewardDimmer',
     'GmChip',
+    'GmDimmer',
     'GmPanel',
 ];
 
@@ -88,10 +89,11 @@ export class StoryIntroPanel extends Component {
     private _hintLab: Label | null = null;
     private _hintArrow: Node | null = null;
     private _hintOp: UIOpacity | null = null;
-    private _hintBaseY = 0;
-    private _arrowBaseY = 18;
+    private _hintBaseY = L.hintY;
+    private _arrowBaseY = L.arrowY;
     private _skipBtn: Node | null = null;
     private _skipLab: Label | null = null;
+    private _ready = false;
 
     private _pages: StoryIntroPage[] = [];
     private _index = 0;
@@ -148,16 +150,13 @@ export class StoryIntroPanel extends Component {
     }
 
     onLoad() {
-        this.build();
-        this.hideVisualImmediate();
+        this.loadPrefab();
         this._audio.attach(this.node);
         void this._audio.preload();
         loadUiFont().then(() => {
             this.applyFonts();
             this._fontReady = true;
-            const pending = this._pending;
-            this._pending = null;
-            if (pending) this.beginPlay(pending.pages, pending.onDone);
+            this.flushPending();
         });
     }
 
@@ -202,7 +201,6 @@ export class StoryIntroPanel extends Component {
         if (!this._open) return;
         this.ensureChromeHidden();
         this.layoutArt();
-        this.layoutSkip();
         this.bringToFront();
     }
 
@@ -218,9 +216,21 @@ export class StoryIntroPanel extends Component {
             void loadUiFont().then(() => {
                 this._fontReady = true;
                 this.applyFonts();
+                this.flushPending();
             });
         }
+        if (!this._ready || !this._fontReady) {
+            this._pending = { pages: list, onDone };
+            return;
+        }
         this.beginPlay(list, onDone);
+    }
+
+    private flushPending() {
+        if (!this._ready || !this._fontReady || !this._pending) return;
+        const pending = this._pending;
+        this._pending = null;
+        this.beginPlay(pending.pages, pending.onDone);
     }
 
     /**
@@ -692,10 +702,10 @@ export class StoryIntroPanel extends Component {
         const vh = vis.height || DESIGN_H;
         // Upper band above the dialogue box.
         const topPad = 40;
-        const bottomReserve = BOX_H + 120;
+        const bottomReserve = L.boxH + 120;
         const maxW = Math.min(vw - 48, 1000);
         const maxH = Math.max(420, vh - bottomReserve - topPad);
-        const src = STORY_INTRO_FRAMES.panels[0]?.size ?? [720, 1080];
+        const src = STORY_INTRO_FRAMES.panels[0]?.size ?? [L.artW, L.artH];
         const aspect = src[0] / Math.max(1, src[1]);
         let w = maxW;
         let h = w / aspect;
@@ -705,19 +715,8 @@ export class StoryIntroPanel extends Component {
         }
         const ut = this._art.node.getComponent(UITransform);
         ut?.setContentSize(w, h);
-        const y = (vh * 0.5 - topPad) - h * 0.5 - 20;
+        const y = vh * 0.5 - topPad - h * 0.5 - 20;
         this._art.node.setPosition(0, Math.min(220, y - (DESIGN_H - vh) * 0.25), 0);
-    }
-
-    private layoutSkip() {
-        if (!this._skipBtn?.isValid) return;
-        // Match GmChip / FarmHUD — canvas UIT half, not a divergent visible size.
-        const { halfW, halfH } = this.canvasHalf();
-        const ut = this._skipBtn.getComponent(UITransform);
-        const bw = ut?.contentSize.width ?? 148;
-        const bh = ut?.contentSize.height ?? 56;
-        const pad = 36;
-        this._skipBtn.setPosition(halfW - pad - bw * 0.5, halfH - pad - bh * 0.5, 0);
     }
 
     private ensureBodyLayout() {
@@ -726,167 +725,138 @@ export class StoryIntroPanel extends Component {
         const ut = n.getComponent(UITransform);
         if (!ut) return;
         ut.setAnchorPoint(0.5, 1);
-        if (ut.contentSize.width < BOX_W - 100) {
-            ut.setContentSize(BOX_W - 100, Math.max(ut.contentSize.height, 150));
+        if (ut.contentSize.width < L.bodyW) {
+            ut.setContentSize(L.bodyW, Math.max(ut.contentSize.height, 150));
         }
     }
 
-    private build() {
+    private loadPrefab() {
         const canvas = this.node;
-        const old = canvas.getChildByName('StoryIntro');
-        if (old) old.destroy();
+        for (const name of ['StoryIntro', 'StoryIntroPanel']) {
+            const old = canvas.getChildByName(name);
+            if (old) old.destroy();
+        }
 
-        const root = new Node('StoryIntro');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.addComponent(UITransform).setContentSize(DESIGN_W, DESIGN_H);
-        this._rootOp = root.addComponent(UIOpacity);
-        this._rootOp.opacity = 0;
-        this._root = root;
-
-        const veilN = new Node('Veil');
-        veilN.layer = root.layer;
-        veilN.setParent(root);
-        veilN.setSiblingIndex(0);
-        veilN.addComponent(UITransform).setContentSize(2400, 3200);
-        const vg = veilN.addComponent(Graphics);
-        vg.fillColor = new Color(8, 10, 18, 255);
-        vg.rect(-1200, -1600, 2400, 3200);
-        vg.fill();
-
-        const artN = new Node('Art');
-        artN.layer = root.layer;
-        artN.setParent(root);
-        artN.setPosition(0, 180, 0);
-        const artUt = artN.addComponent(UITransform);
-        artUt.setContentSize(720, 1080);
-        artUt.setAnchorPoint(0.5, 0.5);
-        const art = artN.addComponent(Sprite);
-        art.sizeMode = Sprite.SizeMode.CUSTOM;
-        art.type = Sprite.Type.SIMPLE;
-        this._art = art;
-        this._artOp = artN.addComponent(UIOpacity);
-        this._artOp.opacity = 255;
-
-        // Caption chrome — same farm wood band as DialoguePanel.
-        const box = new Node('Caption');
-        box.layer = root.layer;
-        box.setParent(root);
-        box.setPosition(0, BOX_Y, 0);
-        box.addComponent(UITransform).setContentSize(BOX_W, BOX_H);
-        const g = box.addComponent(Graphics);
-        const x0 = -BOX_W * 0.5;
-        const y0 = -BOX_H * 0.5;
-        drawDialogueChrome(g, BOX_W, BOX_H);
-
-        const bodyN = new Node('Body');
-        bodyN.layer = root.layer;
-        bodyN.setParent(box);
-        bodyN.setPosition(0, 96, 0);
-        const bodyUt = bodyN.addComponent(UITransform);
-        bodyUt.setAnchorPoint(0.5, 1);
-        const body = bodyN.addComponent(Label);
-        styleUiLabel(body, {
-            size: 34,
-            color: new Color(255, 246, 220, 255),
-            outline: true,
-            outlineWidth: 3,
+        assetManager.loadAny({ uuid: STORY_INTRO_PANEL_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[StoryIntroPanel] prefab missing', err);
+                this._ready = true;
+                this.flushPending();
+                return;
+            }
+            const inst = instantiate(asset as Prefab);
+            inst.name = 'StoryIntro';
+            inst.layer = canvas.layer;
+            inst.setParent(canvas);
+            this._root = inst;
+            this.bindRefs(inst);
+            this.paintChromeOnce();
+            this.hideVisualImmediate();
+            this._ready = true;
+            this.flushPending();
         });
-        body.overflow = Label.Overflow.RESIZE_HEIGHT;
-        body.enableWrapText = true;
-        body.horizontalAlign = Label.HorizontalAlign.LEFT;
-        body.verticalAlign = Label.VerticalAlign.TOP;
-        body.lineHeight = 48;
-        bodyUt.setContentSize(BOX_W - 100, 150);
-        this._bodyLab = body;
+    }
 
-        const hintRoot = new Node('Hint');
-        hintRoot.layer = root.layer;
-        hintRoot.setParent(box);
-        this._hintBaseY = y0 + 70;
-        hintRoot.setPosition(x0 + BOX_W - 118, this._hintBaseY, 0);
-        hintRoot.addComponent(UITransform).setContentSize(200, 64);
-        this._hintOp = hintRoot.addComponent(UIOpacity);
-        this._hintOp.opacity = 255;
-        this._hintRoot = hintRoot;
+    private bindRefs(root: Node) {
+        this._rootOp = root.getComponent(UIOpacity) ?? root.addComponent(UIOpacity);
+        const artN = root.getChildByName('Art');
+        this._art = artN?.getComponent(Sprite) ?? null;
+        this._artOp = artN?.getComponent(UIOpacity) ?? artN?.addComponent(UIOpacity) ?? null;
+        if (this._art) {
+            this._art.sizeMode = Sprite.SizeMode.CUSTOM;
+            this._art.type = Sprite.Type.SIMPLE;
+        }
+        const caption = root.getChildByName('Caption');
+        this._bodyLab = caption?.getChildByName('Body')?.getComponent(Label) ?? null;
+        this._hintRoot = caption?.getChildByName('Hint') ?? null;
+        this._hintArrow = this._hintRoot?.getChildByName('HintArrow') ?? null;
+        this._hintLab = this._hintRoot?.getChildByName('HintLab')?.getComponent(Label) ?? null;
+        this._hintOp =
+            this._hintRoot?.getComponent(UIOpacity) ?? this._hintRoot?.addComponent(UIOpacity) ?? null;
+        this._hintBaseY = L.hintY;
+        this._arrowBaseY = L.arrowY;
+        this._skipBtn = root.getChildByName('SkipBtn');
+        this._skipLab = this._skipBtn?.getChildByName('Label')?.getComponent(Label) ?? null;
 
-        this._arrowBaseY = 16;
-        const arrow = new Node('HintArrow');
-        arrow.layer = root.layer;
-        arrow.setParent(hintRoot);
-        arrow.setPosition(0, this._arrowBaseY, 0);
-        arrow.addComponent(UITransform).setContentSize(36, 24);
-        const ag = arrow.addComponent(Graphics);
-        const gold = new Color(255, 220, 120, 255);
-        const edge = new Color(90, 50, 16, 255);
-        ag.fillColor = edge;
-        ag.moveTo(0, -10);
-        ag.lineTo(-13, 8);
-        ag.lineTo(13, 8);
-        ag.close();
-        ag.fill();
-        ag.fillColor = gold;
-        ag.moveTo(0, -7);
-        ag.lineTo(-10, 6);
-        ag.lineTo(10, 6);
-        ag.close();
-        ag.fill();
-        this._hintArrow = arrow;
+        if (this._bodyLab) {
+            styleUiLabel(this._bodyLab, {
+                size: 34,
+                color: new Color(255, 246, 220, 255),
+                outline: true,
+                outlineWidth: 3,
+            });
+            this._bodyLab.overflow = Label.Overflow.RESIZE_HEIGHT;
+            this._bodyLab.enableWrapText = true;
+            this._bodyLab.horizontalAlign = Label.HorizontalAlign.LEFT;
+            this._bodyLab.verticalAlign = Label.VerticalAlign.TOP;
+            this._bodyLab.lineHeight = 48;
+        }
+        if (this._hintLab) {
+            styleUiLabel(this._hintLab, {
+                size: 24,
+                color: new Color(255, 230, 150, 255),
+                outline: true,
+                outlineWidth: 2,
+                outlineColor: new Color(60, 36, 12, 255),
+            });
+            this._hintLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._hintLab.verticalAlign = Label.VerticalAlign.CENTER;
+            this._hintLab.overflow = Label.Overflow.CLAMP;
+            this._hintLab.enableWrapText = false;
+        }
+        if (this._skipLab) {
+            styleUiLabel(this._skipLab, {
+                size: 28,
+                color: UI_CREAM,
+                outline: true,
+                outlineWidth: 2,
+                outlineColor: UI_STROKE,
+            });
+            this._skipLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._skipLab.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+        if (this._skipBtn) {
+            this._skipBtn.on(Node.EventType.TOUCH_END, this.onSkipNodeTouch, this);
+            this._skipBtn.on(Node.EventType.MOUSE_UP, this.onSkipNodeMouse, this);
+        }
+        if (this._hintRoot) this._hintRoot.active = false;
+        this.applyFonts();
+    }
 
-        const hintN = new Node('HintLab');
-        hintN.layer = root.layer;
-        hintN.setParent(hintRoot);
-        hintN.setPosition(0, -14, 0);
-        const hintUt = hintN.addComponent(UITransform);
-        const hint = hintN.addComponent(Label);
-        styleUiLabel(hint, {
-            size: 24,
-            color: new Color(255, 230, 150, 255),
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: new Color(60, 36, 12, 255),
-        });
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        hint.verticalAlign = Label.VerticalAlign.CENTER;
-        hint.overflow = Label.Overflow.CLAMP;
-        hint.enableWrapText = false;
-        hintUt.setContentSize(200, 32);
-        hint.string = '点击继续';
-        this._hintLab = hint;
-        hintRoot.active = false;
+    private paintChromeOnce() {
+        const root = this._root;
+        if (!root) return;
+        const veil = root.getChildByName('Veil')?.getComponent(Graphics);
+        if (veil) {
+            veil.clear();
+            veil.fillColor = new Color(8, 10, 18, 255);
+            veil.rect(-1200, -1600, 2400, 3200);
+            veil.fill();
+        }
+        const caption = root.getChildByName('Caption')?.getComponent(Graphics);
+        if (caption) drawDialogueChrome(caption, L.boxW, L.boxH);
 
-        // Top-right skip — wood button matching farm chrome.
-        const skipW = 148;
-        const skipH = 56;
-        const skip = new Node('SkipBtn');
-        skip.layer = root.layer;
-        skip.setParent(root);
-        skip.setSiblingIndex(root.children.length - 1);
-        skip.addComponent(UITransform).setContentSize(skipW, skipH);
-        const sg = skip.addComponent(Graphics);
-        drawWoodButton(sg, skipW, skipH, 'on');
+        const ag = this._hintArrow?.getComponent(Graphics);
+        if (ag) {
+            const gold = new Color(255, 220, 120, 255);
+            const edge = new Color(90, 50, 16, 255);
+            ag.clear();
+            ag.fillColor = edge;
+            ag.moveTo(0, -10);
+            ag.lineTo(-13, 8);
+            ag.lineTo(13, 8);
+            ag.close();
+            ag.fill();
+            ag.fillColor = gold;
+            ag.moveTo(0, -7);
+            ag.lineTo(-10, 6);
+            ag.lineTo(10, 6);
+            ag.close();
+            ag.fill();
+        }
 
-        const skipLabN = new Node('Label');
-        skipLabN.layer = root.layer;
-        skipLabN.setParent(skip);
-        skipLabN.addComponent(UITransform).setContentSize(skipW, skipH);
-        const skipLab = skipLabN.addComponent(Label);
-        skipLab.string = '跳过';
-        skipLab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        skipLab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(skipLab, {
-            size: 28,
-            color: UI_CREAM,
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: UI_STROKE,
-        });
-        this._skipLab = skipLab;
-        this._skipBtn = skip;
-        // Engine hit-test path — survives canvas/visible half mismatches on web-mobile.
-        skip.on(Node.EventType.TOUCH_END, this.onSkipNodeTouch, this);
-        skip.on(Node.EventType.MOUSE_UP, this.onSkipNodeMouse, this);
-        this.layoutSkip();
+        const sg = this._skipBtn?.getComponent(Graphics);
+        if (sg) drawWoodButton(sg, L.skipW, L.skipH, 'on');
     }
 
     private onSkipNodeTouch = (e: EventTouch) => {

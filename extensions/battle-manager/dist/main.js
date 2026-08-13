@@ -177,7 +177,7 @@ exports.methods = {
         var _a;
         const mods = await ensureModules(true);
         await dialogInfo(mods.length === 0
-            ? '未发现子模块。请确认 unit-editor / skill-editor / ballistic-editor / modifier-editor / story-editor 已启用并暴露 battle-module-info。'
+            ? '未发现子模块。请确认 unit-editor / skill-editor / ballistic-editor / modifier-editor / story-editor / guide-editor 已启用并暴露 battle-module-info。'
             : `已扫描 ${mods.length} 个模块：\n` +
                 mods
                     .map((m) => `· ${m.groupTitle || m.group || '-'} / ${m.title} (${m.packageName})`)

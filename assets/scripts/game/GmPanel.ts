@@ -8,27 +8,45 @@ import {
     KeyCode,
     Label,
     Node,
+    Prefab,
     UITransform,
+    assetManager,
     director,
     input,
+    instantiate,
     view,
 } from 'cc';
+import { ItemType } from '../cfg/schema';
 import { FarmHUD } from './FarmHUD';
 import { FarmInfoBoard } from './FarmInfoBoard';
 import { FarmSystem } from './FarmSystem';
+import { FarmWorldLayout } from './FarmWorldLayout';
+import {
+    GM_CHIP_PREFAB_UUID,
+    GM_PANEL_LAYOUT as L,
+    GM_PANEL_PREFAB_UUID,
+    GM_TAB_IDS,
+} from './GmPanelFrames';
 import { InputBridge } from './InputBridge';
-import { travelTo } from './MapTravel';
+import { gmGrantItems } from './ItemCatalog';
+import { travelTo, type TravelMapId } from './MapTravel';
+import { MineWorldLayout } from './MineWorldLayout';
 import { QuestSystem } from './QuestSystem';
 import { StoryDialogue } from './StoryDialogue';
 import { TownWorldLayout } from './TownWorldLayout';
 import { TutorialGuide } from './TutorialGuide';
 import {
     UI_CREAM,
+    UI_GOLD,
     UI_INK,
+    UI_INK_MUTE,
     UI_STROKE,
+    drawParchmentRow,
     drawWoodButton,
     drawWoodParchmentPanel,
-    mountPanelCloseButton,
+    loadPanelCloseFrame,
+    paintPanelCloseVisual,
+    placePanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -39,7 +57,7 @@ type GmBtn = {
     action: () => void;
 };
 
-type GmTabId = 'time' | 'quest' | 'system';
+type GmTabId = 'time' | 'item' | 'quest' | 'qtest' | 'system';
 
 type GmTabDef = {
     id: GmTabId;
@@ -48,12 +66,36 @@ type GmTabDef = {
 
 const GM_TABS: GmTabDef[] = [
     { id: 'time', label: '时间' },
-    { id: 'quest', label: '任务' },
+    { id: 'item', label: '道具' },
+    { id: 'quest', label: '章节' },
+    { id: 'qtest', label: '测任务' },
     { id: 'system', label: '系统' },
 ];
 
+const CHAPTER_LABEL: Record<string, string> = {
+    farm: '农场',
+    town: '城镇',
+    market: '市集',
+    spring: '春厅',
+};
+
+const QTEST_PAGE_SIZE = 6;
+const SECTION_GAP = 22;
+const CARD_PAD_Y = 18;
+const CARD_INNER_GAP = 14;
+/** Match QuestPanel / TownShop — GM was shipping 18–22 and looked tiny. */
+const FONT_TITLE = 36;
+const FONT_TAB = 28;
+const FONT_SECTION = 28;
+const FONT_BTN = 28;
+const FONT_HINT = 22;
+const FONT_CLOCK = 64;
+const FONT_DATE = 28;
+const BTN_H = 64;
+const BTN_H_COMPACT = 56;
+
 /**
- * Dev / GM overlay: farm clock, skip newbie tutorial, jump quest lines.
+ * Dev / GM overlay: farm clock, grant items, skip newbie tutorial, jump quests.
  * Toggle: F1 or ` · Esc closes · small GM chip stays on-screen.
  */
 @ccclass('GmPanel')
@@ -67,16 +109,29 @@ export class GmPanel extends Component {
     private _clockLab: Label | null = null;
     private _dateLab: Label | null = null;
     private _pauseLab: Label | null = null;
+    private _qtestStatusLab: Label | null = null;
+    private _qtestPageLab: Label | null = null;
+    private _qtestListHost: Node | null = null;
+    private _qtestPage = 0;
     private _btns: GmBtn[] = [];
     private _chipHit = { x: 0, y: 0, hw: 0, hh: 0 };
     private _tab: GmTabId = 'time';
     private _tabPages = new Map<GmTabId, Node>();
     private _tabBtns = new Map<GmTabId, Node>();
+    /** Inner content width for the active panel. */
+    private _contentW = L.contentW;
+    /** Top-down layout cursor (page-local Y). */
+    private _layY = 0;
+    private _panelPrefab: Prefab | null = null;
+    private _chipPrefab: Prefab | null = null;
+    private _chromePainted = false;
+    private _pagesHost: Node | null = null;
+    private _closeBtn: Node | null = null;
 
     onLoad() {
         InputBridge.gmUiHit = (x, y) => this.hitChip(x, y) || this._open;
         input.on(Input.EventType.KEY_DOWN, this.onKey, this);
-        this.buildChip();
+        this.preloadPrefabs();
         loadUiFont().then((font) => {
             if (!font) return;
             const title = this._chip?.getChildByName('Label')?.getComponent(Label);
@@ -121,6 +176,7 @@ export class GmPanel extends Component {
             InputBridge.uiBlocking = true;
             InputBridge.clear();
             this.buildPanel();
+            this.bringFront();
             this.refreshLabels();
         } else {
             InputBridge.uiBlocking = this._prevBlocking;
@@ -129,6 +185,12 @@ export class GmPanel extends Component {
             this._clockLab = null;
             this._dateLab = null;
             this._pauseLab = null;
+            this._qtestStatusLab = null;
+            this._qtestPageLab = null;
+            this._qtestListHost = null;
+            this._pagesHost = null;
+            this._closeBtn = null;
+            this._chromePainted = false;
             this._btns = [];
             this._tabPages.clear();
             this._tabBtns.clear();
@@ -158,7 +220,16 @@ export class GmPanel extends Component {
     }
 
     update() {
-        if (this._open) this.refreshLabels();
+        if (!this._open) return;
+        this.bringFront();
+        this.refreshLabels();
+    }
+
+    /** Keep GM above TutorialGuide / HUD / toasts while open. */
+    private bringFront() {
+        if (!this._root?.isValid) return;
+        const want = this.node.children.length - 1;
+        if (this._root.getSiblingIndex() !== want) this._root.setSiblingIndex(want);
     }
 
     private onKey = (e: EventKeyboard) => {
@@ -171,24 +242,60 @@ export class GmPanel extends Component {
         }
     };
 
-    private buildChip() {
+    private preloadPrefabs() {
+        assetManager.loadAny({ uuid: GM_CHIP_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[GmPanel] chip prefab missing', err);
+                return;
+            }
+            this._chipPrefab = asset as Prefab;
+            this.mountChip();
+        });
+        assetManager.loadAny({ uuid: GM_PANEL_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[GmPanel] panel prefab missing', err);
+                return;
+            }
+            this._panelPrefab = asset as Prefab;
+        });
+    }
+
+    private mountChip() {
         const canvas = this.node;
         const old = canvas.getChildByName('GmChip');
         if (old) old.destroy();
+        if (!this._chipPrefab) return;
 
-        const chip = new Node('GmChip');
+        const chip = instantiate(this._chipPrefab);
+        chip.name = 'GmChip';
         chip.layer = canvas.layer;
         chip.setParent(canvas);
         chip.setSiblingIndex(canvas.children.length - 1);
-        const w = 72;
-        const h = 44;
         const { halfW, halfH } = this.canvasHalf();
-        // Top-left, clear of the info board.
         const x = -halfW + 48;
         const y = halfH - 56;
         chip.setPosition(x, y, 0);
-        chip.addComponent(UITransform).setContentSize(w, h);
-        const g = chip.addComponent(Graphics);
+        this.paintChipChrome(chip);
+        const lab = chip.getChildByName('Label')?.getComponent(Label);
+        if (lab) {
+            styleUiLabel(lab, {
+                size: 22,
+                color: new Color(255, 236, 180, 255),
+                outline: true,
+                outlineWidth: 3,
+            });
+            applyUiFont(lab);
+        }
+        this._chip = chip;
+        this._chipHit = { x, y, hw: L.chipW * 0.5 + 8, hh: L.chipH * 0.5 + 8 };
+    }
+
+    private paintChipChrome(chip: Node) {
+        const g = chip.getComponent(Graphics);
+        if (!g) return;
+        const w = L.chipW;
+        const h = L.chipH;
+        g.clear();
         g.fillColor = new Color(54, 40, 28, 210);
         g.roundRect(-w * 0.5, -h * 0.5, w, h, 10);
         g.fill();
@@ -196,132 +303,147 @@ export class GmPanel extends Component {
         g.lineWidth = 3;
         g.roundRect(-w * 0.5, -h * 0.5, w, h, 10);
         g.stroke();
-
-        const labN = new Node('Label');
-        labN.layer = canvas.layer;
-        labN.setParent(chip);
-        labN.addComponent(UITransform).setContentSize(w, h);
-        const lab = labN.addComponent(Label);
-        lab.string = 'GM';
-        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        lab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(lab, {
-            size: 22,
-            color: new Color(255, 236, 180, 255),
-            outline: true,
-            outlineWidth: 3,
-        });
-
-        this._chip = chip;
-        this._chipHit = { x, y, hw: w * 0.5 + 8, hh: h * 0.5 + 8 };
     }
 
     private buildPanel() {
         const canvas = this.node;
         const old = canvas.getChildByName('GmPanel');
         if (old) old.destroy();
+        const oldDim = canvas.getChildByName('GmDimmer');
+        if (oldDim) oldDim.destroy();
         this._btns = [];
         this._tabPages.clear();
         this._tabBtns.clear();
+        this._chromePainted = false;
+        this._pagesHost = null;
+        this._closeBtn = null;
+        this._contentW = L.contentW;
         if (!GM_TABS.some((t) => t.id === this._tab)) this._tab = 'time';
 
-        const root = new Node('GmPanel');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.setSiblingIndex(canvas.children.length - 1);
-        const vis = view.getVisibleSize();
-        root.addComponent(UITransform).setContentSize(vis.width, vis.height);
-        this._root = root;
+        const finish = (root: Node) => {
+            root.name = 'GmPanel';
+            root.layer = canvas.layer;
+            root.setParent(canvas);
+            root.active = true;
+            this._root = root;
+            this.bindPanelRefs(root);
+            this.paintPanelChromeOnce();
+            this.populatePages();
+            this.applyTabVisuals();
+            this.bringFront();
+            loadUiFont().then((font) => {
+                if (!font || !root.isValid) return;
+                for (const lab of root.getComponentsInChildren(Label)) applyUiFont(lab);
+            });
+        };
 
-        const dim = new Node('Dim');
-        dim.layer = root.layer;
-        dim.setParent(root);
-        dim.addComponent(UITransform).setContentSize(vis.width * 2, vis.height * 2);
-        const dimG = dim.addComponent(Graphics);
-        dimG.fillColor = new Color(0, 0, 0, 150);
-        dimG.rect(-vis.width, -vis.height, vis.width * 2, vis.height * 2);
-        dimG.fill();
-
-        const panelW = 560;
-        const panelH = 620;
-        const panel = new Node('Panel');
-        panel.layer = root.layer;
-        panel.setParent(root);
-        panel.setPosition(0, 20, 0);
-        panel.addComponent(UITransform).setContentSize(panelW, panelH);
-
-        const chrome = panel.addComponent(Graphics);
-        this.drawChrome(chrome, panelW, panelH);
-
-        const titleN = new Node('Title');
-        titleN.layer = root.layer;
-        titleN.setParent(panel);
-        titleN.setPosition(0, panelH * 0.5 - 38, 0);
-        titleN.addComponent(UITransform).setContentSize(panelW - 120, 40);
-        const title = titleN.addComponent(Label);
-        title.string = 'GM · 调试';
-        title.horizontalAlign = Label.HorizontalAlign.CENTER;
-        title.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(title, {
-            size: 30,
-            color: new Color(255, 244, 214, 255),
-            outline: true,
+        if (this._panelPrefab) {
+            finish(instantiate(this._panelPrefab));
+            return;
+        }
+        assetManager.loadAny({ uuid: GM_PANEL_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[GmPanel] panel prefab missing', err);
+                return;
+            }
+            this._panelPrefab = asset as Prefab;
+            if (!this._open) return;
+            finish(instantiate(this._panelPrefab));
         });
+    }
 
-        const closeBtn = mountPanelCloseButton(panel, panelW, panelH);
-        this._btns.push({ node: closeBtn, action: () => this.setOpen(false) });
+    private bindPanelRefs(root: Node) {
+        const panel = root.getChildByName('Panel');
+        if (!panel) return;
+        this._closeBtn = panel.getChildByName('Close');
+        if (this._closeBtn) {
+            this._btns.push({ node: this._closeBtn, action: () => this.setOpen(false) });
+        }
+        for (const id of GM_TAB_IDS) {
+            const btn = panel.getChildByName(`Tab_${id}`);
+            if (!btn) continue;
+            this._tabBtns.set(id, btn);
+            this._btns.push({ node: btn, action: () => this.selectTab(id) });
+            const lab = btn.getChildByName('Label')?.getComponent(Label);
+            if (lab) styleUiLabel(lab, { size: FONT_TAB, color: UI_INK, outline: false });
+        }
+        this._pagesHost = panel.getChildByName('Pages');
+        const title = panel.getChildByName('Title')?.getComponent(Label);
+        if (title) {
+            styleUiLabel(title, {
+                size: FONT_TITLE,
+                color: new Color(255, 244, 214, 255),
+                outline: true,
+            });
+        }
+        const hint = panel.getChildByName('Hint')?.getComponent(Label);
+        if (hint) {
+            styleUiLabel(hint, {
+                size: FONT_HINT,
+                color: new Color(180, 160, 120, 255),
+                outline: false,
+            });
+        }
+    }
 
-        // Tab bar
-        const tabY = panelH * 0.5 - 96;
-        const tabW = 148;
-        const tabH = 44;
-        const tabGap = 12;
-        const tabTotal = GM_TABS.length * tabW + (GM_TABS.length - 1) * tabGap;
-        GM_TABS.forEach((t, i) => {
-            const x = -tabTotal * 0.5 + tabW * 0.5 + i * (tabW + tabGap);
-            const btn = this.addBtn(panel, t.label, x, tabY, tabW, tabH, () => this.selectTab(t.id));
-            this._tabBtns.set(t.id, btn);
-        });
+    private paintPanelChromeOnce() {
+        if (this._chromePainted || !this._root?.isValid) return;
+        const dim = this._root.getChildByName('Dim')?.getComponent(Graphics);
+        if (dim) {
+            dim.clear();
+            dim.fillColor = new Color(0, 0, 0, 200);
+            dim.rect(-1100, -2000, 2200, 4000);
+            dim.fill();
+        }
+        const panel = this._root.getChildByName('Panel');
+        const chrome = panel?.getChildByName('Chrome')?.getComponent(Graphics);
+        if (chrome) this.drawChrome(chrome, L.panelW, L.panelH);
+        for (const [id, btn] of this._tabBtns) {
+            this.paintBtn(btn, id === this._tab ? 'tabOn' : 'tabOff');
+        }
+        if (this._closeBtn) {
+            // Re-place with rim-safe pad and keep above chrome / title.
+            placePanelCloseButton(this._closeBtn, L.panelW, L.panelH, {
+                size: L.closeBtn,
+                pad: L.closePad,
+            });
+            if (panel) this._closeBtn.setSiblingIndex(panel.children.length - 1);
+            loadPanelCloseFrame((sf) => {
+                if (!this._closeBtn?.isValid) return;
+                paintPanelCloseVisual(this._closeBtn, {
+                    size: L.closeBtn,
+                    layer: this._closeBtn.layer,
+                    frame: sf,
+                });
+            });
+        }
+        this._chromePainted = true;
+    }
 
-        const pageHost = new Node('Pages');
-        pageHost.layer = root.layer;
-        pageHost.setParent(panel);
-        pageHost.setPosition(0, -18, 0);
-        pageHost.addComponent(UITransform).setContentSize(panelW - 48, panelH - 180);
+    private populatePages() {
+        const pageHost = this._pagesHost;
+        if (!pageHost?.isValid) return;
+        pageHost.removeAllChildren();
 
         const timePage = this.makePage(pageHost, 'Page_time');
-        this.buildTimePage(timePage, panelW);
+        this.buildTimePage(timePage);
         this._tabPages.set('time', timePage);
+
+        const itemPage = this.makePage(pageHost, 'Page_item');
+        this.buildItemPage(itemPage);
+        this._tabPages.set('item', itemPage);
 
         const questPage = this.makePage(pageHost, 'Page_quest');
         this.buildQuestPage(questPage);
         this._tabPages.set('quest', questPage);
 
+        const qtestPage = this.makePage(pageHost, 'Page_qtest');
+        this.buildQuestTestPage(qtestPage);
+        this._tabPages.set('qtest', qtestPage);
+
         const systemPage = this.makePage(pageHost, 'Page_system');
         this.buildSystemPage(systemPage);
         this._tabPages.set('system', systemPage);
-
-        const hintN = new Node('Hint');
-        hintN.layer = root.layer;
-        hintN.setParent(panel);
-        hintN.setPosition(0, -panelH * 0.5 + 28, 0);
-        hintN.addComponent(UITransform).setContentSize(panelW - 24, 28);
-        const hint = hintN.addComponent(Label);
-        hint.string = 'F1 / ` 开关 · Esc 关闭';
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        hint.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(hint, {
-            size: 18,
-            color: new Color(180, 160, 120, 255),
-            outline: false,
-        });
-
-        this.applyTabVisuals();
-
-        loadUiFont().then((font) => {
-            if (!font || !root.isValid) return;
-            for (const lab of root.getComponentsInChildren(Label)) applyUiFont(lab);
-        });
     }
 
     private makePage(host: Node, name: string): Node {
@@ -333,18 +455,24 @@ export class GmPanel extends Component {
         return page;
     }
 
-    private buildTimePage(page: Node, panelW: number) {
+    private buildTimePage(page: Node) {
+        const pageH = page.getComponent(UITransform)!.contentSize.height;
+        this.layReset(pageH * 0.5 - 8);
+
+        // —— 当前时刻 ——
+        const clockCardH = 188;
+        const clockY = this.beginSection(page, '当前时刻', clockCardH);
         const clockN = new Node('Clock');
         clockN.layer = page.layer;
         clockN.setParent(page);
-        clockN.setPosition(0, 168, 0);
-        clockN.addComponent(UITransform).setContentSize(panelW - 40, 64);
+        clockN.setPosition(0, clockY + 8, 0);
+        clockN.addComponent(UITransform).setContentSize(this._contentW - 40, 72);
         const clock = clockN.addComponent(Label);
         clock.string = '06:00';
         clock.horizontalAlign = Label.HorizontalAlign.CENTER;
         clock.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(clock, {
-            size: 52,
+            size: FONT_CLOCK,
             color: new Color(255, 236, 160, 255),
             outline: true,
             outlineWidth: 5,
@@ -354,104 +482,421 @@ export class GmPanel extends Component {
         const dateN = new Node('Date');
         dateN.layer = page.layer;
         dateN.setParent(page);
-        dateN.setPosition(0, 112, 0);
-        dateN.addComponent(UITransform).setContentSize(panelW - 40, 36);
+        dateN.setPosition(0, clockY - 44, 0);
+        dateN.addComponent(UITransform).setContentSize(this._contentW - 40, 36);
         const date = dateN.addComponent(Label);
         date.string = '';
         date.horizontalAlign = Label.HorizontalAlign.CENTER;
         date.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(date, {
-            size: 24,
-            color: new Color(220, 200, 160, 255),
-            outline: true,
+            size: FONT_DATE,
+            color: UI_INK_MUTE,
+            outline: false,
         });
         this._dateLab = date;
 
-        const presets: { label: string; h: number; m: number }[] = [
-            { label: '清晨 6:00', h: 6, m: 0 },
-            { label: '正午 12:00', h: 12, m: 0 },
-            { label: '黄昏 18:00', h: 18, m: 0 },
-            { label: '深夜 22:00', h: 22, m: 0 },
-        ];
-        const presetY = 40;
-        const presetW = 118;
-        const presetGap = 12;
-        const presetTotal = presets.length * presetW + (presets.length - 1) * presetGap;
-        presets.forEach((p, i) => {
-            const x = -presetTotal * 0.5 + presetW * 0.5 + i * (presetW + presetGap);
-            this.addBtn(page, p.label, x, presetY, presetW, 48, () => {
-                this.infoBoard?.setTime(p.h, p.m);
-            });
-        });
+        // Shared column width so 2-col / 3-col edges line up across sections.
+        const gap = 16;
+        const col2W = Math.floor((this._contentW - 48 - gap) / 2);
+        const col3W = Math.floor((this._contentW - 48 - gap * 2) / 3);
 
+        // —— 快捷跳转：2×2 ——
+        const presets: { label: string; fn: () => void }[] = [
+            { label: '清晨 6:00', fn: () => this.infoBoard?.setTime(6, 0) },
+            { label: '正午 12:00', fn: () => this.infoBoard?.setTime(12, 0) },
+            { label: '黄昏 18:00', fn: () => this.infoBoard?.setTime(18, 0) },
+            { label: '深夜 22:00', fn: () => this.infoBoard?.setTime(22, 0) },
+        ];
+        const presetCardH = this.cardHeightForGrid(2, BTN_H);
+        const presetY = this.beginSection(page, '快捷跳转', presetCardH);
+        this.placeBtnGridFixed(page, presets, presetY - 8, 2, col2W, BTN_H);
+
+        // —— 微调：2×2 ——
         const nudges: { label: string; fn: () => void }[] = [
             { label: '-1时', fn: () => this.infoBoard?.addMinutes(-60) },
+            { label: '+1时', fn: () => this.infoBoard?.addMinutes(60) },
             { label: '-10分', fn: () => this.infoBoard?.addMinutes(-10) },
             { label: '+10分', fn: () => this.infoBoard?.addMinutes(10) },
-            { label: '+1时', fn: () => this.infoBoard?.addMinutes(60) },
         ];
-        const nudgeY = -36;
-        const nudgeW = 110;
-        const nudgeGap = 14;
-        const nudgeTotal = nudges.length * nudgeW + (nudges.length - 1) * nudgeGap;
-        nudges.forEach((n, i) => {
-            const x = -nudgeTotal * 0.5 + nudgeW * 0.5 + i * (nudgeW + nudgeGap);
-            this.addBtn(page, n.label, x, nudgeY, nudgeW, 48, n.fn);
-        });
+        const nudgeCardH = this.cardHeightForGrid(2, BTN_H);
+        const nudgeY = this.beginSection(page, '微调时间', nudgeCardH);
+        this.placeBtnGridFixed(page, nudges, nudgeY - 8, 2, col2W, BTN_H);
 
-        const dayY = -112;
-        this.addBtn(page, '-1日', -150, dayY, 120, 48, () => this.infoBoard?.addMinutes(-20 * 60));
-        this.addBtn(page, '+1日', 0, dayY, 120, 48, () => this.infoBoard?.addMinutes(20 * 60));
-        const pauseBtn = this.addBtn(page, '暂停', 150, dayY, 120, 48, () => {
-            const board = this.infoBoard;
-            if (!board) return;
-            board.setPaused(!board.paused);
-        });
-        this._pauseLab = pauseBtn.getChildByName('Label')?.getComponent(Label) ?? null;
+        // —— 日期 · 运行：一行三键 ——
+        const dayCardH = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H + CARD_PAD_Y;
+        const dayY = this.beginSection(page, '日期 · 运行', dayCardH);
+        const dayBtns: { label: string; fn: () => void }[] = [
+            { label: '-1日', fn: () => this.infoBoard?.addMinutes(-20 * 60) },
+            { label: '+1日', fn: () => this.infoBoard?.addMinutes(20 * 60) },
+            {
+                label: '暂停',
+                fn: () => {
+                    const board = this.infoBoard;
+                    if (!board) return;
+                    board.setPaused(!board.paused);
+                },
+            },
+        ];
+        const pauseBtn = this.placeBtnRowFixed(page, dayBtns, dayY - 8, col3W, BTN_H);
+        this._pauseLab = pauseBtn?.getChildByName('Label')?.getComponent(Label) ?? null;
+    }
+
+    private buildItemPage(page: Node) {
+        type Grant = { label: string; id: string; n: number; fn: () => void };
+        const grants = gmGrantItems();
+        const asGrant = (rows: typeof grants): Grant[] =>
+            rows.map((r) => ({
+                label: r.gmAmount > 1 ? `${r.name}+${r.gmAmount}` : r.name,
+                id: r.id,
+                n: r.gmAmount,
+                fn: () => this.grantItem(r.id, r.gmAmount),
+            }));
+
+        const materials = asGrant(
+            grants.filter(
+                (r) =>
+                    r.type === ItemType.Material &&
+                    !['copper', 'iron', 'goldOre'].includes(r.id),
+            ),
+        );
+        const ores = asGrant(
+            grants.filter((r) => ['copper', 'iron', 'goldOre'].includes(r.id)),
+        );
+        const consumables = asGrant(
+            grants.filter(
+                (r) =>
+                    r.type === ItemType.Seed ||
+                    r.type === ItemType.Crop ||
+                    r.type === ItemType.Consumable ||
+                    r.type === ItemType.Currency,
+            ),
+        );
+        const tools = grants.filter((r) => r.type === ItemType.Tool);
+
+        const pageH = page.getComponent(UITransform)!.contentSize.height;
+        this.layReset(pageH * 0.5 - 8);
+        const cellH = BTN_H_COMPACT;
+        const gap = 14;
+        const col4W = Math.floor((this._contentW - 48 - gap * 3) / 4);
+        const col3W = Math.floor((this._contentW - 48 - gap * 2) / 3);
+        const col2W = Math.floor((this._contentW - 48 - gap) / 2);
+
+        const matRows = Math.ceil(materials.length / 4);
+        const matH = this.cardHeightForGrid(matRows, cellH);
+        const matY = this.beginSection(page, '采集材料', matH);
+        this.placeBtnGridFixed(
+            page,
+            materials.map((m) => ({ label: m.label, fn: m.fn })),
+            matY - 8,
+            4,
+            col4W,
+            cellH,
+        );
+
+        const oreH = this.cardHeightForGrid(1, cellH);
+        const oreY = this.beginSection(page, '矿石', oreH);
+        this.placeBtnGridFixed(
+            page,
+            ores.map((m) => ({ label: m.label, fn: m.fn })),
+            oreY - 8,
+            3,
+            col3W,
+            cellH,
+        );
+
+        const cropRows = Math.ceil(consumables.length / 4);
+        const cropH = this.cardHeightForGrid(cropRows, cellH);
+        const cropY = this.beginSection(page, '作物 · 消耗', cropH);
+        this.placeBtnGridFixed(
+            page,
+            consumables.map((m) => ({ label: m.label, fn: m.fn })),
+            cropY - 8,
+            4,
+            col4W,
+            cellH,
+        );
+
+        const toolH = this.cardHeightForGrid(1, cellH);
+        const toolY = this.beginSection(page, '工具', toolH);
+        this.placeBtnRowFixed(
+            page,
+            tools.map((t) => ({
+                label: t.name,
+                fn: () => this.grantItem(t.id, t.gmAmount || 1),
+            })),
+            toolY - 8,
+            col4W,
+            cellH,
+        );
+
+        const packH = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H + CARD_PAD_Y;
+        const packY = this.beginSection(page, '一键发放', packH);
+        this.placeBtnRowFixed(
+            page,
+            [
+                { label: '材料全+50', fn: () => this.grantStarterPack() },
+                { label: '全工具', fn: () => this.grantAllTools() },
+            ],
+            packY - 8,
+            col2W,
+            BTN_H,
+        );
     }
 
     private buildQuestPage(page: Node) {
-        this.addSectionLabel(page, '跳转到主线章节起点（会自动前往小镇）', 140);
+        const pageH = page.getComponent(UITransform)!.contentSize.height;
+        this.layReset(pageH * 0.5 - 8);
+
+        const introH = CARD_PAD_Y + 30 + CARD_INNER_GAP + 28 + CARD_PAD_Y;
+        const introY = this.beginSection(page, '主线章节跳转', introH);
+        this.addHintLabel(page, '跳到该线起点 · 必要时自动前往小镇', introY - 10);
 
         const lines: { label: string; line: 'town' | 'market' | 'spring'; desc: string }[] = [
             { label: '城镇任务', line: 'town', desc: '解锁小镇后的城镇线' },
             { label: '市集任务', line: 'market', desc: '市集 / 交易相关章节' },
             { label: '春厅任务', line: 'spring', desc: '春厅剧情线' },
         ];
-        lines.forEach((q, i) => {
-            const y = 60 - i * 96;
-            this.addBtn(page, q.label, 0, y, 280, 48, () => this.jumpQuestLine(q.line));
-            this.addSectionLabel(page, q.desc, y - 36, 20);
+        lines.forEach((q) => {
+            const h = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H + 10 + 28 + CARD_PAD_Y;
+            const y = this.beginSection(page, q.label, h);
+            this.addBtn(
+                page,
+                `跳转 · ${q.label}`,
+                0,
+                y + 6,
+                Math.min(400, this._contentW - 80),
+                BTN_H,
+                () => this.jumpQuestLine(q.line),
+            );
+            this.addHintLabel(page, q.desc, y - 40);
         });
     }
 
-    private buildSystemPage(page: Node) {
-        this.addSectionLabel(page, '引导与调试开关', 140);
-        this.addBtn(page, '跳过新手引导', 0, 40, 300, 52, () => this.skipNewbieGuide(), true);
-        this.addSectionLabel(page, '结束农场新手、解锁小镇并跳到城镇线', -20, 20);
+    private buildQuestTestPage(page: Node) {
+        const pageH = page.getComponent(UITransform)!.contentSize.height;
+        this.layReset(pageH * 0.5 - 8);
+
+        const headH = CARD_PAD_Y + 30 + CARD_INNER_GAP + 56 + CARD_PAD_Y;
+        const headY = this.beginSection(page, '单任务调试', headH);
+        this.addHintLabel(page, '完成前置后跳入 · 可反复测', headY + 12);
+        const statusN = new Node('QStatus');
+        statusN.layer = page.layer;
+        statusN.setParent(page);
+        statusN.setPosition(0, headY - 22, 0);
+        statusN.addComponent(UITransform).setContentSize(this._contentW - 40, 28);
+        const status = statusN.addComponent(Label);
+        status.string = '';
+        status.horizontalAlign = Label.HorizontalAlign.CENTER;
+        status.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(status, {
+            size: FONT_HINT,
+            color: UI_INK_MUTE,
+            outline: false,
+        });
+        this._qtestStatusLab = status;
+
+        const rowH = BTN_H_COMPACT;
+        const listInnerH = QTEST_PAGE_SIZE * rowH + (QTEST_PAGE_SIZE - 1) * 12;
+        const listCardH = CARD_PAD_Y + 34 + CARD_INNER_GAP + listInnerH + CARD_PAD_Y;
+        const listY = this.beginSection(page, '任务列表', listCardH);
+        const list = new Node('QList');
+        list.layer = page.layer;
+        list.setParent(page);
+        list.setPosition(0, listY - 8, 0);
+        list.addComponent(UITransform).setContentSize(this._contentW - 32, listInnerH);
+        this._qtestListHost = list;
+
+        const pageCardH = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H_COMPACT + CARD_PAD_Y;
+        const pageY = this.beginSection(page, '翻页', pageCardH);
+        this.addBtn(page, '上一页', -180, pageY - 8, 160, BTN_H_COMPACT, () =>
+            this.shiftQuestTestPage(-1),
+        );
+        const pageLabN = new Node('QPage');
+        pageLabN.layer = page.layer;
+        pageLabN.setParent(page);
+        pageLabN.setPosition(0, pageY - 8, 0);
+        pageLabN.addComponent(UITransform).setContentSize(120, 40);
+        const pageLab = pageLabN.addComponent(Label);
+        pageLab.string = '1/1';
+        pageLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        pageLab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(pageLab, {
+            size: FONT_HINT,
+            color: UI_INK_MUTE,
+            outline: false,
+        });
+        this._qtestPageLab = pageLab;
+        this.addBtn(page, '下一页', 180, pageY - 8, 160, BTN_H_COMPACT, () =>
+            this.shiftQuestTestPage(1),
+        );
+
+        this.rebuildQuestTestList();
     }
 
-    private addSectionLabel(parent: Node, text: string, y: number, size = 22) {
-        const n = new Node('Section');
+    private buildSystemPage(page: Node) {
+        const pageH = page.getComponent(UITransform)!.contentSize.height;
+        this.layReset(pageH * 0.5 - 8);
+
+        const h = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H + 14 + 28 + 10 + 28 + CARD_PAD_Y;
+        const y = this.beginSection(page, '新手引导', h);
+        this.addBtn(
+            page,
+            '跳过新手引导',
+            0,
+            y + 22,
+            Math.min(420, this._contentW - 80),
+            BTN_H,
+            () => this.skipNewbieGuide(),
+            true,
+        );
+        this.addHintLabel(page, '结束农场新手 · 解锁小镇 · 跳到城镇线', y - 32);
+        this.addHintLabel(page, '会关闭当前引导高亮与剧情锁定', y - 62);
+    }
+
+    // ── layout helpers ────────────────────────────────────
+
+    private layReset(topY: number) {
+        this._layY = topY;
+    }
+
+    /** Card height for a titled block with `rows` of `btnH` buttons. */
+    private cardHeightForGrid(rows: number, btnH: number): number {
+        const gapY = 14;
+        const gridH = rows * btnH + Math.max(0, rows - 1) * gapY;
+        return CARD_PAD_Y + 34 + CARD_INNER_GAP + gridH + CARD_PAD_Y;
+    }
+
+    /**
+     * Draw section card + header; returns the content center Y inside the card
+     * (below the title). Advances the layout cursor.
+     */
+    private beginSection(page: Node, title: string, cardH: number): number {
+        const cardY = this._layY - cardH * 0.5;
+        this._layY -= cardH + SECTION_GAP;
+        this.addSectionCard(page, cardY, cardH, this._contentW);
+        const titleY = cardY + cardH * 0.5 - CARD_PAD_Y - 15;
+        this.addSectionHeader(page, title, titleY);
+        // Content band center under the title.
+        const contentTop = titleY - 15 - CARD_INNER_GAP;
+        const contentBot = cardY - cardH * 0.5 + CARD_PAD_Y;
+        return (contentTop + contentBot) * 0.5;
+    }
+
+    /** Category title with gold accent bars. */
+    private addSectionHeader(parent: Node, text: string, y: number) {
+        const n = new Node(`Sec_${text}`);
         n.layer = parent.layer;
         n.setParent(parent);
         n.setPosition(0, y, 0);
-        n.addComponent(UITransform).setContentSize(480, 32);
-        const lab = n.addComponent(Label);
+        n.addComponent(UITransform).setContentSize(this._contentW, 30);
+
+        const g = n.addComponent(Graphics);
+        const barW = 64;
+        const gap = 14;
+        const titleBand = Math.min(280, 36 + text.length * 20);
+        const barX = titleBand * 0.5 + gap + barW * 0.5;
+        g.fillColor = UI_GOLD;
+        g.rect(-barX - barW * 0.5, -1.5, barW, 3);
+        g.fill();
+        g.rect(barX - barW * 0.5, -1.5, barW, 3);
+        g.fill();
+
+        const labN = new Node('Label');
+        labN.layer = parent.layer;
+        labN.setParent(n);
+        labN.addComponent(UITransform).setContentSize(titleBand + 48, 30);
+        const lab = labN.addComponent(Label);
         lab.string = text;
         lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
         styleUiLabel(lab, {
-            size,
-            color: new Color(120, 88, 48, 255),
+            size: FONT_SECTION,
+            color: UI_INK,
             outline: false,
         });
         return lab;
     }
 
+    private addHintLabel(parent: Node, text: string, y: number) {
+        const n = new Node('Hint');
+        n.layer = parent.layer;
+        n.setParent(parent);
+        n.setPosition(0, y, 0);
+        n.addComponent(UITransform).setContentSize(this._contentW - 24, 32);
+        const lab = n.addComponent(Label);
+        lab.string = text;
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign = Label.VerticalAlign.CENTER;
+        styleUiLabel(lab, {
+            size: FONT_HINT,
+            color: UI_INK_MUTE,
+            outline: false,
+        });
+        return lab;
+    }
+
+    /** Soft inset plate behind a grouped block. */
+    private addSectionCard(parent: Node, y: number, h: number, w = 520) {
+        const n = new Node('Card');
+        n.layer = parent.layer;
+        n.setParent(parent);
+        n.setSiblingIndex(0);
+        n.setPosition(0, y, 0);
+        n.addComponent(UITransform).setContentSize(w, h);
+        const g = n.addComponent(Graphics);
+        drawParchmentRow(g, w, h, 16);
+        return n;
+    }
+
+    /** Row of equal-width buttons. Returns the last button. */
+    private placeBtnRowFixed(
+        parent: Node,
+        items: { label: string; fn: () => void }[],
+        y: number,
+        btnW: number,
+        btnH: number,
+    ): Node | null {
+        if (!items.length) return null;
+        const gap = 16;
+        const total = items.length * btnW + (items.length - 1) * gap;
+        let last: Node | null = null;
+        items.forEach((it, i) => {
+            const x = -total * 0.5 + btnW * 0.5 + i * (btnW + gap);
+            last = this.addBtn(parent, it.label, x, y, btnW, btnH, it.fn);
+        });
+        return last;
+    }
+
+    /** Grid of fixed-size buttons centered at `centerY`. */
+    private placeBtnGridFixed(
+        parent: Node,
+        items: { label: string; fn: () => void }[],
+        centerY: number,
+        cols: number,
+        cellW: number,
+        btnH: number,
+    ) {
+        if (!items.length) return;
+        const gapX = 16;
+        const gapY = 14;
+        const rows = Math.ceil(items.length / cols);
+        const gridH = rows * btnH + (rows - 1) * gapY;
+        const startY = centerY + gridH * 0.5 - btnH * 0.5;
+        items.forEach((m, i) => {
+            const r = Math.floor(i / cols);
+            const c = i % cols;
+            const rowLen = Math.min(cols, items.length - r * cols);
+            const rowW = rowLen * cellW + (rowLen - 1) * gapX;
+            const x = -rowW * 0.5 + cellW * 0.5 + c * (cellW + gapX);
+            const y = startY - r * (btnH + gapY);
+            this.addBtn(parent, m.label, x, y, cellW, btnH, m.fn);
+        });
+    }
+
     private selectTab(id: GmTabId) {
         if (this._tab === id) return;
         this._tab = id;
+        if (id === 'qtest') this.rebuildQuestTestList();
         this.applyTabVisuals();
     }
 
@@ -492,6 +937,92 @@ export class GmPanel extends Component {
         if (lab) {
             lab.color = kind === 'tabOn' || kind === 'danger' ? UI_CREAM : UI_INK;
         }
+    }
+
+    private grantItem(id: string, n: number) {
+        const farm = this.node.getComponent(FarmSystem);
+        if (!farm) {
+            this.infoBoard?.showToast('FarmSystem 未就绪');
+            return;
+        }
+        const label = farm.gmGrant(id, n);
+        this.infoBoard?.showToast(label ? `已发放 ${label}` : `未知道具 ${id}`);
+    }
+
+    private grantStarterPack() {
+        const farm = this.node.getComponent(FarmSystem);
+        if (!farm) return;
+        for (const row of gmGrantItems()) {
+            if (row.type === ItemType.Tool) continue;
+            farm.gmGrant(row.id, row.type === ItemType.Currency ? 2000 : 50);
+        }
+        this.infoBoard?.showToast('可发放道具已批量发放');
+    }
+
+    private grantAllTools() {
+        const farm = this.node.getComponent(FarmSystem);
+        if (!farm) return;
+        for (const row of gmGrantItems()) {
+            if (row.type !== ItemType.Tool) continue;
+            farm.gmGrant(row.id, row.gmAmount || 1);
+        }
+        this.infoBoard?.showToast('已发放全部工具');
+    }
+
+    private shiftQuestTestPage(delta: number) {
+        const quests = this.node.getComponent(QuestSystem);
+        const total = quests?.allQuests().length ?? 0;
+        const pages = Math.max(1, Math.ceil(total / QTEST_PAGE_SIZE));
+        this._qtestPage = Math.max(0, Math.min(pages - 1, this._qtestPage + delta));
+        this.rebuildQuestTestList();
+    }
+
+    private rebuildQuestTestList() {
+        const host = this._qtestListHost;
+        if (!host?.isValid) return;
+
+        // Drop old list buttons from hit list + destroy rows.
+        this._btns = this._btns.filter((b) => {
+            let cur: Node | null = b.node;
+            while (cur) {
+                if (cur === host) return false;
+                cur = cur.parent;
+            }
+            return true;
+        });
+        host.removeAllChildren();
+
+        const quests = this.node.getComponent(QuestSystem);
+        const list = quests?.allQuests() ?? [];
+        const pages = Math.max(1, Math.ceil(list.length / QTEST_PAGE_SIZE));
+        if (this._qtestPage >= pages) this._qtestPage = pages - 1;
+        if (this._qtestPage < 0) this._qtestPage = 0;
+
+        const active = quests?.activeQuest;
+        if (this._qtestStatusLab) {
+            this._qtestStatusLab.string = active
+                ? `当前：${active.id} · ${active.name}`
+                : '当前：无主线';
+        }
+        if (this._qtestPageLab) {
+            this._qtestPageLab.string = `${this._qtestPage + 1}/${pages}`;
+        }
+
+        const slice = list.slice(
+            this._qtestPage * QTEST_PAGE_SIZE,
+            this._qtestPage * QTEST_PAGE_SIZE + QTEST_PAGE_SIZE,
+        );
+        const rowH = BTN_H_COMPACT;
+        const gapY = 12;
+        const hostH = host.getComponent(UITransform)?.contentSize.height ?? 320;
+        const btnW = Math.min(this._contentW - 48, host.getComponent(UITransform)?.contentSize.width ?? 480);
+        slice.forEach((q, i) => {
+            const y = hostH * 0.5 - rowH * 0.5 - i * (rowH + gapY);
+            const ch = CHAPTER_LABEL[q.chapter] ?? q.chapter;
+            const mark = quests?.isActive(q.id) ? '● ' : quests?.isCompleted(q.id) ? '✓ ' : '';
+            const label = `${mark}${q.id} ${q.name} · ${ch}`;
+            this.addBtn(host, label, 0, y, btnW, rowH, () => this.jumpToQuest(q.id));
+        });
     }
 
     /** Close spotlight / story, finish farm quests 1001–1007, unlock town → 1009. */
@@ -548,6 +1079,57 @@ export class GmPanel extends Component {
         this.infoBoard?.showToast(`已跳转 ${result.label}（${result.activeId}）`);
     }
 
+    /** Jump to one quest for isolated testing; travel to a sensible map. */
+    private jumpToQuest(questId: number) {
+        const story = this.node.getComponent(StoryDialogue);
+        const guide = this.node.getComponent(TutorialGuide);
+        const quests = this.node.getComponent(QuestSystem);
+        const hud = this.node.getComponent(FarmHUD);
+        const farm = this.node.getComponent(FarmSystem);
+
+        story?.prepareQuestJump(questId);
+        hud?.clearTutorialCraftGuide();
+        guide?.dismissSpotlight();
+
+        const result = quests?.jumpToQuest(questId);
+        if (!result) {
+            this.infoBoard?.showToast(`任务 ${questId} 不存在`);
+            return;
+        }
+
+        const map = this.mapForQuest(result.chapter, result.unlockMap);
+        const scene = director.getScene()?.name ?? '';
+        const wantScene =
+            map === 'farm' ? 'Main' : map === 'town' ? 'Town' : map === 'mine' ? 'Mine' : '';
+        this.setOpen(false);
+
+        if (wantScene && scene !== wantScene) {
+            const spawn =
+                map === 'town'
+                    ? TownWorldLayout.PLAYER_SPAWN
+                    : map === 'mine'
+                      ? MineWorldLayout.PLAYER_SPAWN
+                      : FarmWorldLayout.PLAYER_SPAWN;
+            this.infoBoard?.showToast(`测任务 ${result.activeId} ${result.name} · 前往地图`);
+            travelTo(map, {
+                farm,
+                quests,
+                spawnX: spawn.x,
+                spawnY: spawn.y,
+            });
+            return;
+        }
+
+        this.infoBoard?.showToast(`测任务 ${result.activeId} · ${result.name}`);
+        this._qtestPage = 0;
+    }
+
+    private mapForQuest(chapter: string, unlockMap: string): TravelMapId {
+        if (unlockMap === 'mine') return 'mine';
+        if (chapter === 'farm') return 'farm';
+        return 'town';
+    }
+
     private addBtn(
         parent: Node,
         text: string,
@@ -557,6 +1139,7 @@ export class GmPanel extends Component {
         h: number,
         action: () => void,
         danger = false,
+        fontSize = FONT_BTN,
     ): Node {
         const btn = new Node(`Btn_${text}`);
         btn.layer = parent.layer;
@@ -568,13 +1151,14 @@ export class GmPanel extends Component {
         const labN = new Node('Label');
         labN.layer = parent.layer;
         labN.setParent(btn);
-        labN.addComponent(UITransform).setContentSize(w, h);
+        labN.addComponent(UITransform).setContentSize(w - 12, h);
         const lab = labN.addComponent(Label);
         lab.string = text;
         lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
+        lab.overflow = Label.Overflow.SHRINK;
         styleUiLabel(lab, {
-            size: 22,
+            size: fontSize,
             color: new Color(48, 32, 18, 255),
             outline: false,
         });
@@ -590,14 +1174,21 @@ export class GmPanel extends Component {
 
     private refreshLabels() {
         const c = this.infoBoard?.getClock();
-        if (!c || !this._clockLab) return;
-        this._clockLab.string = `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
-        if (this._dateLab) {
-            const season = this.infoBoard?.seasonName(c.season) ?? '';
-            const wd = this.infoBoard?.weekdayName(c.weekday) ?? '';
-            this._dateLab.string = `${season} ${c.day}日 ${wd}${c.paused ? '  · 已暂停' : ''}`;
+        if (c && this._clockLab) {
+            this._clockLab.string = `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+            if (this._dateLab) {
+                const season = this.infoBoard?.seasonName(c.season) ?? '';
+                const wd = this.infoBoard?.weekdayName(c.weekday) ?? '';
+                this._dateLab.string = `${season} ${c.day}日 ${wd}${c.paused ? '  · 已暂停' : ''}`;
+            }
+            if (this._pauseLab) this._pauseLab.string = c.paused ? '继续' : '暂停';
         }
-        if (this._pauseLab) this._pauseLab.string = c.paused ? '继续' : '暂停';
+        if (this._tab === 'qtest' && this._qtestStatusLab) {
+            const active = this.node.getComponent(QuestSystem)?.activeQuest;
+            this._qtestStatusLab.string = active
+                ? `当前：${active.id} · ${active.name}`
+                : '当前：无主线';
+        }
     }
 
     private canvasHalf(): { halfW: number; halfH: number } {

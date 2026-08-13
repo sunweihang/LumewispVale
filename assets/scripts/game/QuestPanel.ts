@@ -22,27 +22,22 @@ import {
 import { CQuest } from '../cfg/schema';
 import type { BoardCommissionSnapshot } from './GameState';
 import { InputBridge } from './InputBridge';
+import { itemName } from './ItemCatalog';
 import { QUEST_FRAMES, QUEST_LAYOUT, QUEST_PANEL_PREFAB_UUID } from './QuestFrames';
+import { QUEST_TRACKER_LAYOUT as TL, QUEST_TRACKER_PREFAB_UUID } from './QuestTrackerFrames';
 import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
 import { playUiClick } from './UiAudio';
 import {
-    PANEL_CLOSE_BTN,
-    PANEL_CLOSE_HIT,
-    PANEL_CLOSE_PAD,
     UI_CREAM,
     UI_GOLD as GOLD,
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
-    UI_PARCHMENT_ROW as PARCHMENT,
-    UI_STROKE as STROKE,
-    UI_WOOD as WOOD,
-    UI_WOOD_DARK as WOOD_DARK,
+    applyWoodButton,
+    applyWoodPanel,
     drawWoodButton,
-    drawWoodParchmentPanel,
     loadPanelCloseFrame,
     paintPanelCloseVisual,
-    placePanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 import { formatGoldAmount } from './UiGoldAmount';
@@ -60,7 +55,8 @@ const FONT_DESC = 26;
 const INK_DONE = new Color(48, 86, 40, 255);
 
 /**
- * Quest journal — FarmHUD bag/craft chrome (Graphics wood + parchment) + top-right X.
+ * Quest journal — layout from QuestPanel.prefab; paints wood/parchment into Chrome once
+ * per open. Dynamic list rows stay code-built; tracker dock from QuestTracker.prefab.
  */
 @ccclass('QuestPanel')
 export class QuestPanel extends Component {
@@ -107,9 +103,11 @@ export class QuestPanel extends Component {
     btnGoto: Node | null = null;
 
     private _tracker: Node | null = null;
+    private _trackerDock: Node | null = null;
     private _trackerTitle: Label | null = null;
     private _trackerProg: Label | null = null;
     private _trackerCount: Label | null = null;
+    private _trackerChromePainted = false;
     /** Journal tabs — 主线 / 委托. */
     private _tab: 'main' | 'board' = 'main';
     private _mainTab: Node | null = null;
@@ -125,7 +123,6 @@ export class QuestPanel extends Component {
     private _scrollThumb: Node | null = null;
     private _scrollBarOp: UIOpacity | null = null;
     private _scrollBarLit = false;
-    private static readonly SCROLL_W = 12;
     private static readonly SCROLL_PAD = 6;
     private static readonly SCROLL_THUMB_MIN = 48;
     private static readonly SCROLL_THUMB_MAX = 90;
@@ -138,11 +135,7 @@ export class QuestPanel extends Component {
     private static readonly DESC_BADGE_H = 40;
     /** Collapsed preview length (CJK chars). */
     private static readonly DESC_PREVIEW_CHARS = 10;
-    /** Card: 标题 / 描述 / 目标 / 奖励 — no icon column. */
-    private static readonly ROW_H = 210;
-    private static readonly ROW_GAP = 16;
     private static readonly ROW_PAD_X = 28;
-    private static readonly CONTENT_W = L.panelW - 80;
     /** 'thumb' = drag knob; 'list' = finger-drag the rows; null = idle. */
     private _scrollDrag: 'thumb' | 'list' | null = null;
     private _scrollMoved = false;
@@ -160,16 +153,6 @@ export class QuestPanel extends Component {
     /** 详情 / 收起 hit targets. */
     private _descButtons = new Map<string, Node>();
 
-    /** FarmHUD BAR_Y / BAR_H — keep claim chip fully above the hotbar. */
-    private static readonly HUD_BAR_Y = -860;
-    private static readonly HUD_BAR_H = 150 + 30;
-    /** Same BAR_BG_W as FarmHUD — 7×150 slots + gaps + pad. */
-    private static readonly HUD_BAR_W = 7 * 150 + 6 * 4 + 6;
-    /** Gap between hotbar top and claim chip bottom. */
-    private static readonly HUD_CLEARANCE = 28;
-    private static readonly TAB_W = 168;
-    private static readonly TAB_H = 48;
-    private static readonly TAB_GAP = 20;
     private _open = false;
     private _prevBlocking = false;
     private _frames = new Map<FrameKey, SpriteFrame>();
@@ -203,7 +186,7 @@ export class QuestPanel extends Component {
 
     onDestroy() {
         if (this._open) InputBridge.uiBlocking = this._prevBlocking;
-        this._tracker?.destroy();
+        this._trackerDock?.destroy();
         if (this._prefabRoot && this._prefabRoot !== this.node) {
             this._prefabRoot.destroy();
         }
@@ -284,7 +267,7 @@ export class QuestPanel extends Component {
                 this.setHudVisible(false);
                 // Graphics must paint while active — inactive bake often drops the frame.
                 this.paintChrome();
-                this.ensureTabs();
+                this.bindTabs();
                 this.ensureListViewport(true);
                 this.refreshPanel();
                 this.quests?.hud?.syncQuestEntryVisible();
@@ -550,31 +533,20 @@ export class QuestPanel extends Component {
 
     /** Full content width — scrollbar overlays the right edge. */
     private listW(): number {
-        return QuestPanel.CONTENT_W;
-    }
-
-    /** Header + list band: title → tabs → scroll list with even margins. */
-    private panelMetrics() {
-        const halfH = L.panelH * 0.5;
-        const titleY = halfH - 78;
-        const tabY = titleY - 70;
-        const listTop = tabY - QuestPanel.TAB_H * 0.5 - 22;
-        const listBottom = -halfH + 40;
-        const listH = Math.max(200, listTop - listBottom);
-        const listY = (listTop + listBottom) * 0.5;
-        return { titleY, tabY, listY, listH };
+        return L.contentW;
     }
 
     private rowH(): number {
-        return QuestPanel.ROW_H;
+        return L.rowH;
     }
 
     private rowGap(): number {
-        return QuestPanel.ROW_GAP;
+        return L.rowGap;
     }
 
     private listH(): number {
-        return this.panelMetrics().listH;
+        const ut = this.listHost?.getComponent(UITransform);
+        return ut?.contentSize.height || L.listH;
     }
 
     private resolveRefs(root: Node) {
@@ -597,6 +569,16 @@ export class QuestPanel extends Component {
         this.btnClose = panel.getChildByName('BtnClose');
         this.btnGoto = panel.getChildByName('BtnGoto');
         if (this.btnGoto) this.btnGoto.active = false;
+        this._mainTab = panel.getChildByName('TabMain');
+        this._boardTab = panel.getChildByName('TabBoard');
+        this._mainTabLab = this._mainTab?.getChildByName('Lab')?.getComponent(Label) ?? null;
+        this._boardTabLab = this._boardTab?.getChildByName('Lab')?.getComponent(Label) ?? null;
+        this._scrollBar = panel.getChildByName('ScrollBar');
+        this._scrollThumb = this._scrollBar?.getChildByName('Thumb') ?? null;
+        this._scrollBarOp = this._scrollBar?.getComponent(UIOpacity) ?? null;
+        if (this._scrollBar && !this._scrollBarOp) {
+            this._scrollBarOp = this._scrollBar.addComponent(UIOpacity);
+        }
     }
 
     private loadFrames(done?: () => void) {
@@ -632,15 +614,13 @@ export class QuestPanel extends Component {
         this.paintDimmer();
         this.paintCloseButton();
         this.paintButtons();
-        this.ensureTabs();
+        this.bindTabs();
         // List Mask must wait until the panel is active — see ensureListViewport.
         this.ensureListViewport(false);
         this.ensureScrollBar();
         if (this.heroNode) this.heroNode.active = false;
         if (this.sectionLab) this.sectionLab.node.active = false;
         if (this.titleLab) {
-            const { titleY } = this.panelMetrics();
-            // Same title language as FarmHUD bag / craft.
             this.titleLab.string = '旅途日志';
             styleUiLabel(this.titleLab, {
                 size: FONT_TITLE,
@@ -650,73 +630,26 @@ export class QuestPanel extends Component {
                 outlineColor: new Color(62, 34, 16, 230),
             });
             applyUiFont(this.titleLab);
-            this.titleLab.node.setPosition(0, titleY, 0);
-            const tut = this.titleLab.node.getComponent(UITransform);
-            // Side gutters so title never sits under the close hit plate (craft uses ~2.8×).
-            if (tut) tut.setContentSize(Math.max(200, L.panelW - PANEL_CLOSE_BTN * 2.8), 48);
-        }
-        // Close stays in the header band only — never overlaps the list.
-        if (this.btnClose) {
-            placePanelCloseButton(this.btnClose, L.panelW, L.panelH);
         }
         if (this.btnGoto) this.btnGoto.active = false;
-        // Close / scrollbar above list chrome.
-        if (this.panelRoot) {
-            if (this._mainTab) this._mainTab.setSiblingIndex(this.panelRoot.children.length - 1);
-            if (this._boardTab) this._boardTab.setSiblingIndex(this.panelRoot.children.length - 1);
-            if (this.btnClose) this.btnClose.setSiblingIndex(this.panelRoot.children.length - 1);
-            if (this._scrollBar) this._scrollBar.setSiblingIndex(this.panelRoot.children.length - 1);
-        }
     }
 
-    private ensureTabs() {
+    /** Tabs live in the prefab — bind labels + paint on/off chrome. */
+    private bindTabs() {
         if (!this.panelRoot) return;
-        const tw = QuestPanel.TAB_W;
-        const th = QuestPanel.TAB_H;
-        const { tabY } = this.panelMetrics();
-        const gap = QuestPanel.TAB_GAP;
-        const leftX = -(tw + gap) * 0.5;
-        const rightX = (tw + gap) * 0.5;
-        if (!this._mainTab) {
-            const main = new Node('TabMain');
-            main.layer = this.panelRoot.layer;
-            main.setParent(this.panelRoot);
-            main.addComponent(UITransform).setContentSize(tw, th);
-            main.addComponent(Graphics);
-            const labN = new Node('Lab');
-            labN.layer = main.layer;
-            labN.setParent(main);
-            labN.addComponent(UITransform).setContentSize(tw, th);
-            const lab = labN.addComponent(Label);
-            lab.string = '主线';
-            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-            lab.verticalAlign = Label.VerticalAlign.CENTER;
+        if (!this._mainTab) this._mainTab = this.panelRoot.getChildByName('TabMain');
+        if (!this._boardTab) this._boardTab = this.panelRoot.getChildByName('TabBoard');
+        if (!this._mainTabLab) {
+            this._mainTabLab = this._mainTab?.getChildByName('Lab')?.getComponent(Label) ?? null;
+        }
+        if (!this._boardTabLab) {
+            this._boardTabLab = this._boardTab?.getChildByName('Lab')?.getComponent(Label) ?? null;
+        }
+        for (const lab of [this._mainTabLab, this._boardTabLab]) {
+            if (!lab) continue;
             styleUiLabel(lab, { size: FONT_BODY, color: INK, outline: false });
             applyUiFont(lab);
-            this._mainTab = main;
-            this._mainTabLab = lab;
         }
-        if (!this._boardTab) {
-            const board = new Node('TabBoard');
-            board.layer = this.panelRoot.layer;
-            board.setParent(this.panelRoot);
-            board.addComponent(UITransform).setContentSize(tw, th);
-            board.addComponent(Graphics);
-            const labN = new Node('Lab');
-            labN.layer = board.layer;
-            labN.setParent(board);
-            labN.addComponent(UITransform).setContentSize(tw, th);
-            const lab = labN.addComponent(Label);
-            lab.string = '委托';
-            lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-            lab.verticalAlign = Label.VerticalAlign.CENTER;
-            styleUiLabel(lab, { size: FONT_BODY, color: INK, outline: false });
-            applyUiFont(lab);
-            this._boardTab = board;
-            this._boardTabLab = lab;
-        }
-        this._mainTab.setPosition(leftX, tabY, 0);
-        this._boardTab.setPosition(rightX, tabY, 0);
         this.paintTabs();
     }
 
@@ -727,8 +660,10 @@ export class QuestPanel extends Component {
 
     private paintTab(node: Node | null, lab: Label | null, on: boolean) {
         if (!node) return;
-        const gfx = node.getComponent(Graphics);
-        if (gfx) drawWoodButton(gfx, QuestPanel.TAB_W, QuestPanel.TAB_H, on ? 'on' : 'off');
+        const ut = node.getComponent(UITransform);
+        const tw = ut?.contentSize.width || L.tabW;
+        const th = ut?.contentSize.height || L.tabH;
+        applyWoodButton(node, on ? 'on' : 'off', tw, th);
         if (lab) lab.color = on ? UI_CREAM : INK;
     }
 
@@ -763,48 +698,37 @@ export class QuestPanel extends Component {
         return false;
     }
 
-    /** Same wood + parchment chrome as FarmHUD — dedicated Chrome child behind content. */
+    /** Prefer prefab AI panel sprite; Chrome uses shared AI wood panel. */
     private paintPanelFrame() {
         if (!this.panelRoot) return;
-        const ut = this.panelRoot.getComponent(UITransform);
-        if (ut) ut.setContentSize(L.panelW, L.panelH);
-        // Prefab panel sprite is the old AI frame — hide it; draw FarmHUD chrome instead.
         const sp = this.panelRoot.getComponent(Sprite);
         if (sp) {
-            sp.enabled = false;
-            sp.spriteFrame = null;
+            sp.enabled = true;
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            sp.type = Sprite.Type.SLICED;
         }
-        // Never put Graphics on Panel itself (fights Sprite / children). Match FarmHUD.
-        let chrome = this.panelRoot.getChildByName('Chrome');
-        if (!chrome) {
-            chrome = new Node('Chrome');
-            chrome.layer = this.panelRoot.layer;
-            chrome.setParent(this.panelRoot);
-            chrome.addComponent(UITransform).setContentSize(L.panelW, L.panelH);
-            chrome.addComponent(Graphics);
-        }
+        const chrome = this.panelRoot.getChildByName('Chrome');
+        if (!chrome) return;
         chrome.setSiblingIndex(0);
+        // When Panel already has quest AI frame, hide duplicate Chrome fill.
+        if (sp?.spriteFrame) {
+            chrome.active = false;
+            return;
+        }
+        chrome.active = true;
         const cut = chrome.getComponent(UITransform);
-        if (cut) cut.setContentSize(L.panelW, L.panelH);
-        const g = chrome.getComponent(Graphics) ?? chrome.addComponent(Graphics);
-        drawWoodParchmentPanel(g, L.panelW, L.panelH, { radius: 27, lightInset: false });
+        const w = cut?.contentSize.width || L.panelW;
+        const h = cut?.contentSize.height || L.panelH;
+        applyWoodPanel(chrome, w, h);
     }
 
-    /** Top-right X — same asset / corner placement as bag & craft. */
+    /** Top-right X — prefab places BtnClose; only refresh the icon visual. */
     private paintCloseButton() {
         if (!this.btnClose) return;
-        placePanelCloseButton(this.btnClose, L.panelW, L.panelH, {
-            size: PANEL_CLOSE_BTN,
-            pad: PANEL_CLOSE_PAD,
-            hit: PANEL_CLOSE_HIT,
-        });
-
-        // Hide legacy footer label if present.
         const lab = this.btnClose.getChildByName('Label');
         if (lab) lab.active = false;
-
         paintPanelCloseVisual(this.btnClose, {
-            size: PANEL_CLOSE_BTN,
+            size: L.closeBtn,
             layer: this.btnClose.layer,
             frame: this._closeFrame,
         });
@@ -818,10 +742,7 @@ export class QuestPanel extends Component {
     private ensureListViewport(attachMask = true) {
         if (!this.listHost) return;
         const lw = this.listW();
-        const { listY, listH } = this.panelMetrics();
-        const ut = this.listHost.getComponent(UITransform) ?? this.listHost.addComponent(UITransform);
-        ut.setContentSize(lw, listH);
-        this.listHost.setPosition(0, listY, 0);
+        const lh = this.listH();
         // Drop legacy loose rows from before the scroll viewport existed.
         for (const child of [...this.listHost.children]) {
             if (child.name !== 'Content') child.destroy();
@@ -831,7 +752,7 @@ export class QuestPanel extends Component {
             content = new Node('Content');
             content.layer = this.listHost.layer;
             content.setParent(this.listHost);
-            content.addComponent(UITransform).setContentSize(lw, listH);
+            content.addComponent(UITransform).setContentSize(lw, lh);
         }
         this._listContent = content;
 
@@ -849,7 +770,7 @@ export class QuestPanel extends Component {
         }
     }
 
-    /** Implicit overlay scrollbar — no layout gutter; fades after idle. */
+    /** ScrollBar/Thumb from prefab — thumb Y still updates with scroll. */
     private ensureScrollBar() {
         if (!this.panelRoot) return;
         for (const name of ['BtnScrollUp', 'BtnScrollDown']) {
@@ -857,17 +778,17 @@ export class QuestPanel extends Component {
             if (old?.isValid) old.destroy();
         }
 
-        const w = QuestPanel.SCROLL_W;
-        const { listY, listH } = this.panelMetrics();
-        let bar = this.panelRoot.getChildByName('ScrollBar');
+        let bar = this._scrollBar ?? this.panelRoot.getChildByName('ScrollBar');
         if (!bar) {
+            // Fallback if an older prefab is still cached.
+            const w = L.scrollW;
             bar = new Node('ScrollBar');
             bar.layer = this.panelRoot.layer;
             bar.setParent(this.panelRoot);
-            bar.addComponent(UITransform).setContentSize(w, listH);
+            bar.setPosition(L.scrollX, L.listY, 0);
+            bar.addComponent(UITransform).setContentSize(w, L.listH);
             bar.addComponent(Graphics);
             bar.addComponent(UIOpacity);
-
             const thumb = new Node('Thumb');
             thumb.layer = bar.layer;
             thumb.setParent(bar);
@@ -877,9 +798,6 @@ export class QuestPanel extends Component {
         this._scrollBar = bar;
         this._scrollThumb = bar.getChildByName('Thumb');
         this._scrollBarOp = bar.getComponent(UIOpacity) ?? bar.addComponent(UIOpacity);
-        // Sit on the list's right edge without shrinking rows.
-        bar.setPosition(this.listW() * 0.5 - w * 0.5 - 2, listY, 0);
-        bar.getComponent(UITransform)?.setContentSize(w, listH);
         this.paintScrollBar();
     }
 
@@ -912,7 +830,7 @@ export class QuestPanel extends Component {
         }
         if (this._scrollBarOp && !this._scrollBarLit) this._scrollBarOp.opacity = 0;
 
-        const w = QuestPanel.SCROLL_W;
+        const w = L.scrollW;
         const pad = QuestPanel.SCROLL_PAD;
         const trackH = this.listH() - pad * 2;
         const thumbH = this.scrollThumbH(trackH);
@@ -988,7 +906,7 @@ export class QuestPanel extends Component {
 
     private refreshPanel() {
         if (!this.listHost || !this.quests) return;
-        this.ensureTabs();
+        this.bindTabs();
         this.paintTabs();
         this.ensureListViewport();
         const content = this._listContent;
@@ -1305,7 +1223,7 @@ export class QuestPanel extends Component {
     }
 
     private rowHForDesc(fullDesc: string, key: string): number {
-        if (!this._descExpanded.has(key)) return QuestPanel.ROW_H;
+        if (!this._descExpanded.has(key)) return this.rowH();
         const rw = this.listW();
         const padX = QuestPanel.ROW_PAD_X;
         const textW = Math.max(120, rw - padX * 2 - QuestPanel.DESC_BADGE_W - 10);
@@ -1313,7 +1231,7 @@ export class QuestPanel extends Component {
         const lines = Math.max(1, Math.ceil((`描述  ${fullDesc}`.length) / charsPerLine));
         const descH = lines * 34 + 8;
         // title + desc + goal + reward
-        return Math.max(QuestPanel.ROW_H, descH + 40 + 44 + 44 + 36);
+        return Math.max(this.rowH(), descH + 40 + 44 + 44 + 36);
     }
 
     private handleDescDetailTap(lx: number, ly: number): boolean {
@@ -1455,26 +1373,7 @@ export class QuestPanel extends Component {
     }
 
     private rewardItemName(kind: string): string {
-        const k = (kind || '').toLowerCase().replace(/[\s-]+/g, '_');
-        const map: Record<string, string> = {
-            gold: '金币',
-            coin: '金币',
-            money: '金币',
-            seeds: '种子',
-            seed: '种子',
-            boost: '催熟剂',
-            grass: '草料',
-            wood: '木材',
-            dirt: '泥土',
-            stone: '石料',
-            fish: '鱼',
-            copper: '铜矿',
-            iron: '铁矿',
-            goldore: '金矿',
-            gold_ore: '金矿',
-            parsnip: '防风草',
-        };
-        return map[k] ?? kind;
+        return itemName(kind, kind);
     }
 
     private openRewardPopup() {
@@ -1524,49 +1423,23 @@ export class QuestPanel extends Component {
     }
 
     private paintRowPlate(g: Graphics, w: number, h: number, active: boolean, done: boolean) {
-        const x0 = -w * 0.5;
-        const y0 = -h * 0.5;
+        const node = g.node;
         g.clear();
-        if (done) {
-            g.fillColor = new Color(168, 186, 120, 255);
-            g.roundRect(x0, y0, w, h, 12);
-            g.fill();
-            g.fillColor = new Color(210, 220, 170, 255);
-            g.roundRect(x0 + 3, y0 + 3, w - 6, h - 6, 10);
-            g.fill();
-            g.strokeColor = new Color(70, 110, 50, 255);
-            g.lineWidth = 2;
-            g.roundRect(x0, y0, w, h, 12);
-            g.stroke();
+        g.enabled = false;
+        const key: FrameKey = done ? 'rowDone' : active ? 'rowActive' : 'row';
+        const sf = this._frames.get(key) ?? null;
+        let sp = node.getComponent(Sprite);
+        if (!sp) sp = node.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = false;
+        sp.type = Sprite.Type.SLICED;
+        if (sf) {
+            sp.spriteFrame = sf;
+            node.getComponent(UITransform)?.setContentSize(w, h);
             return;
         }
-        if (active) {
-            g.fillColor = WOOD;
-            g.roundRect(x0, y0, w, h, 12);
-            g.fill();
-            g.fillColor = PARCHMENT;
-            g.roundRect(x0 + 4, y0 + 4, w - 8, h - 8, 10);
-            g.fill();
-            g.strokeColor = GOLD;
-            g.lineWidth = 3;
-            g.roundRect(x0 + 1, y0 + 1, w - 2, h - 2, 11);
-            g.stroke();
-            g.strokeColor = STROKE;
-            g.lineWidth = 2;
-            g.roundRect(x0, y0, w, h, 12);
-            g.stroke();
-            return;
-        }
-        g.fillColor = new Color(150, 96, 48, 255);
-        g.roundRect(x0, y0, w, h, 12);
-        g.fill();
-        g.fillColor = new Color(210, 176, 120, 255);
-        g.roundRect(x0 + 3, y0 + 3, w - 6, h - 6, 10);
-        g.fill();
-        g.strokeColor = WOOD_DARK;
-        g.lineWidth = 2;
-        g.roundRect(x0, y0, w, h, 12);
-        g.stroke();
+        // AI row frames still loading — keep node sized; sprite lands on next refresh.
+        node.getComponent(UITransform)?.setContentSize(w, h);
     }
 
     private setHudVisible(visible: boolean) {
@@ -1590,7 +1463,7 @@ export class QuestPanel extends Component {
         else if (this._tracker) this._tracker.active = show;
     }
 
-    /** Quick-claim bar above the hotbar — no journal badge (that sits beside the bag). */
+    /** Quick-claim bar above the hotbar — layout from QuestTracker.prefab. */
     private buildTracker() {
         const canvas = this.node;
         for (const name of ['QuestHud', 'QuestTracker', 'QuestBtn']) {
@@ -1598,29 +1471,54 @@ export class QuestPanel extends Component {
             if (old) old.destroy();
         }
 
-        const edgePad = 16;
-        const tw = 420;
-        const th = 120;
-        const hotbarTop = QuestPanel.HUD_BAR_Y + QuestPanel.HUD_BAR_H * 0.5;
-        const dockY = hotbarTop + QuestPanel.HUD_CLEARANCE + th * 0.5;
-        const barHalf = QuestPanel.HUD_BAR_W * 0.5;
-        const barX = -barHalf + tw * 0.5 + edgePad;
+        assetManager.loadAny({ uuid: QUEST_TRACKER_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[QuestPanel] tracker prefab missing', err);
+                return;
+            }
+            const dock = instantiate(asset as Prefab);
+            dock.name = 'QuestHud';
+            dock.layer = canvas.layer;
+            dock.setParent(canvas);
+            dock.setSiblingIndex(canvas.children.length - 1);
+            this._trackerDock = dock;
+            const bar = dock.getChildByName('QuestTracker');
+            this._tracker = bar;
+            this._trackerTitle = bar?.getChildByName('Title')?.getComponent(Label) ?? null;
+            this._trackerProg = bar?.getChildByName('Prog')?.getComponent(Label) ?? null;
+            this._trackerCount = bar?.getChildByName('Count')?.getComponent(Label) ?? null;
 
-        const dock = new Node('QuestHud');
-        dock.layer = canvas.layer;
-        dock.setParent(canvas);
-        dock.setPosition(0, 0, 0);
-        dock.addComponent(UITransform).setContentSize(1, 1);
+            for (const lab of [this._trackerTitle, this._trackerProg, this._trackerCount]) {
+                if (!lab) continue;
+                styleUiLabel(lab, {
+                    size: FONT_BODY,
+                    color: lab === this._trackerProg ? INK_MUTE : INK,
+                    outline: false,
+                });
+                lab.lineHeight = FONT_BODY + 14;
+                lab.spacingX = 2;
+                lab.verticalAlign = Label.VerticalAlign.CENTER;
+                applyUiFont(lab);
+            }
+            if (this._trackerTitle) this._trackerTitle.horizontalAlign = Label.HorizontalAlign.LEFT;
+            if (this._trackerProg) this._trackerProg.horizontalAlign = Label.HorizontalAlign.LEFT;
+            if (this._trackerCount) this._trackerCount.horizontalAlign = Label.HorizontalAlign.RIGHT;
 
-        const bar = new Node('QuestTracker');
-        bar.layer = canvas.layer;
-        bar.setParent(dock);
-        bar.setPosition(barX, dockY, 0);
-        bar.addComponent(UITransform).setContentSize(tw, th);
+            this.paintTrackerChromeOnce();
+            this.syncQuestHudVisibility();
+            this.refreshTracker();
+        });
+    }
 
-        const g = bar.addComponent(Graphics);
+    private paintTrackerChromeOnce() {
+        if (this._trackerChromePainted || !this._tracker?.isValid) return;
+        const g = this._tracker.getComponent(Graphics);
+        if (!g) return;
+        const tw = TL.barW;
+        const th = TL.barH;
         const x0 = -tw * 0.5;
         const y0 = -th * 0.5;
+        g.clear();
         g.fillColor = WOOD;
         g.roundRect(x0, y0, tw, th, 16);
         g.fill();
@@ -1638,66 +1536,7 @@ export class QuestPanel extends Component {
         g.lineWidth = 2;
         g.roundRect(x0 + 6, y0 + 6, tw - 12, th - 12, 12);
         g.stroke();
-
-        const textLeft = x0 + 24;
-        const textRight = -x0 - 24;
-        const objW = tw - 48 - 110;
-        const countW = 100;
-        const titleY = 18;
-        const rowY = -22;
-
-        const titleN = new Node('Title');
-        titleN.layer = canvas.layer;
-        titleN.setParent(bar);
-        titleN.setPosition(textLeft, titleY, 0);
-        const tUt = titleN.addComponent(UITransform);
-        tUt.setContentSize(tw - 48, 40);
-        tUt.setAnchorPoint(0, 0.5);
-        const title = titleN.addComponent(Label);
-        title.horizontalAlign = Label.HorizontalAlign.LEFT;
-        title.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(title, { size: FONT_BODY, color: INK, outline: false });
-        title.lineHeight = FONT_BODY + 14;
-        title.spacingX = 2;
-        this._trackerTitle = title;
-
-        const progN = new Node('Prog');
-        progN.layer = canvas.layer;
-        progN.setParent(bar);
-        progN.setPosition(textLeft, rowY, 0);
-        const pUt = progN.addComponent(UITransform);
-        pUt.setContentSize(objW, 40);
-        pUt.setAnchorPoint(0, 0.5);
-        const prog = progN.addComponent(Label);
-        prog.horizontalAlign = Label.HorizontalAlign.LEFT;
-        prog.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(prog, { size: FONT_BODY, color: INK_MUTE, outline: false });
-        prog.lineHeight = FONT_BODY + 14;
-        prog.spacingX = 2;
-        this._trackerProg = prog;
-
-        const countN = new Node('Count');
-        countN.layer = canvas.layer;
-        countN.setParent(bar);
-        countN.setPosition(textRight, rowY, 0);
-        const cUt = countN.addComponent(UITransform);
-        cUt.setContentSize(countW, 40);
-        cUt.setAnchorPoint(1, 0.5);
-        const count = countN.addComponent(Label);
-        count.horizontalAlign = Label.HorizontalAlign.RIGHT;
-        count.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(count, { size: FONT_BODY, color: INK, outline: false });
-        count.lineHeight = FONT_BODY + 14;
-        count.spacingX = 2;
-        this._trackerCount = count;
-
-        this._tracker = bar;
-        applyUiFont(title);
-        applyUiFont(prog);
-        applyUiFont(count);
-
-        dock.setSiblingIndex(canvas.children.length - 1);
-        this.syncQuestHudVisibility();
+        this._trackerChromePainted = true;
     }
 
     private hitHud(uiX: number, uiY: number): boolean {

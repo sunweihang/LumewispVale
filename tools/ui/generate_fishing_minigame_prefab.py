@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Generate FishingMinigame.prefab + FishingMinigameFrames.ts — layout source of truth.
+
+  /opt/homebrew/bin/python3.12 tools/ui/generate_fishing_minigame_prefab.py
+"""
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from pathlib import Path
+
+from cocos_prefab_lib import PrefabBuilder
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT_PREFAB = ROOT / "assets/prefabs/ui/FishingMinigame.prefab"
+OUT_TS = ROOT / "assets/scripts/game/FishingMinigameFrames.ts"
+FISHING_FRAMES_TS = ROOT / "assets/scripts/game/FishingFrames.ts"
+
+# --- Layout (canvas-local, center origin) — mirrored in FishingMinigameFrames.ts ---
+PANEL_W, PANEL_H = 160, 584
+PANEL_X, PANEL_Y = -200, 24
+TRACK_W, TRACK_H = 56, 536
+TRACK_X, TRACK_Y = -9, 1
+PROG_W, PROG_X = 16, 41
+FISH_SIZE = 32
+BAR_INSET_X = 3
+BAR_W = max(20, TRACK_W - BAR_INSET_X * 2)
+HOLD_R = 96
+HOLD_SIZE = HOLD_R * 2
+HOLD_X, HOLD_Y = 240, -40
+HOLD_LAB_Y = -HOLD_SIZE * 0.58
+BANNER_Y = PANEL_Y + PANEL_H * 0.5 + 36
+BANNER = (255, 236, 160, 255)
+HOLD_LAB = (255, 248, 220, 255)
+
+
+def load_fishing_sf(key: str) -> str:
+    text = FISHING_FRAMES_TS.read_text(encoding="utf-8")
+    m = re.search(rf'"{key}"\s*:\s*"([^"]+)"', text)
+    if not m:
+        raise SystemExit(f"missing FISHING_FRAMES.{key}")
+    return m.group(1)
+
+
+def build(panel_sf: str, bar_sf: str, fish_sf: str, hold_sf: str) -> PrefabBuilder:
+    b = PrefabBuilder("FishingMinigame")
+    root = b.node("FishingMinigame", None, 0, 0, 1080, 1920, active=False)
+    assert root == 1
+
+    dim = b.node("Dim", root, 0, 0, 2200, 4000, with_graphics=True)
+
+    panel = b.node("Panel", root, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, sprite=panel_sf)
+    track = b.node("Track", panel, TRACK_X, TRACK_Y, TRACK_W, TRACK_H)
+    bar = b.node("Bar", track, 0, 0, BAR_W, 120, sprite=bar_sf)
+    # Vertical 9-slice for the AI paddle.
+    for item in b.items:
+        if (
+            isinstance(item, dict)
+            and item.get("__type__") == "cc.Sprite"
+            and item.get("node", {}).get("__id__") == bar
+        ):
+            item["_type"] = 1  # SLICED
+            item["_sizeMode"] = 0
+            item["_isTrimmedMode"] = False
+    fish = b.node("Fish", track, 0, 0, FISH_SIZE, FISH_SIZE, sprite=fish_sf)
+    b.set_children(track, [bar, fish])
+
+    prog = b.node("Progress", panel, PROG_X, TRACK_Y, PROG_W + 4, TRACK_H, with_graphics=True)
+    b.set_children(panel, [track, prog])
+
+    banner = b.node(
+        "Banner",
+        root,
+        PANEL_X,
+        BANNER_Y,
+        320,
+        52,
+        active=False,
+        label={
+            "text": "",
+            "size": 40,
+            "color": BANNER,
+            "h_align": 1,
+            "outline": True,
+        },
+    )
+
+    hold = b.node("HoldPad", root, HOLD_X, HOLD_Y, HOLD_SIZE, HOLD_SIZE, sprite=hold_sf)
+    hold_lab = b.node(
+        "HoldLab",
+        hold,
+        0,
+        HOLD_LAB_Y,
+        160,
+        40,
+        label={
+            "text": "按住",
+            "size": 26,
+            "color": HOLD_LAB,
+            "h_align": 1,
+            "outline": True,
+        },
+    )
+    b.set_children(hold, [hold_lab])
+
+    b.set_children(root, [dim, panel, banner, hold])
+    return b
+
+
+def write_meta(path: Path, name: str, prefab_uuid: str) -> str:
+    meta_path = Path(str(path) + ".meta")
+    if meta_path.exists():
+        prefab_uuid = json.loads(meta_path.read_text(encoding="utf-8")).get("uuid", prefab_uuid)
+    meta = {
+        "ver": "1.1.50",
+        "importer": "prefab",
+        "imported": True,
+        "uuid": prefab_uuid,
+        "files": [".json"],
+        "subMetas": {},
+        "userData": {"syncNodeName": name},
+    }
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    return prefab_uuid
+
+
+def main() -> None:
+    panel_sf = load_fishing_sf("panel")
+    bar_sf = load_fishing_sf("bar")
+    fish_sf = load_fishing_sf("fish")
+    hold_sf = load_fishing_sf("hold")
+
+    prefab_uuid = str(uuid.uuid4())
+    meta_path = Path(str(OUT_PREFAB) + ".meta")
+    if meta_path.exists():
+        prefab_uuid = json.loads(meta_path.read_text(encoding="utf-8")).get("uuid", prefab_uuid)
+
+    pb = build(panel_sf, bar_sf, fish_sf, hold_sf)
+    OUT_PREFAB.parent.mkdir(parents=True, exist_ok=True)
+    OUT_PREFAB.write_text(json.dumps(pb.items, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    prefab_uuid = write_meta(OUT_PREFAB, "FishingMinigame", prefab_uuid)
+
+    values = {
+        "panelW": PANEL_W,
+        "panelH": PANEL_H,
+        "panelX": PANEL_X,
+        "panelY": PANEL_Y,
+        "trackW": TRACK_W,
+        "trackH": TRACK_H,
+        "trackX": TRACK_X,
+        "trackY": TRACK_Y,
+        "progW": PROG_W,
+        "progX": PROG_X,
+        "fishSize": FISH_SIZE,
+        "barInsetX": BAR_INSET_X,
+        "holdR": HOLD_R,
+        "holdX": HOLD_X,
+        "holdY": HOLD_Y,
+        "bannerY": BANNER_Y,
+    }
+    lines = [
+        "/** Auto-generated by tools/ui/generate_fishing_minigame_prefab.py — do not edit by hand. */",
+        f"export const FISHING_MINIGAME_PREFAB_UUID = '{prefab_uuid}';",
+        "",
+        "/** Prefab layout (canvas-local px). */",
+        "export const FISHING_MINIGAME_LAYOUT = {",
+    ]
+    for k, v in values.items():
+        if isinstance(v, float):
+            lines.append(f"    {k}: {round(v, 1)},")
+        else:
+            lines.append(f"    {k}: {v},")
+    lines.append("} as const;")
+    lines.append("")
+    OUT_TS.write_text("\n".join(lines), encoding="utf-8")
+    print("wrote", OUT_PREFAB, prefab_uuid)
+    print("patched", OUT_TS)
+
+
+if __name__ == "__main__":
+    main()

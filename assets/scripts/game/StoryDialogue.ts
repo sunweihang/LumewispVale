@@ -218,6 +218,43 @@ export class StoryDialogue extends Component implements IStoryChatHost {
         this._lastActiveId = this.quests?.activeQuest?.id ?? this._lastActiveId;
     }
 
+    /**
+     * GM: silence prior quest intros before parking on a single test quest.
+     * Target intro stays unseen so `onQuestChange` can still play it.
+     */
+    prepareQuestJump(questId: number) {
+        const tables = getConfigTables();
+        const target = tables?.TQuest.get(questId);
+        if (!target) {
+            this.clearPlayQueue();
+            this._lastActiveId = this.quests?.activeQuest?.id ?? this._lastActiveId;
+            return;
+        }
+
+        // Unlock HUD / skip farm wake once we're past the first yard clear.
+        if (target.sort > 10 || questId !== 1001) {
+            this.markScriptsSeen(['origin_story', 'wake_farm']);
+            GameState.markDialogueSeen('guide_wake_yard');
+        }
+
+        for (const q of tables!.TQuest.getDataList()) {
+            if (q.sort >= target.sort) continue;
+            if (q.introScript && isScriptId(q.introScript)) {
+                GameState.markDialogueSeen(q.introScript);
+            }
+            if (q.outroScript && isScriptId(q.outroScript)) {
+                GameState.markDialogueSeen(q.outroScript);
+            }
+        }
+        // Building chats that gate town progression.
+        if (target.chapter !== 'farm') {
+            this.markScriptsSeen(['arrive_town', 'mayor_tea', 'carpenter_nails', 'community_bell']);
+        }
+
+        this.clearPlayQueue();
+        this._lastActiveId = this.quests?.activeQuest?.id ?? this._lastActiveId;
+    }
+
     private markScriptsSeen(ids: ScriptId[]) {
         for (const id of ids) GameState.markDialogueSeen(id);
     }

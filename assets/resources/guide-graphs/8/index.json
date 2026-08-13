@@ -1,0 +1,7 @@
+{
+  "guideId": 8,
+  "name": "农田翻种",
+  "description": "前往农田地块操作",
+  "category": "goto",
+  "exportFlag": true
+}

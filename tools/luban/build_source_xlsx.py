@@ -96,6 +96,14 @@ def main():
         [None, None, None, None, None, None, None, "HintMayor", "提示镇长府", 14, "", None],
         [None, None, None, None, None, None, None, "SelectAxe", "选中斧头", 15, "", None],
         [None, None, None, None, None, None, None, "HintRock", "提示挖石", 16, "", None],
+        ["ItemType", "ItemType", False, True, None, "物品类型", None, "Misc", "杂项", 0, "", None],
+        [None, None, None, None, None, None, None, "Tool", "工具", 1, "", None],
+        [None, None, None, None, None, None, None, "Material", "材料", 2, "", None],
+        [None, None, None, None, None, None, None, "Consumable", "消耗品", 3, "", None],
+        [None, None, None, None, None, None, None, "Currency", "货币", 4, "", None],
+        [None, None, None, None, None, None, None, "Crop", "作物", 5, "", None],
+        [None, None, None, None, None, None, None, "Recipe", "配方", 6, "", None],
+        [None, None, None, None, None, None, None, "Seed", "种子", 7, "", None],
     ]:
         ws.append(row)
     wb.save(DATAS / "__enums__.xlsx")
@@ -115,7 +123,9 @@ def main():
         [None, "TQuest", "CQuest", True, "quest.xlsx", None, "map", "c", "主线任务", None, None],
         [None, "TGoto", "CGoto", True, "goto.xlsx", None, "map", "c", "引导跳转", None, None],
         [None, "TFlag", "CFlag", True, "flag.xlsx", None, "map", "c", "剧情旗标", None, None],
-        [None, "TItem", "CItem", True, "item.xlsx", None, "map", "c", "物品显示名", None, None],
+        [None, "TItem", "CItem", True, "item.xlsx", None, "map", "c", "基础物品表", None, None],
+        [None, "TDisplay", "CDisplay", True, "display.xlsx", None, "map", "c", "展示配置表", None, None],
+        [None, "TDisplayTemplate", "CDisplayTemplate", True, "display_template.xlsx", None, "map", "c", "展示模板表", None, None],
         [None, "TDialogue", "CDialogue", True, "dialogue.xlsx", None, "map", "c", "对白脚本目录", None, None],
         [None, "TChat", "CChat", True, "chat.xlsx", None, "map", "c", "对白台词行", None, None],
     ]:
@@ -353,30 +363,77 @@ def main():
         ],
     )
 
-    # ── Items (display names for rewards / gather params) ──────────────────
+    # ── Items + display (SLG split). Authoritative rows live in Datas/*.xlsx. ─
     write_data(
         "item.xlsx",
         "item",
-        ["id", "name"],
-        ["string", "string"],
-        ["c", "c"],
-        ["物品ID", "显示名"],
         [
-            ["grass", "草料"],
-            ["wood", "木料"],
-            ["dirt", "泥土"],
-            ["stone", "石料"],
-            ["fish", "鱼"],
-            ["seeds", "种子"],
-            ["parsnip", "防风草"],
-            ["boost", "催熟剂"],
-            ["copper", "铜矿石"],
-            ["iron", "铁矿石"],
-            ["goldOre", "金矿石"],
-            ["can", "水壶"],
-            ["axe", "斧头"],
-            ["rod", "鱼竿"],
-            ["hoe", "锄头"],
+            "id",
+            "type",
+            "name",
+            "display_id",
+            "use_condition_id",
+            "use_effect_id",
+            "max_stack",
+            "desc",
+            "gm_grant",
+            "gm_amount",
+            "sort",
+        ],
+        [
+            "string",
+            "ItemType",
+            "string",
+            "int",
+            "int",
+            "int",
+            "int",
+            "string",
+            "bool",
+            "int",
+            "int",
+        ],
+        ["c"] * 11,
+        [
+            "物品ID",
+            "类型",
+            "显示名",
+            "展示配置ID",
+            "使用条件ID",
+            "使用效果ID",
+            "最大堆叠",
+            "描述",
+            "GM可发放",
+            "GM单次数量",
+            "排序",
+        ],
+        [
+            ["hoe", "Tool", "锄头", 1002, 0, 0, 1, "开垦荒地", True, 1, 20],
+        ],
+    )
+    write_data(
+        "display_template.xlsx",
+        "display_template",
+        ["id", "name", "desc", "param_desc"],
+        ["int", "string", "string", "string"],
+        ["c", "c", "c", "c"],
+        ["ID", "模板名称", "说明", "参数说明"],
+        [
+            [1, "堆叠数量", "显示道具数量", "num=最大显示数量"],
+            [11, "图标展示", "显示道具图标与分类名", "param JSON: icon, kind"],
+            [12, "售价", "可出售标价（无此行=不可出售）", "param JSON: price, currency"],
+        ],
+    )
+    write_data(
+        "display.xlsx",
+        "display",
+        ["id", "display_template_id", "param", "num", "link_id"],
+        ["int", "int", "string", "int", "int"],
+        ["c", "c", "c", "c", "c"],
+        ["ID", "展示模板ID", "参数(JSON)", "数值", "关联物品display_id"],
+        [
+            [1, 11, '{"icon":"","kind":"工具"}', 0, 1002],
+            [2, 1, "[]", 1, 1002],
         ],
     )
 

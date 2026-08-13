@@ -1,0 +1,7 @@
+{
+  "guideId": 4,
+  "name": "浇水·水壶",
+  "description": "打开背包，把水壶拖到快捷栏，再给作物浇水",
+  "category": "goto",
+  "exportFlag": true
+}

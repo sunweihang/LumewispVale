@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "name": "堆叠数量",
+    "desc": "显示道具数量",
+    "param_desc": "num=最大显示数量"
+  },
+  {
+    "id": 2,
+    "name": "时限道具",
+    "desc": "显示剩余时间",
+    "param_desc": "param[0]=时间类型(hour/day), num=显示方式(0-不显示 1-显示 2-过期后显示)"
+  },
+  {
+    "id": 3,
+    "name": "VIP专属",
+    "desc": "VIP专属道具显示",
+    "param_desc": "num=需要的VIP等级"
+  },
+  {
+    "id": 4,
+    "name": "品质边框",
+    "desc": "显示品质边框",
+    "param_desc": "num=品质等级(1-5)"
+  },
+  {
+    "id": 5,
+    "name": "品质发光",
+    "desc": "显示品质发光特效",
+    "param_desc": "num=品质等级(1-5)"
+  },
+  {
+    "id": 6,
+    "name": "新物品标签",
+    "desc": "显示“新”标签",
+    "param_desc": "param[0]=持续时间(小时)"
+  },
+  {
+    "id": 7,
+    "name": "绑定图标",
+    "desc": "显示绑定图标",
+    "param_desc": "num=绑定类型(0-不显示 1-已绑定 2-可绑定)"
+  },
+  {
+    "id": 8,
+    "name": "折扣标签",
+    "desc": "显示折扣标签",
+    "param_desc": "num=折扣比例(0-不显示)"
+  },
+  {
+    "id": 9,
+    "name": "等级要求",
+    "desc": "显示等级要求",
+    "param_desc": "num=需要等级"
+  },
+  {
+    "id": 10,
+    "name": "专用标签",
+    "desc": "显示专用职业/用途图标",
+    "param_desc": "param[0]=标签ID"
+  },
+  {
+    "id": 11,
+    "name": "图标展示",
+    "desc": "显示道具图标与分类名",
+    "param_desc": "param JSON: icon=SpriteFrame UUID, kind=分类名"
+  },
+  {
+    "id": 12,
+    "name": "售价",
+    "desc": "道具可出售时的标价（无此行=不可出售）",
+    "param_desc": "param JSON: price=数量, currency=货币物品id(默认gold)"
+  }
+]

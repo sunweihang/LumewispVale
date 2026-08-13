@@ -1,0 +1,7 @@
+{
+  "guideId": 2,
+  "name": "开垦·锄头",
+  "description": "打开背包，把锄头拖到快捷栏，再点击荒地开垦",
+  "category": "goto",
+  "exportFlag": true
+}

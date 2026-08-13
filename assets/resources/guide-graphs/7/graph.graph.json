@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "graphId": "guide_7",
+  "profile": {
+    "name": "guide",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "GuideEntranceBlueprint",
+        "TryBagToHotbarBlueprint",
+        "TrySelectToolBlueprint",
+        "TryOpenBagBlueprint",
+        "TryWorldPlotBlueprint",
+        "TryWorldDecorBlueprint",
+        "TryWorldNodeBlueprint",
+        "TryFishBlueprint",
+        "TryCraftBenchBlueprint",
+        "TryHarvestBoostBlueprint",
+        "TryHintFarmBlueprint",
+        "TryTownGateBlueprint",
+        "TryMayorBlueprint",
+        "TryTownOutdoorBlueprint",
+        "TryIndoorOrDoorBlueprint",
+        "TryMineCopperBlueprint",
+        "AimQuestDockBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "GuideEntranceBlueprint",
+      "title": "引导入口",
+      "position": {
+        "x": 40,
+        "y": 80,
+        "w": 220,
+        "h": 120
+      },
+      "minWidth": 220,
+      "minHeight": 120,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "解析",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_0",
+      "typeName": "TryOpenBagBlueprint",
+      "title": "TryOpenBagBlueprint",
+      "position": {
+        "x": 320,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "tip": "露穗：点开背包看看"
+      }
+    },
+    {
+      "id": "node_1",
+      "typeName": "AimQuestDockBlueprint",
+      "title": "AimQuestDockBlueprint",
+      "position": {
+        "x": 600,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "后继",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "tip": "查看当前任务目标"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_0",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_0",
+      "fromPortIndex": 1,
+      "toNodeId": "node_1",
+      "toPortIndex": 0
+    }
+  ]
+}

@@ -5,12 +5,12 @@ const { ccclass, property } = _decorator;
 type StaticEntry = { node: Node; y: number };
 
 /**
- * Stable painter sort for 3/4 top-down:
- * - Ground tiles always behind (never Y-merged with actors)
- * - Static props sorted once (rebuilt when hierarchy size changes)
- * - Only movers (player / crops / grow UI) re-merge each tick
- * - Door portal FX bias south over porch/yard facades, then nearby movers
- *   are promoted past them so the hero stands on the circle (not under it)
+ * Stable painter / depth sort for 3/4 top-down:
+ * - Ground band first (tiles / water / fringe — never depth-merged with actors)
+ * - Actors ordered by foot-Y depth (higher / north → behind)
+ * - Statics cached; movers re-merge each tick
+ * - Door portal FX use a south depth stand-in, then movers are promoted past
+ *   the ring so the hero stands on the circle
  */
 @ccclass('WorldYSort')
 export class WorldYSort extends Component {
@@ -57,10 +57,10 @@ export class WorldYSort extends Component {
         for (let i = 0; i < children.length; i++) {
             const child = children[i]!;
             if (this.isMover(child.name)) {
-                movers.push({ node: child, y: this.rawFootY(child) });
+                movers.push({ node: child, y: this.depthKey(child) });
             }
         }
-        movers.sort((a, b) => b.y - a.y);
+        movers.sort((a, b) => b.y - a.y || a.node.uuid.localeCompare(b.node.uuid));
 
         // Skip hierarchy writes when movers haven't moved enough to change order.
         let sig = `${childCount}|${movers.length}`;
@@ -82,7 +82,7 @@ export class WorldYSort extends Component {
             desired[di++] = ground[g]!;
         }
 
-        // Merge static actors with movers by footY (higher Y draws first / behind).
+        // Merge statics + movers by depth (higher / north draws first → behind).
         let si = 0;
         let mi = 0;
         while (si < statics.length || mi < movers.length) {
@@ -98,7 +98,8 @@ export class WorldYSort extends Component {
                 mi++;
                 continue;
             }
-            if (s.y >= m.y) {
+            // Equal depth: keep static before mover only as stable tie; both keys match.
+            if (s.y > m.y || (s.y === m.y && s.node.uuid <= m.node.uuid)) {
                 desired[di++] = s.node;
                 si++;
             } else {
@@ -213,20 +214,20 @@ export class WorldYSort extends Component {
             if (this.isGround(child.name)) {
                 ground.push(child);
             } else {
-                staticActors.push({ node: child, y: this.sortFootY(child) });
+                staticActors.push({ node: child, y: this.depthKey(child) });
             }
         }
 
-        // Higher footY (north) first → lower sibling index → drawn behind.
+        // Higher depth (north) first → lower sibling index → drawn behind.
         staticActors.sort((a, b) => b.y - a.y || a.node.uuid.localeCompare(b.node.uuid));
-        // Rank bands, then north→south within litter so soft decor is stable.
+        // Ground bands (tile layers), then depth north→south within a band.
         ground.sort((a, b) => {
             const ra = this.groundRank(a.name);
             const rb = this.groundRank(b.name);
             if (ra !== rb) return ra - rb;
-            const dy = this.rawFootY(b) - this.rawFootY(a);
+            const dy = this.depthKey(b) - this.depthKey(a);
             if (dy !== 0) return dy;
-            return a.name.localeCompare(b.name);
+            return a.uuid.localeCompare(b.uuid);
         });
 
         this._groundOrder = ground;
@@ -255,6 +256,9 @@ export class WorldYSort extends Component {
         if (name === 'guide_aim_ripple') return 5;
         if (name.startsWith('fringe_')) return 5;
         if (name === 'lake_bridge' || name.startsWith('pond_pier_')) return 4;
+        // Indoor rugs / mine rails — above floor tiles. Same rank-0 + footY as
+        // wood tiles lets southern tiles paint over the rug's bottom fringe.
+        if (name.startsWith('prop_rug') || name.startsWith('prop_rails')) return 3;
         if (name.startsWith('cliff_') || name.startsWith('pond_cliff_')) return 2;
         if (name.startsWith('water_') || name.startsWith('pond_water_')) return 1;
         return 0;
@@ -264,18 +268,23 @@ export class WorldYSort extends Component {
         return name.startsWith('door_portal_') || name.startsWith('door_light_');
     }
 
-    /** True world foot — no door-FX porch bias. */
+    /**
+     * World-space foot Y — bottom edge of the sprite AABB (anchor-aware).
+     * Used for overlap tests; never applies draw biases.
+     */
     private rawFootY(n: Node): number {
         const ui = n.getComponent(UITransform);
-        let y = n.position.y;
-        if (ui && Math.abs(ui.anchorY) >= 0.05) {
-            y = n.position.y - ui.contentSize.height * ui.anchorY;
-        }
-        return y;
+        if (!ui) return n.position.y;
+        return n.position.y - ui.contentSize.height * ui.anchorY;
     }
 
-    /** Foot used when ranking statics — door FX biased south over porches/yards. */
-    private sortFootY(n: Node): number {
+    /**
+     * Painter depth key. Higher = further north = drawn earlier (behind).
+     * Derived only from transform geometry (foot Y). Door portal FX keep a
+     * fixed south stand-in so the ring clears porch facades; movers are then
+     * promoted past them in promoteMoversPastDoorFx.
+     */
+    private depthKey(n: Node): number {
         const y = this.rawFootY(n);
         if (this.isDoorFx(n.name)) return y - 120;
         return y;

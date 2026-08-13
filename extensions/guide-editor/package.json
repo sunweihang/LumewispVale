@@ -1,0 +1,116 @@
+{
+  "package_version": 2,
+  "version": "1.0.0",
+  "name": "guide-editor",
+  "description": "引导图编辑器：浏览/创建引导资产，导出 TsGuide，供 GuideRuntime 驱动",
+  "main": "./dist/main.js",
+  "author": "CreativeCenter",
+  "editor": ">=3.8.0",
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc -b",
+    "watch": "node ./node_modules/typescript/bin/tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.4.5"
+  },
+  "panels": {
+    "browser": {
+      "title": "引导浏览器",
+      "type": "dockable",
+      "main": "./dist/panels/browser.js",
+      "size": {
+        "min-width": 360,
+        "min-height": 420,
+        "width": 480,
+        "height": 640
+      }
+    },
+    "create": {
+      "title": "创建引导",
+      "type": "simple",
+      "main": "./dist/panels/create.js",
+      "size": {
+        "width": 400,
+        "height": 300
+      }
+    }
+  },
+  "contributions": {
+    "battleManager": {
+      "enabled": true
+    },
+    "messages": {
+      "browse-guides": {
+        "methods": [
+          "browseGuides"
+        ]
+      },
+      "create-guide": {
+        "methods": [
+          "createGuide"
+        ]
+      },
+      "ensure-registered": {
+        "public": true,
+        "description": "向 node-graph 注册引导节点/端口",
+        "methods": [
+          "ensureRegistered"
+        ]
+      },
+      "list-guides": {
+        "public": true,
+        "methods": [
+          "listGuides"
+        ]
+      },
+      "open-guide": {
+        "public": true,
+        "description": "打开引导图 { guideId }",
+        "methods": [
+          "openGuide"
+        ]
+      },
+      "export-guide": {
+        "public": true,
+        "description": "导出单个引导 TS { guideId }",
+        "methods": [
+          "exportGuide"
+        ]
+      },
+      "export-ts-batch": {
+        "public": true,
+        "methods": [
+          "exportTsBatch"
+        ]
+      },
+      "create-guide-api": {
+        "public": true,
+        "methods": [
+          "createGuideApi"
+        ]
+      },
+      "validate-guide": {
+        "public": true,
+        "description": "校验单个引导 { guideId }",
+        "methods": [
+          "validateGuide"
+        ]
+      },
+      "delete-guide": {
+        "public": true,
+        "description": "删除引导图与导出类 { guideId }",
+        "methods": [
+          "deleteGuide"
+        ]
+      },
+      "battle-module-info": {
+        "public": true,
+        "description": "供 battle-manager 自动发现的模块契约",
+        "methods": [
+          "battleModuleInfo"
+        ]
+      }
+    }
+  }
+}

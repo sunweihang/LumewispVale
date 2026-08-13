@@ -1,0 +1,7 @@
+{
+  "guideId": 13,
+  "name": "通往小镇",
+  "description": "跟着箭头走到东侧「通往小镇」路牌，点击前往",
+  "category": "goto",
+  "exportFlag": true
+}

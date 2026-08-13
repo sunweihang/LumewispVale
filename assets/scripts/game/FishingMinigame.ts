@@ -11,16 +11,21 @@ import {
     Label,
     Mask,
     Node,
+    Prefab,
     Sprite,
     SpriteFrame,
     UIOpacity,
     UITransform,
     assetManager,
     input,
+    instantiate,
     tween,
-    view,
 } from 'cc';
 import { FISHING_FRAMES } from './FishingFrames';
+import {
+    FISHING_MINIGAME_LAYOUT as L,
+    FISHING_MINIGAME_PREFAB_UUID,
+} from './FishingMinigameFrames';
 import { InputBridge } from './InputBridge';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -81,31 +86,17 @@ export class FishingMinigame extends Component {
     private _onDone: ((r: FishingResult) => void) | null = null;
     private _prevBlocking = false;
     private _prevMoveLocked = false;
+    private _prefab: Prefab | null = null;
+    private _ready = false;
+    private _chromePainted = false;
 
-    /**
-     * Hand-pixel panel from tools/ui/draw_fishing_ui.py (80×292 @2x).
-     * Narrow water + progress groove share the same top/bottom.
-     */
-    private readonly PANEL_W = 160;
-    private readonly PANEL_H = 584;
-    private readonly TRACK_W = 56;
-    private readonly TRACK_H = 536;
-    private readonly TRACK_X = -9;
-    private readonly TRACK_Y = 1;
-    private readonly PROG_W = 16;
-    private readonly PROG_X = 41;
-    private readonly PROG_INSET = 0;
-    private readonly FISH_SIZE = 32;
-    /** Keep paddle almost as wide as the water column (Stardew). */
-    private readonly BAR_INSET_X = 3;
-    private readonly HOLD_R = 96;
-
-    /** True from open() until the result banner UI is destroyed. */
+    /** True from open() until the result banner finishes. */
     get isOpen(): boolean {
-        return this._active || !!this._root;
+        return this._active || !!this._root?.active;
     }
 
     onLoad() {
+        this.loadPrefab();
         this.ensureFrames();
     }
 
@@ -156,9 +147,9 @@ export class FishingMinigame extends Component {
         // Kill any in-flight press so the cast tap / hold never becomes a stick.
         InputBridge.abortStick?.();
 
-        this.ensureFrames(() => {
+        this.whenReady(() => {
             if (!this._active) return;
-            this.buildUi();
+            this.showUi();
             this.bindInput(true);
             this.layoutDynamic();
             this.refreshHoldPad();
@@ -167,7 +158,7 @@ export class FishingMinigame extends Component {
 
     /** Force-close without rewarding (cancel walk / tool swap). */
     close(notify = true) {
-        if (!this._active && !this._root) return;
+        if (!this._active && !this._root?.active) return;
         this.bindInput(false);
         this._active = false;
         this._ended = true;
@@ -175,9 +166,7 @@ export class FishingMinigame extends Component {
         InputBridge.moveLocked = this._prevMoveLocked;
         InputBridge.clear();
         InputBridge.abortStick?.();
-        const root = this._root;
-        this.clearUiRefs();
-        if (root?.isValid) root.destroy();
+        this.hideUi();
         if (notify && this._onDone) {
             const cb = this._onDone;
             this._onDone = null;
@@ -205,7 +194,7 @@ export class FishingMinigame extends Component {
         else this._barVel -= grav * t;
         this._barVel *= 1 - Math.min(0.85, 1.4 * t);
         this._barVel = Math.max(-620, Math.min(680, this._barVel));
-        this._barY += (this._barVel / this.TRACK_H) * t;
+        this._barY += (this._barVel / L.trackH) * t;
         const maxBar = Math.max(0, 1 - this._barH);
         if (this._barY < 0) {
             this._barY = 0;
@@ -310,8 +299,7 @@ export class FishingMinigame extends Component {
         tween(root ?? this.node)
             .delay(result === 'escape' ? 0.55 : 0.7)
             .call(() => {
-                if (root?.isValid) root.destroy();
-                if (this._root === root) this.clearUiRefs();
+                this.hideUi();
                 InputBridge.uiBlocking = this._prevBlocking;
                 InputBridge.moveLocked = this._prevMoveLocked;
                 InputBridge.clear();
@@ -320,19 +308,52 @@ export class FishingMinigame extends Component {
             .start();
     }
 
-    private clearUiRefs() {
-        this._root = null;
-        this._panel = null;
-        this._barNode = null;
-        this._fishNode = null;
-        this._progG = null;
-        this._banner = null;
-        this._holdLabel = null;
-        this._holdSp = null;
-        this._holdN = null;
-        this._barSp = null;
+    private whenReady(fn: () => void) {
+        if (this._ready) {
+            if (this._root) fn();
+            return;
+        }
+        const tick = () => {
+            if (!this._ready) {
+                this.scheduleOnce(tick, 0);
+                return;
+            }
+            if (this._root) fn();
+        };
+        tick();
+    }
+
+    private hideUi() {
+        if (this._root?.isValid) this._root.active = false;
+        if (this._banner) this._banner.node.active = false;
         this._barShowingMiss = false;
         this._holdKind = 'idle';
+    }
+
+    private showUi() {
+        const root = this._root;
+        if (!root?.isValid) return;
+        root.active = true;
+        root.setSiblingIndex(this.node.children.length - 1);
+        this.paintChromeOnce();
+        if (this._banner) {
+            this._banner.string = '';
+            this._banner.node.active = false;
+        }
+        if (this._holdLabel) this._holdLabel.string = '按住';
+        // Start red (miss) — fish usually begins above the paddle.
+        if (this._barSp) {
+            const startMiss = !this._fishIn;
+            this._barShowingMiss = startMiss;
+            const sf = (startMiss ? this._barMissSf : this._barSf) ?? this._barSf;
+            if (sf) this._barSp.spriteFrame = sf;
+        }
+        this._holdKind = 'idle';
+        if (this._holdSp && this._holdSf) this._holdSp.spriteFrame = this._holdSf;
+        if (this._holdN?.isValid) {
+            this._holdN.setScale(1, 1, 1);
+            this._holdN.setPosition(L.holdX, L.holdY, 0);
+        }
     }
 
     private ensureFrames(done?: () => void) {
@@ -380,6 +401,7 @@ export class FishingMinigame extends Component {
                 this._holdPressedSf &&
                 this._holdReleaseSf
             );
+            if (this._framesReady) this.paintChromeOnce();
             done?.();
         };
         for (const job of jobs) {
@@ -402,60 +424,105 @@ export class FishingMinigame extends Component {
         }
     }
 
-    private buildUi() {
+    private loadPrefab() {
         const canvas = this.node;
-        const old = canvas.getChildByName('FishingMinigame');
-        if (old) old.destroy();
-
-        const root = new Node('FishingMinigame');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.setSiblingIndex(canvas.children.length - 1);
-        const vis = view.getVisibleSize();
-        root.addComponent(UITransform).setContentSize(vis.width, vis.height);
-        root.addComponent(UIOpacity).opacity = 255;
-        this._root = root;
-
-        const dim = new Node('Dim');
-        dim.layer = root.layer;
-        dim.setParent(root);
-        dim.addComponent(UITransform).setContentSize(vis.width, vis.height);
-        const dimG = dim.addComponent(Graphics);
-        dimG.fillColor = new Color(10, 16, 26, 110);
-        dimG.rect(-vis.width * 0.5, -vis.height * 0.5, vis.width, vis.height);
-        dimG.fill();
-
-        const panelX = -200;
-        const panel = new Node('Panel');
-        panel.layer = root.layer;
-        panel.setParent(root);
-        // Left-of-center like Stardew — keep pier / player readable on the right.
-        panel.setPosition(panelX, 24, 0);
-        panel.addComponent(UITransform).setContentSize(this.PANEL_W, this.PANEL_H);
-        if (this._panelSf) {
-            const sp = panel.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.trim = false;
-            sp.spriteFrame = this._panelSf;
-            sp.type = Sprite.Type.SIMPLE;
+        for (const name of ['FishingMinigame']) {
+            const old = canvas.getChildByName(name);
+            if (old) old.destroy();
         }
-        this._panel = panel;
+        assetManager.loadAny({ uuid: FISHING_MINIGAME_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[FishingMinigame] prefab missing', err);
+                this._ready = true;
+                return;
+            }
+            this._prefab = asset as Prefab;
+            const inst = instantiate(this._prefab);
+            inst.name = 'FishingMinigame';
+            inst.layer = canvas.layer;
+            inst.setParent(canvas);
+            inst.active = false;
+            this._root = inst;
+            this.bindRefs(inst);
+            this.paintChromeOnce();
+            this._ready = true;
+        });
+    }
 
-        const track = new Node('Track');
-        track.layer = root.layer;
-        track.setParent(panel);
-        track.setPosition(this.TRACK_X, this.TRACK_Y, 0);
-        track.addComponent(UITransform).setContentSize(this.TRACK_W, this.TRACK_H);
-        // Clip bar/fish to the water column so stretched edges never cover wood.
-        const mask = track.addComponent(Mask);
-        mask.type = Mask.Type.GRAPHICS_RECT;
-        mask.inverted = false;
+    private bindRefs(root: Node) {
+        root.getComponent(UIOpacity) ?? root.addComponent(UIOpacity);
+        this._panel = root.getChildByName('Panel');
+        const track = this._panel?.getChildByName('Track') ?? null;
+        if (track && !track.getComponent(Mask)) {
+            const mask = track.addComponent(Mask);
+            mask.type = Mask.Type.GRAPHICS_RECT;
+            mask.inverted = false;
+        }
+        this._barNode = track?.getChildByName('Bar') ?? null;
+        this._fishNode = track?.getChildByName('Fish') ?? null;
+        this._barSp = this._barNode?.getComponent(Sprite) ?? null;
+        if (this._barSp) {
+            this._barSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            this._barSp.trim = false;
+            this._barSp.type = Sprite.Type.SLICED;
+        }
+        const fishSp = this._fishNode?.getComponent(Sprite);
+        if (fishSp) {
+            fishSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            fishSp.trim = false;
+        }
+        const prog = this._panel?.getChildByName('Progress');
+        this._progG = prog?.getComponent(Graphics) ?? null;
+        this._banner = root.getChildByName('Banner')?.getComponent(Label) ?? null;
+        this._holdN = root.getChildByName('HoldPad');
+        this._holdSp = this._holdN?.getComponent(Sprite) ?? null;
+        if (this._holdSp) {
+            this._holdSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            this._holdSp.trim = false;
+        }
+        this._holdLabel = this._holdN?.getChildByName('HoldLab')?.getComponent(Label) ?? null;
 
-        const bar = new Node('Bar');
-        bar.layer = root.layer;
-        bar.setParent(track);
-        const barW = Math.max(20, this.TRACK_W - this.BAR_INSET_X * 2);
-        bar.addComponent(UITransform).setContentSize(barW, 120);
+        if (this._banner) {
+            styleUiLabel(this._banner, {
+                size: 40,
+                color: new Color(255, 236, 160, 255),
+                outline: true,
+                outlineWidth: 5,
+                outlineColor: new Color(40, 24, 12, 240),
+            });
+            this._banner.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._banner.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+        if (this._holdLabel) {
+            styleUiLabel(this._holdLabel, {
+                size: 26,
+                color: new Color(255, 248, 220, 255),
+                outline: true,
+                outlineWidth: 4,
+                outlineColor: new Color(28, 40, 18, 240),
+            });
+            this._holdLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._holdLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+        loadUiFont().then((font) => {
+            if (!font) return;
+            if (this._banner) applyUiFont(this._banner);
+            if (this._holdLabel) applyUiFont(this._holdLabel);
+        });
+    }
+
+    private paintChromeOnce() {
+        if (!this._root?.isValid) return;
+        if (!this._chromePainted) {
+            const dim = this._root.getChildByName('Dim')?.getComponent(Graphics);
+            if (dim) {
+                dim.clear();
+                dim.fillColor = new Color(10, 16, 26, 110);
+                dim.rect(-1100, -2000, 2200, 4000);
+                dim.fill();
+            }
+            this._chromePainted = true;
+        }
         const applyBarInsets = (sf: SpriteFrame | null) => {
             if (!sf) return;
             // Vertical 9-slice only — left/right slice was collapsing the AI bar to a hairline.
@@ -466,100 +533,17 @@ export class FishingMinigame extends Component {
         };
         applyBarInsets(this._barSf);
         applyBarInsets(this._barMissSf);
-        if (this._barSf || this._barMissSf) {
-            const sp = bar.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.trim = false;
-            sp.type = Sprite.Type.SLICED;
-            // Start red (miss) — fish usually begins above the paddle.
-            const startMiss = !this._fishIn;
-            this._barShowingMiss = startMiss;
-            sp.spriteFrame = (startMiss ? this._barMissSf : this._barSf) ?? this._barSf!;
-            sp.color = new Color(255, 255, 255, 255);
-            this._barSp = sp;
+        if (this._panelSf) {
+            const sp = this._panel?.getComponent(Sprite);
+            if (sp) sp.spriteFrame = this._panelSf;
         }
-        this._barNode = bar;
-
-        const fish = new Node('Fish');
-        fish.layer = root.layer;
-        fish.setParent(track);
-        fish.addComponent(UITransform).setContentSize(this.FISH_SIZE, this.FISH_SIZE);
         if (this._fishSf) {
-            const sp = fish.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.trim = false;
-            sp.spriteFrame = this._fishSf;
+            const sp = this._fishNode?.getComponent(Sprite);
+            if (sp) sp.spriteFrame = this._fishSf;
         }
-        this._fishNode = fish;
-
-        const prog = new Node('Progress');
-        prog.layer = root.layer;
-        prog.setParent(panel);
-        prog.setPosition(this.PROG_X, this.TRACK_Y, 0);
-        prog.addComponent(UITransform).setContentSize(this.PROG_W + 4, this.TRACK_H);
-        this._progG = prog.addComponent(Graphics);
-
-        const bannerN = new Node('Banner');
-        bannerN.layer = root.layer;
-        bannerN.setParent(root);
-        bannerN.setPosition(panelX, 24 + this.PANEL_H * 0.5 + 36, 0);
-        bannerN.addComponent(UITransform).setContentSize(320, 52);
-        const banner = bannerN.addComponent(Label);
-        banner.string = '';
-        banner.horizontalAlign = Label.HorizontalAlign.CENTER;
-        banner.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(banner, {
-            size: 40,
-            color: new Color(255, 236, 160, 255),
-            outline: true,
-            outlineWidth: 5,
-            outlineColor: new Color(40, 24, 12, 240),
-        });
-        bannerN.active = false;
-        this._banner = banner;
-
-        // Primary click target — AI hold pad on the clear right half.
-        const holdX = 240;
-        const holdY = -40;
-        const holdSize = this.HOLD_R * 2;
-        const hold = new Node('HoldPad');
-        hold.layer = root.layer;
-        hold.setParent(root);
-        hold.setPosition(holdX, holdY, 0);
-        hold.addComponent(UITransform).setContentSize(holdSize, holdSize);
-        if (this._holdSf) {
-            const sp = hold.addComponent(Sprite);
-            sp.sizeMode = Sprite.SizeMode.CUSTOM;
-            sp.trim = false;
-            sp.spriteFrame = this._holdSf;
-            this._holdSp = sp;
+        if (this._holdSf && this._holdSp && this._holdKind === 'idle') {
+            this._holdSp.spriteFrame = this._holdSf;
         }
-        this._holdN = hold;
-
-        const holdLabN = new Node('HoldLab');
-        holdLabN.layer = root.layer;
-        holdLabN.setParent(hold);
-        // Sit just under the pad so the face stays icon-free.
-        holdLabN.setPosition(0, -holdSize * 0.58, 0);
-        holdLabN.addComponent(UITransform).setContentSize(160, 40);
-        const holdLab = holdLabN.addComponent(Label);
-        holdLab.string = '按住';
-        holdLab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        holdLab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(holdLab, {
-            size: 26,
-            color: new Color(255, 248, 220, 255),
-            outline: true,
-            outlineWidth: 4,
-            outlineColor: new Color(28, 40, 18, 240),
-        });
-        this._holdLabel = holdLab;
-
-        loadUiFont().then((font) => {
-            if (!font) return;
-            if (bannerN.isValid) applyUiFont(banner);
-            if (holdLabN.isValid) applyUiFont(holdLab);
-        });
     }
 
     private refreshHoldPad() {
@@ -588,22 +572,22 @@ export class FishingMinigame extends Component {
             const wave = 0.5 + 0.5 * Math.sin(this._pulseT * 4.2);
             const s = 1 + wave * 0.04;
             n.setScale(s, s, 1);
-            n.setPosition(240, -40 - (this._holding ? 4 : 0), 0);
+            n.setPosition(L.holdX, L.holdY - (this._holding ? 4 : 0), 0);
         } else {
             n.setScale(this._holding ? 0.96 : 1, this._holding ? 0.96 : 1, 1);
-            n.setPosition(240, this._holding ? -44 : -40, 0);
+            n.setPosition(L.holdX, this._holding ? L.holdY - 4 : L.holdY, 0);
         }
     }
 
     private layoutDynamic() {
-        const th = this.TRACK_H;
+        const th = L.trackH;
         const halfH = th * 0.5;
 
         if (this._barNode?.isValid) {
             const bh = Math.max(72, this._barH * th);
             const by = -halfH + this._barY * th + bh * 0.5;
             const ui = this._barNode.getComponent(UITransform);
-            const bw = Math.max(24, this.TRACK_W - this.BAR_INSET_X * 2);
+            const bw = Math.max(24, L.trackW - L.barInsetX * 2);
             ui?.setContentSize(bw, bh);
             this._barNode.setPosition(0, by, 0);
             if (this._barSp) {
@@ -636,7 +620,7 @@ export class FishingMinigame extends Component {
             const g = this._progG;
             g.clear();
             // Fill only — empty groove is already in the panel art and shares track height.
-            const pw = this.PROG_W;
+            const pw = L.progW;
             const ph = th;
             const fillH = Math.max(0, Math.round(this._progress * ph));
             if (fillH > 0) {

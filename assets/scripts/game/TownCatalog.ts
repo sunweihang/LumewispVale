@@ -1,3 +1,5 @@
+import { itemDesc, itemName, itemSell } from './ItemCatalog';
+
 /** Town institutions, shops, and board quests — data only. */
 
 export type TownShopId = 'seed' | 'ore' | 'general' | 'fish' | 'saloon';
@@ -246,15 +248,28 @@ export interface TownSellGoods {
     id: TownSellId;
     title: string;
     desc: string;
-    /** Gold paid to the player per unit. */
+    /** Paid to the player per unit (from display 售价). */
     price: number;
+    /** Currency item id (`gold` by default; from display param). */
+    currency: string;
 }
 
-export const TOWN_SELL_GOODS: TownSellGoods[] = [
-    { id: 'parsnip', title: '防风草', desc: '刚收获的作物，杂货铺最爱收', price: 35 },
-    { id: 'fish', title: '鱼', desc: '湖鲜，渔具店与酒馆都收', price: 40 },
-    { id: 'grass', title: '草料', desc: '编织与饲料原料', price: 5 },
-    { id: 'wood', title: '木料', desc: '修缮常用', price: 8 },
-    { id: 'stone', title: '石料', desc: '基础建材', price: 8 },
-    { id: 'copper', title: '铜矿石', desc: '矿脉商会回收', price: 25 },
-];
+/** Sell sku ids — only rows with a display 售价 overlay appear in shops. */
+const TOWN_SELL_IDS = ['parsnip', 'fish', 'grass', 'wood', 'stone', 'copper'] as const;
+
+/** Shop sell list — name/desc from `TItem`, price/currency from `TDisplay` 售价. */
+export function getTownSellGoods(): TownSellGoods[] {
+    const out: TownSellGoods[] = [];
+    for (const id of TOWN_SELL_IDS) {
+        const sell = itemSell(id);
+        if (!sell) continue;
+        out.push({
+            id,
+            title: itemName(id, id),
+            desc: itemDesc(id, ''),
+            price: sell.price,
+            currency: sell.currency,
+        });
+    }
+    return out;
+}

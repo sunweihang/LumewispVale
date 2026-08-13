@@ -1,0 +1,7 @@
+{
+  "guideId": 23,
+  "name": "进入矿洞",
+  "description": "点击北山「通往浅层矿洞」路牌进入",
+  "category": "goto",
+  "exportFlag": true
+}

@@ -366,7 +366,7 @@ async function refreshList() {
         cachedItems = [];
         cachedModId = null;
         listEl.innerHTML =
-            '<div class="empty">请启用 unit-editor / skill-editor / ballistic-editor / story-editor，然后用菜单「Game编辑器 → 重新扫描模块」。</div>';
+            '<div class="empty">请启用 unit-editor / skill-editor / ballistic-editor / story-editor / guide-editor，然后用菜单「Game编辑器 → 重新扫描模块」。</div>';
         return;
     }
     listEl.innerHTML = '<div class="empty">加载中…</div>';

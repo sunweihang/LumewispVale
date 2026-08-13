@@ -1,0 +1,7 @@
+{
+  "guideId": 15,
+  "name": "公告板任务",
+  "description": "前往警察局或邮局，接取公告板任务",
+  "category": "goto",
+  "exportFlag": true
+}

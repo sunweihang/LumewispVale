@@ -6,47 +6,35 @@ import {
     Graphics,
     Label,
     Node,
+    Prefab,
     Sprite,
     SpriteFrame,
     UIOpacity,
     UITransform,
     Vec3,
+    instantiate,
     tween,
     Tween,
 } from 'cc';
 import { CQuest } from '../cfg/schema';
 import { InputBridge } from './InputBridge';
-import { MATERIAL_FRAMES } from './MaterialFrames';
-import { QUEST_FRAMES } from './QuestFrames';
+import { itemIcon, itemName } from './ItemCatalog';
 import { QuestSystem } from './QuestSystem';
 import { REWARD_FRAMES } from './RewardFrames';
-import { TOOL_FRAMES } from './ToolFrames';
+import {
+    REWARD_POPUP_LAYOUT as L,
+    REWARD_POPUP_PREFAB_UUID,
+} from './RewardPopupFrames';
 import { playUiGold } from './UiAudio';
 import {
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
     UI_PRICE as COUNT_INK,
     drawWoodParchmentPanel,
-    mountPanelCloseButton,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
-
-const PANEL_W = 680;
-const PANEL_H = 500;
-const BTN_W = 280;
-const BTN_H = 88;
-
-/** Max columns before wrapping to next row. */
-const COLS_MAX = 3;
-const CHIP_W = 160;
-const CHIP_H = 150;
-const GAP_X = 28;
-const GAP_Y = 20;
-/** Single reward gets a bigger icon; multi shrinks slightly. */
-const ICON_ONE = 96;
-const ICON_MULTI = 80;
 
 type RewardChip = {
     uuid: string | null;
@@ -64,6 +52,7 @@ type RewardChip = {
 export class RewardPopup extends Component {
     quests: QuestSystem | null = null;
 
+    private _prefabRoot: Node | null = null;
     private _dimmer: Node | null = null;
     private _root: Node | null = null;
     private _titleLab: Label | null = null;
@@ -76,6 +65,7 @@ export class RewardPopup extends Component {
     private _prevBlocking = false;
     private _iconCache = new Map<string, SpriteFrame>();
     private _fontReady = false;
+    private _ready = false;
     private _pendingOpen = false;
 
     get isOpen() {
@@ -83,12 +73,11 @@ export class RewardPopup extends Component {
     }
 
     onLoad() {
-        this.build();
-        this.hideImmediate();
+        this.loadPrefab();
         loadUiFont().then(() => {
             this._fontReady = true;
             this.applyFonts();
-            if (this._pendingOpen) {
+            if (this._pendingOpen && this._ready) {
                 this._pendingOpen = false;
                 this.openForActive();
             }
@@ -108,9 +97,9 @@ export class RewardPopup extends Component {
     openForActive(): boolean {
         const q = this.quests?.activeQuest;
         if (!this.quests?.isAwaitingClaim || !q) return false;
-        if (!this._fontReady) {
+        if (!this._fontReady || !this._ready) {
             this._pendingOpen = true;
-            loadUiFont();
+            if (!this._fontReady) loadUiFont();
             return true;
         }
         this.paint(q);
@@ -215,7 +204,7 @@ export class RewardPopup extends Component {
      * Centered grid:
      *   1 → one large chip
      *   2–3 → single centered row
-     *   4+ → wrap at COLS_MAX, each row centered
+     *   4+ → wrap at colsMax, each row centered
      */
     private rebuildChips(rewards: RewardChip[]) {
         const host = this._chipHost;
@@ -237,13 +226,13 @@ export class RewardPopup extends Component {
         }
 
         const n = rewards.length;
-        const cols = Math.min(COLS_MAX, n);
+        const cols = Math.min(L.colsMax, n);
         const rows = Math.ceil(n / cols);
-        const iconS = n === 1 ? ICON_ONE : ICON_MULTI;
-        const chipW = n === 1 ? 200 : CHIP_W;
-        const chipH = n === 1 ? 170 : CHIP_H;
-        const gapX = n === 1 ? 0 : GAP_X;
-        const gapY = GAP_Y;
+        const iconS = n === 1 ? L.iconOne : L.iconMulti;
+        const chipW = n === 1 ? 200 : L.chipW;
+        const chipH = n === 1 ? 170 : L.chipH;
+        const gapX = n === 1 ? 0 : L.gapX;
+        const gapY = L.gapY;
 
         const gridW = cols * chipW + (cols - 1) * gapX;
         const gridH = rows * chipH + (rows - 1) * gapY;
@@ -314,7 +303,7 @@ export class RewardPopup extends Component {
             out.push({
                 uuid: this.rewardIconUuid('gold'),
                 count: q.rewardGold,
-                name: '金币',
+                name: itemName('gold', '金币'),
                 kind: 'gold',
             });
         }
@@ -322,56 +311,20 @@ export class RewardPopup extends Component {
             out.push({
                 uuid: this.rewardIconUuid(q.rewardItem),
                 count: q.rewardCount,
-                name: this.rewardName(q.rewardItem),
+                name: itemName(q.rewardItem, q.rewardItem),
                 kind: 'item',
             });
         }
         return out;
     }
 
-    private rewardName(kind: string): string {
-        const k = (kind || '').toLowerCase().replace(/[\s-]+/g, '_');
-        const map: Record<string, string> = {
-            gold: '金币',
-            coin: '金币',
-            money: '金币',
-            seeds: '种子',
-            seed: '种子',
-            boost: '催熟剂',
-            grass: '草料',
-            wood: '木材',
-            dirt: '泥土',
-            stone: '石料',
-            fish: '鱼',
-            copper: '铜矿',
-            iron: '铁矿',
-            goldore: '金矿',
-            gold_ore: '金矿',
-            parsnip: '防风草',
-        };
-        return map[k] ?? kind;
-    }
-
     private rewardIconUuid(kind: string): string | null {
-        const k = (kind || '').toLowerCase().replace(/[\s-]+/g, '_');
-        if (!k) return null;
+        if (!kind) return null;
+        const fromTable = itemIcon(kind);
+        if (fromTable) return fromTable;
         const reward = REWARD_FRAMES as Record<string, string | undefined>;
-        if (reward[k]) return reward[k] ?? null;
-        if (k === 'gold' || k === 'coin' || k === 'money') {
-            return REWARD_FRAMES.gold ?? MATERIAL_FRAMES.gold ?? null;
-        }
-        if (k === 'seeds' || k.includes('seed')) return TOOL_FRAMES.seeds ?? null;
-        if (k === 'boost') return TOOL_FRAMES.boost ?? null;
-        if (k === 'grass') return MATERIAL_FRAMES.grass ?? null;
-        if (k === 'wood') return MATERIAL_FRAMES.wood ?? null;
-        if (k === 'dirt') return MATERIAL_FRAMES.dirt ?? null;
-        if (k === 'stone') return MATERIAL_FRAMES.stone ?? null;
-        if (k === 'fish') return MATERIAL_FRAMES.fish ?? null;
-        if (k === 'copper') return MATERIAL_FRAMES.copper ?? null;
-        if (k === 'iron') return MATERIAL_FRAMES.iron ?? null;
-        if (k === 'goldore' || k === 'gold_ore') return MATERIAL_FRAMES.goldOre ?? null;
-        if (k === 'parsnip') return MATERIAL_FRAMES.parsnip ?? null;
-        return null;
+        const k = kind.toLowerCase().replace(/[\s-]+/g, '_');
+        return reward[k] ?? reward[kind] ?? null;
     }
 
     private loadIcon(uuid: string, sp: Sprite) {
@@ -389,17 +342,17 @@ export class RewardPopup extends Component {
     }
 
     private show() {
-        if (!this._root || !this._dimmer) return;
+        if (!this._root || !this._dimmer || !this._prefabRoot) return;
         this.killTweens();
         if (!this._open) {
             this._prevBlocking = InputBridge.uiBlocking;
             InputBridge.uiBlocking = true;
         }
         this._open = true;
+        this._prefabRoot.active = true;
         this._dimmer.active = true;
         this._root.active = true;
-        this._dimmer.setSiblingIndex(this.node.children.length - 1);
-        this._root.setSiblingIndex(this.node.children.length - 1);
+        this._prefabRoot.setSiblingIndex(this.node.children.length - 1);
         if (this._dimOp) this._dimOp.opacity = 0;
         if (this._rootOp) this._rootOp.opacity = 0;
         this._root.setScale(0.92, 0.92, 1);
@@ -421,6 +374,7 @@ export class RewardPopup extends Component {
         const finish = () => {
             if (this._dimmer) this._dimmer.active = false;
             if (this._root) this._root.active = false;
+            if (this._prefabRoot) this._prefabRoot.active = false;
             onDone?.();
         };
         if (this._dimOp) tween(this._dimOp).to(0.12, { opacity: 0 }).start();
@@ -436,6 +390,7 @@ export class RewardPopup extends Component {
         this._open = false;
         if (this._dimmer) this._dimmer.active = false;
         if (this._root) this._root.active = false;
+        if (this._prefabRoot) this._prefabRoot.active = false;
         if (this._dimOp) this._dimOp.opacity = 0;
         if (this._rootOp) this._rootOp.opacity = 0;
     }
@@ -451,100 +406,84 @@ export class RewardPopup extends Component {
         if (this._btnLab) applyUiFont(this._btnLab);
     }
 
-    private build() {
+    private loadPrefab() {
         const canvas = this.node;
-
         const oldDim = canvas.getChildByName('RewardDimmer');
         if (oldDim) oldDim.destroy();
         const oldRoot = canvas.getChildByName('RewardPopup');
         if (oldRoot) oldRoot.destroy();
 
-        const dim = new Node('RewardDimmer');
-        dim.layer = canvas.layer;
-        dim.setParent(canvas);
-        dim.addComponent(UITransform).setContentSize(1200, 2200);
-        const dg = dim.addComponent(Graphics);
-        dg.fillColor = new Color(0, 0, 0, 150);
-        dg.rect(-600, -1100, 1200, 2200);
-        dg.fill();
-        this._dimOp = dim.addComponent(UIOpacity);
-        this._dimmer = dim;
-
-        const root = new Node('RewardPopup');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.setPosition(0, 40, 0);
-        root.addComponent(UITransform).setContentSize(PANEL_W, PANEL_H);
-        this._rootOp = root.addComponent(UIOpacity);
-
-        const chrome = new Node('Chrome');
-        chrome.layer = root.layer;
-        chrome.setParent(root);
-        chrome.addComponent(UITransform).setContentSize(PANEL_W, PANEL_H);
-        const g = chrome.addComponent(Graphics);
-        drawWoodParchmentPanel(g, PANEL_W, PANEL_H, { radius: 28, lightInset: false });
-        this._root = root;
-
-        const titleN = new Node('Title');
-        titleN.layer = root.layer;
-        titleN.setParent(root);
-        titleN.setPosition(0, PANEL_H * 0.5 - 58, 0);
-        titleN.addComponent(UITransform).setContentSize(560, 48);
-        const title = titleN.addComponent(Label);
-        title.string = '获得奖励';
-        title.horizontalAlign = Label.HorizontalAlign.CENTER;
-        title.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(title, {
-            size: 40,
-            color: INK,
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(255, 240, 200, 180),
+        assetManager.loadAny({ uuid: REWARD_POPUP_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[RewardPopup] prefab missing', err);
+                this._ready = true;
+                return;
+            }
+            const inst = instantiate(asset as Prefab);
+            inst.layer = canvas.layer;
+            inst.setParent(canvas);
+            this._prefabRoot = inst;
+            this.bindRefs(inst);
+            this.paintChromeOnce();
+            this.hideImmediate();
+            this._ready = true;
+            if (this._pendingOpen && this._fontReady) {
+                this._pendingOpen = false;
+                this.openForActive();
+            }
         });
-        this._titleLab = title;
+    }
 
-        this._closeBtn = mountPanelCloseButton(root, PANEL_W, PANEL_H);
+    private bindRefs(root: Node) {
+        this._dimmer = root.getChildByName('Dimmer');
+        this._root = root.getChildByName('Panel');
+        this._dimOp = this._dimmer?.getComponent(UIOpacity) ?? this._dimmer?.addComponent(UIOpacity) ?? null;
+        this._rootOp = this._root?.getComponent(UIOpacity) ?? this._root?.addComponent(UIOpacity) ?? null;
+        const panel = this._root;
+        if (!panel) return;
+        this._titleLab = panel.getChildByName('Title')?.getComponent(Label) ?? null;
+        this._chipHost = panel.getChildByName('Chips');
+        this._closeBtn = panel.getChildByName('Close');
+        const claim = panel.getChildByName('ClaimBtn');
+        this._btnLab = claim?.getChildByName('Lab')?.getComponent(Label) ?? null;
+        if (this._titleLab) {
+            styleUiLabel(this._titleLab, {
+                size: 40,
+                color: INK,
+                outline: true,
+                outlineWidth: 3,
+                outlineColor: new Color(255, 240, 200, 180),
+            });
+            this._titleLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._titleLab.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+        if (this._btnLab) {
+            styleUiLabel(this._btnLab, {
+                size: 34,
+                color: new Color(255, 252, 230, 255),
+                outline: true,
+                outlineWidth: 3,
+                outlineColor: new Color(40, 24, 12, 220),
+            });
+            this._btnLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._btnLab.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+        this.applyFonts();
+    }
 
-        // Reward grid — vertically centered between title and button.
-        const chips = new Node('Chips');
-        chips.layer = root.layer;
-        chips.setParent(root);
-        chips.setPosition(0, 18, 0);
-        chips.addComponent(UITransform).setContentSize(600, 220);
-        this._chipHost = chips;
-
-        const btn = new Node('ClaimBtn');
-        btn.layer = root.layer;
-        btn.setParent(root);
-        btn.setPosition(0, -PANEL_H * 0.5 + 78, 0);
-        btn.addComponent(UITransform).setContentSize(BTN_W, BTN_H);
-        // Pixel chrome from quest primary — no runtime Graphics fill.
-        const btnFace = new Node('Face');
-        btnFace.layer = root.layer;
-        btnFace.setParent(btn);
-        btnFace.addComponent(UITransform).setContentSize(BTN_W, BTN_H);
-        const btnSp = btnFace.addComponent(Sprite);
-        btnSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        btnSp.trim = false;
-        btnSp.type = Sprite.Type.SLICED;
-        this.loadIcon(QUEST_FRAMES.btnPrimary, btnSp);
-
-        const btnLabN = new Node('Lab');
-        btnLabN.layer = root.layer;
-        btnLabN.setParent(btn);
-        btnLabN.setPosition(0, 2, 0);
-        btnLabN.addComponent(UITransform).setContentSize(BTN_W, BTN_H);
-        const btnLab = btnLabN.addComponent(Label);
-        btnLab.string = '领取';
-        btnLab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        btnLab.verticalAlign = Label.VerticalAlign.CENTER;
-        styleUiLabel(btnLab, {
-            size: 34,
-            color: new Color(255, 252, 230, 255),
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(40, 24, 12, 220),
-        });
-        this._btnLab = btnLab;
+    private paintChromeOnce() {
+        const panel = this._root;
+        if (!panel) return;
+        const chrome = panel.getChildByName('Chrome')?.getComponent(Graphics);
+        if (chrome) drawWoodParchmentPanel(chrome, L.panelW, L.panelH, { radius: 28, lightInset: false });
+        if (this._dimmer) {
+            const dg = this._dimmer.getComponent(Graphics);
+            if (dg) {
+                dg.clear();
+                dg.fillColor = new Color(0, 0, 0, 150);
+                dg.rect(-600, -1100, 1200, 2200);
+                dg.fill();
+            }
+        }
     }
 }

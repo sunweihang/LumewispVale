@@ -9,7 +9,6 @@ import {
     Node,
     Prefab,
     Sprite,
-    SpriteFrame,
     UITransform,
     Vec3,
     Widget,
@@ -61,7 +60,7 @@ import { MineWorldLayout } from './MineWorldLayout';
 import { TownShopPanel } from './TownShopPanel';
 import { TownWorldLayout, TownNpcId } from './TownWorldLayout';
 import { TouchJoystick } from './TouchJoystick';
-import { JOYSTICK_FRAMES } from './JoystickFrames';
+import { STICK_VISUAL_LAYOUT, STICK_VISUAL_PREFAB_UUID } from './StickVisualFrames';
 import { ensureUiAudio } from './UiAudio';
 import { loadUiFont } from './UiFont';
 import { WorldYSort } from './WorldYSort';
@@ -1384,63 +1383,63 @@ export class GameBootstrap extends Component {
         host.setParent(canvas);
         host.addComponent(UITransform).setContentSize(10, 10);
 
-        const visual = new Node('StickVisual');
-        visual.layer = canvas.layer;
-        visual.setParent(canvas);
-        visual.addComponent(UITransform).setContentSize(180, 180);
-
-        const base = new Node('Base');
-        base.layer = canvas.layer;
-        base.setParent(visual);
-        base.addComponent(UITransform).setContentSize(160, 160);
-        const baseSp = base.addComponent(Sprite);
-        baseSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        baseSp.type = Sprite.Type.SIMPLE;
-        baseSp.trim = false;
-        // Fallback ring until AI chrome loads.
-        const g = base.addComponent(Graphics);
-        g.fillColor = new Color(20, 28, 24, 150);
-        g.circle(0, 0, 72);
-        g.fill();
-        g.strokeColor = new Color(230, 230, 210, 200);
-        g.lineWidth = 5;
-        g.circle(0, 0, 72);
-        g.stroke();
-
-        const knob = new Node('Knob');
-        knob.layer = canvas.layer;
-        knob.setParent(visual);
-        knob.addComponent(UITransform).setContentSize(80, 80);
-        const knobSp = knob.addComponent(Sprite);
-        knobSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        knobSp.type = Sprite.Type.SIMPLE;
-        knobSp.trim = false;
-        const kg = knob.addComponent(Graphics);
-        kg.fillColor = new Color(120, 190, 80, 230);
-        kg.circle(0, 0, 32);
-        kg.fill();
-
-        assetManager.loadAny({ uuid: JOYSTICK_FRAMES.base }, (err, asset) => {
-            if (err || !asset || !base.isValid) return;
-            baseSp.spriteFrame = asset as SpriteFrame;
-            g.destroy();
-        });
-        assetManager.loadAny({ uuid: JOYSTICK_FRAMES.knob }, (err, asset) => {
-            if (err || !asset || !knob.isValid) return;
-            knobSp.spriteFrame = asset as SpriteFrame;
-            kg.destroy();
-        });
-
         const touch = host.addComponent(TouchJoystick);
-        touch.visualRoot = visual;
-        touch.knob = knob;
-        touch.radius = 80;
+        touch.radius = STICK_VISUAL_LAYOUT.radius;
         touch.dragThreshold = 22;
-        // Rest dock center-bottom; press+drag relocates stick to the finger.
         touch.fixedStick = true;
-        touch.layoutFixedStick();
-        visual.active = true;
+
+        // Stick chrome from StickVisual.prefab (JOYSTICK_FRAMES baked in).
+        const old = canvas.getChildByName('StickVisual');
+        if (old) old.destroy();
+        assetManager.loadAny({ uuid: STICK_VISUAL_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[GameBootstrap] StickVisual prefab missing', err);
+                return;
+            }
+            const visual = instantiate(asset as Prefab);
+            visual.name = 'StickVisual';
+            visual.layer = canvas.layer;
+            visual.setParent(canvas);
+            const base = visual.getChildByName('Base');
+            const knob = visual.getChildByName('Knob');
+            for (const n of [base, knob]) {
+                const sp = n?.getComponent(Sprite);
+                if (!sp) continue;
+                sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                sp.type = Sprite.Type.SIMPLE;
+                sp.trim = false;
+            }
+            // Fallback rings until sprite frames resolve (prefab may ship empty briefly).
+            this.paintStickFallback(base, 72, new Color(20, 28, 24, 150), new Color(230, 230, 210, 200));
+            this.paintStickFallback(knob, 32, new Color(120, 190, 80, 230), null);
+            touch.visualRoot = visual;
+            touch.knob = knob;
+            touch.layoutFixedStick();
+            visual.active = true;
+        });
         return touch;
+    }
+
+    private paintStickFallback(
+        n: Node | null | undefined,
+        r: number,
+        fill: Color,
+        stroke: Color | null,
+    ) {
+        if (!n?.isValid) return;
+        const sp = n.getComponent(Sprite);
+        if (sp?.spriteFrame) return;
+        const g = n.getComponent(Graphics) ?? n.addComponent(Graphics);
+        g.clear();
+        g.fillColor = fill;
+        g.circle(0, 0, r);
+        g.fill();
+        if (stroke) {
+            g.strokeColor = stroke;
+            g.lineWidth = 5;
+            g.circle(0, 0, r);
+            g.stroke();
+        }
     }
 
     private spawnPlayer(world: Node, map: TravelMapId = 'farm'): Node {

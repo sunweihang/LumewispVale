@@ -1,0 +1,7 @@
+{
+  "guideId": 10,
+  "name": "钓鱼·湖边",
+  "description": "打开背包，把鱼竿拖到快捷栏，再走到湖边码头抛竿",
+  "category": "goto",
+  "exportFlag": true
+}

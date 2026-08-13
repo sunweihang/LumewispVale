@@ -1,62 +1,236 @@
 [
   {
-    "id": "grass",
-    "name": "草料"
-  },
-  {
-    "id": "wood",
-    "name": "木料"
-  },
-  {
-    "id": "dirt",
-    "name": "泥土"
-  },
-  {
-    "id": "stone",
-    "name": "石料"
-  },
-  {
-    "id": "fish",
-    "name": "鱼"
-  },
-  {
-    "id": "seeds",
-    "name": "种子"
-  },
-  {
-    "id": "parsnip",
-    "name": "防风草"
-  },
-  {
-    "id": "boost",
-    "name": "催熟剂"
-  },
-  {
-    "id": "copper",
-    "name": "铜矿石"
-  },
-  {
-    "id": "iron",
-    "name": "铁矿石"
-  },
-  {
-    "id": "goldOre",
-    "name": "金矿石"
-  },
-  {
-    "id": "can",
-    "name": "水壶"
-  },
-  {
-    "id": "axe",
-    "name": "斧头"
-  },
-  {
-    "id": "rod",
-    "name": "鱼竿"
+    "id": "hand",
+    "type": 1,
+    "name": "手",
+    "display_id": 1001,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "拔除杂草与灌木，收获成熟作物",
+    "gm_grant": false,
+    "gm_amount": 0,
+    "sort": 10
   },
   {
     "id": "hoe",
-    "name": "锄头"
+    "type": 1,
+    "name": "锄头",
+    "display_id": 1002,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "开垦荒地，翻出可种植的田地；也可挖起石头",
+    "gm_grant": true,
+    "gm_amount": 1,
+    "sort": 20
+  },
+  {
+    "id": "can",
+    "type": 1,
+    "name": "水壶",
+    "display_id": 1003,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "给作物浇水，促进生长",
+    "gm_grant": true,
+    "gm_amount": 1,
+    "sort": 30
+  },
+  {
+    "id": "axe",
+    "type": 1,
+    "name": "斧头",
+    "display_id": 1004,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "砍伐野外的松树和橡树",
+    "gm_grant": true,
+    "gm_amount": 1,
+    "sort": 40
+  },
+  {
+    "id": "rod",
+    "type": 1,
+    "name": "鱼竿",
+    "display_id": 1005,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "在湖边或码头抛竿钓鱼",
+    "gm_grant": true,
+    "gm_amount": 1,
+    "sort": 50
+  },
+  {
+    "id": "seeds",
+    "type": 7,
+    "name": "种子",
+    "display_id": 1006,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "在翻好的田地上播种",
+    "gm_grant": true,
+    "gm_amount": 10,
+    "sort": 60
+  },
+  {
+    "id": "boost",
+    "type": 3,
+    "name": "催熟剂",
+    "display_id": 1007,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "点在生长中的作物上，立刻催熟",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 70
+  },
+  {
+    "id": "parsnip",
+    "type": 5,
+    "name": "防风草",
+    "display_id": 1008,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "刚收获的作物，可以出售或食用",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 80
+  },
+  {
+    "id": "grass",
+    "type": 2,
+    "name": "草料",
+    "display_id": 1009,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "拔除杂草与灌木获得",
+    "gm_grant": true,
+    "gm_amount": 10,
+    "sort": 90
+  },
+  {
+    "id": "wood",
+    "type": 2,
+    "name": "木料",
+    "display_id": 1010,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "砍伐树木获得，可用于建造",
+    "gm_grant": true,
+    "gm_amount": 10,
+    "sort": 100
+  },
+  {
+    "id": "dirt",
+    "type": 2,
+    "name": "泥土",
+    "display_id": 1011,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "锄地开垦时翻出的土壤",
+    "gm_grant": true,
+    "gm_amount": 10,
+    "sort": 110
+  },
+  {
+    "id": "stone",
+    "type": 2,
+    "name": "石料",
+    "display_id": 1012,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "用锄头挖开石子与岩石获得",
+    "gm_grant": true,
+    "gm_amount": 10,
+    "sort": 120
+  },
+  {
+    "id": "fish",
+    "type": 2,
+    "name": "鱼",
+    "display_id": 1013,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "从湖里钓上来的鲜鱼",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 130
+  },
+  {
+    "id": "copper",
+    "type": 2,
+    "name": "铜矿石",
+    "display_id": 1014,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "浅层矿洞可采，也可在矿脉商会购买",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 140
+  },
+  {
+    "id": "iron",
+    "type": 2,
+    "name": "铁矿石",
+    "display_id": 1015,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "矿洞深处的硬脉，锻造常用",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 150
+  },
+  {
+    "id": "goldOre",
+    "type": 2,
+    "name": "金矿石",
+    "display_id": 1016,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999,
+    "desc": "稀有闪光矿脉",
+    "gm_grant": true,
+    "gm_amount": 5,
+    "sort": 160
+  },
+  {
+    "id": "gold",
+    "type": 4,
+    "name": "金币",
+    "display_id": 1017,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 999999,
+    "desc": "溪谷通用货币，可在商店买卖",
+    "gm_grant": true,
+    "gm_amount": 500,
+    "sort": 170
+  },
+  {
+    "id": "recipeScroll",
+    "type": 6,
+    "name": "配方卷轴",
+    "display_id": 1018,
+    "use_condition_id": 0,
+    "use_effect_id": 0,
+    "max_stack": 1,
+    "desc": "点按打开，学习后解锁工作台配方",
+    "gm_grant": false,
+    "gm_amount": 0,
+    "sort": 180
   }
 ]

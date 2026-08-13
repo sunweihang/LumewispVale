@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "graphId": "guide_25",
+  "profile": {
+    "name": "guide",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "GuideEntranceBlueprint",
+        "TryBagToHotbarBlueprint",
+        "TrySelectToolBlueprint",
+        "TryOpenBagBlueprint",
+        "TryWorldPlotBlueprint",
+        "TryWorldDecorBlueprint",
+        "TryWorldNodeBlueprint",
+        "TryFishBlueprint",
+        "TryCraftBenchBlueprint",
+        "TryHarvestBoostBlueprint",
+        "TryHintFarmBlueprint",
+        "TryTownGateBlueprint",
+        "TryMayorBlueprint",
+        "TryTownOutdoorBlueprint",
+        "TryIndoorOrDoorBlueprint",
+        "TryMineCopperBlueprint",
+        "AimQuestDockBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "GuideEntranceBlueprint",
+      "title": "引导入口",
+      "position": {
+        "x": 40,
+        "y": 80,
+        "w": 220,
+        "h": 120
+      },
+      "minWidth": 220,
+      "minHeight": 120,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "解析",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_0",
+      "typeName": "TryIndoorOrDoorBlueprint",
+      "title": "TryIndoorOrDoorBlueprint",
+      "position": {
+        "x": 320,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "indoorName": "prop_spring_lamp",
+        "doorName": "bld_community",
+        "indoorTip": "点春厅旧灯，献上铜矿",
+        "doorTip": "点社区中心大门进屋",
+        "farTip": "往社区中心走，点大门进屋"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_0",
+      "toPortIndex": 0
+    }
+  ]
+}

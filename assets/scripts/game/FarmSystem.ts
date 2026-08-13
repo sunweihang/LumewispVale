@@ -24,6 +24,7 @@ import { ActionAnim, PlayerAnimator } from './PlayerAnimator';
 import { footSolidFor } from './GridPath';
 import { ClickMoveMarker } from './ClickMoveMarker';
 import { PlayerController } from './PlayerController';
+import { itemName, resolveItemId } from './ItemCatalog';
 import { TOOL_FRAMES } from './ToolFrames';
 import { playFarmGather, playFarmTool } from './UiAudio';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
@@ -290,6 +291,57 @@ export class FarmSystem extends Component {
     /** Push inventory change to HUD without a farm action. */
     notifyInventoryChanged() {
         this.refreshHud();
+    }
+
+    /**
+     * GM: grant materials / consumables / tools / gold.
+     * Returns a short label for toast, or null if `id` is unknown.
+     */
+    gmGrant(id: string, amount = 1): string | null {
+        const n = Math.max(0, amount | 0);
+        if (n <= 0) return null;
+        const key = resolveItemId(id);
+        const label = itemName(key, key);
+        const mats: FarmMaterial[] = [
+            'wood',
+            'grass',
+            'dirt',
+            'stone',
+            'fish',
+            'copper',
+            'iron',
+            'goldOre',
+        ];
+        if ((mats as string[]).includes(key)) {
+            this[key as FarmMaterial] += n;
+            this.notifyInventoryChanged();
+            return `${label}+${n}`;
+        }
+        if (key === 'seeds') {
+            this.seeds += n;
+            this.notifyInventoryChanged();
+            return `${label}+${n}`;
+        }
+        if (key === 'parsnip') {
+            this.crops += n;
+            this.notifyInventoryChanged();
+            return `${label}+${n}`;
+        }
+        if (key === 'boost') {
+            this.boosts += n;
+            this.notifyInventoryChanged();
+            return `${label}+${n}`;
+        }
+        if (key === 'gold') {
+            this.addGold(n);
+            return `${label}+${n}`;
+        }
+        if (key === 'hoe' || key === 'can' || key === 'axe' || key === 'rod') {
+            this.ownedTools[key] = true;
+            this.notifyInventoryChanged();
+            return `获得${label}`;
+        }
+        return null;
     }
 
     /** Current stack count for a gathered material. */
@@ -1790,16 +1842,7 @@ export class FarmSystem extends Component {
     }
 
     private toolName(t: FarmTool): string {
-        const names: Record<FarmTool, string> = {
-            hand: '手',
-            hoe: '锄头',
-            seeds: '种子',
-            can: '水壶',
-            axe: '斧头',
-            rod: '鱼竿',
-            boost: '催熟剂',
-        };
-        return names[t];
+        return itemName(t, t);
     }
 
     private previewForPlot(plot: Plot): string {
@@ -1808,9 +1851,13 @@ export class FarmSystem extends Component {
         if (this.tool !== need) return `需选择：${this.toolName(need)}`;
         if (plot.phase === 'crop' && plot.stage >= 2) return '点击收获';
         if (plot.phase === 'soil') return '点击锄地';
-        if (plot.phase === 'tilled') return this.seeds > 0 ? '点击播种' : '缺种子';
+        if (plot.phase === 'tilled') {
+            return this.seeds > 0 ? '点击播种' : `缺${itemName('seeds', '种子')}`;
+        }
         if (plot.phase === 'crop' && !plot.watered) return '点击浇水';
-        if (need === 'boost') return this.boosts > 0 ? '点击催熟' : '缺催熟剂';
+        if (need === 'boost') {
+            return this.boosts > 0 ? '点击催熟' : `缺${itemName('boost', '催熟剂')}`;
+        }
         return '生长中…';
     }
 

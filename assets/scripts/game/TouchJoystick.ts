@@ -14,6 +14,7 @@ import {
 import { clientToUiLocation, portraitVisibleSize } from './PortraitFit';
 import { FishingMinigame } from './FishingMinigame';
 import { InputBridge } from './InputBridge';
+import { STICK_VISUAL_LAYOUT } from './StickVisualFrames';
 
 const { ccclass, property } = _decorator;
 
@@ -23,13 +24,6 @@ const { ccclass, property } = _decorator;
  */
 const TAP_DEDUP_MS = 140;
 
-/** Rest dock: canvas-local X (0 = portrait center). */
-const REST_STICK_X = 0;
-/**
- * Rest dock Y from canvas center. With 1080×1920 → hh=960, -600 ≈ 360px
- * above the bottom edge (above the hotbar).
- */
-const REST_STICK_Y = -600;
 /** Extra hit padding beyond `radius` so the rest dock is easy to grab. */
 const STICK_HIT_PAD = 36;
 
@@ -480,7 +474,7 @@ export class TouchJoystick extends Component {
     }
 
     private restLocal(): { x: number; y: number } {
-        return { x: REST_STICK_X, y: REST_STICK_Y };
+        return { x: STICK_VISUAL_LAYOUT.restX, y: STICK_VISUAL_LAYOUT.restY };
     }
 
     private stickCenterUi(): { x: number; y: number } {

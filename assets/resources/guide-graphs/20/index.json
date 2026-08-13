@@ -1,0 +1,7 @@
+{
+  "guideId": 20,
+  "name": "春厅签字",
+  "description": "回到社区中心，在春厅收集包上签字",
+  "category": "goto",
+  "exportFlag": true
+}

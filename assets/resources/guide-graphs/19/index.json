@@ -1,0 +1,7 @@
+{
+  "guideId": 19,
+  "name": "商店出售",
+  "description": "打开商店，点「出售」卖掉一件收获物",
+  "category": "goto",
+  "exportFlag": true
+}

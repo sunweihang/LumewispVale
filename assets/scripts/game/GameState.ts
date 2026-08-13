@@ -228,19 +228,4 @@ class GameStateStore {
 
 export const GameState = new GameStateStore();
 
-/** Material ids used when granting quest rewards / labels. */
-export const STORY_MAT_LABELS: Record<string, string> = {
-    grass: '草料',
-    wood: '木料',
-    dirt: '泥土',
-    stone: '石料',
-    fish: '鱼',
-    seeds: '种子',
-    boost: '催熟剂',
-    parsnip: '防风草',
-    copper: '铜矿石',
-    iron: '铁矿石',
-    goldOre: '金矿石',
-};
-
 export type { FarmMaterial };

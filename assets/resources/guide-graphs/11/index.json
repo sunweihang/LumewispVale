@@ -1,0 +1,7 @@
+{
+  "guideId": 11,
+  "name": "工作台",
+  "description": "走到工作台旁点击打开合成",
+  "category": "goto",
+  "exportFlag": true
+}

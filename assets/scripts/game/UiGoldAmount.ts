@@ -45,8 +45,45 @@ function loadGoldFrame(done: (sf: SpriteFrame | null) => void) {
 }
 
 /**
+ * Bind to an existing prefab GoldAmount root (`Icon` + `Amount` children).
+ * Does not move or resize nodes — layout stays in the prefab.
+ */
+export function bindGoldAmount(root: Node, opts?: { color?: Color }): GoldAmountHandle {
+    const color = opts?.color ?? UI_PRICE;
+    const iconN = root.getChildByName('Icon');
+    const labN = root.getChildByName('Amount');
+    const lab = labN?.getComponent(Label) ?? null;
+    if (lab) {
+        styleUiLabel(lab, { size: lab.fontSize || 26, color, outline: false });
+        lab.overflow = Label.Overflow.SHRINK;
+    }
+    if (iconN) {
+        const sp = iconN.getComponent(Sprite) ?? iconN.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.trim = false;
+        loadGoldFrame((sf) => {
+            if (!iconN.isValid || !sf) return;
+            sp.spriteFrame = sf;
+        });
+    }
+    return {
+        root,
+        setAmount: (n, o) => {
+            if (!lab) return;
+            const sign = o?.sign ?? '';
+            lab.string = `x ${sign}${Math.max(0, Math.floor(n))}`;
+            lab.color = color;
+        },
+        setVisible: (on) => {
+            root.active = on;
+        },
+    };
+}
+
+/**
  * Inline purse chip: [G icon] x N  (optionally +/− before the count).
  * Matches top-right info-bar coin + quantity language game-wide.
+ * Prefer bindGoldAmount when a prefab already owns layout.
  */
 export function mountGoldAmount(
     parent: Node,

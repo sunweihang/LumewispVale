@@ -9,15 +9,21 @@ import {
     Input,
     Label,
     Node,
+    Prefab,
     Sprite,
     SpriteFrame,
     UIOpacity,
     UITransform,
     Vec3,
     input,
+    instantiate,
     tween,
     Tween,
 } from 'cc';
+import {
+    DIALOGUE_PANEL_LAYOUT as L,
+    DIALOGUE_PANEL_PREFAB_UUID,
+} from './DialoguePanelFrames';
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { InputBridge } from './InputBridge';
 import { playUiClick } from './UiAudio';
@@ -31,19 +37,6 @@ export type DialogueLine = {
     speaker?: string;
     text: string;
 };
-
-const BOX_W = 1000;
-const BOX_H = 260;
-/** Low on the portrait frame — HUD chrome is hidden while open. */
-const BOX_Y = -780;
-
-/** Headshot above the name plate (96px nearest portrait). */
-const AVATAR = 96;
-const AVATAR_FRAME = 108;
-const NAME_PLATE_W = 220;
-const NAME_PLATE_H = 48;
-/** Name stack X — left lip of the dialogue box. */
-const NAME_STACK_X = -BOX_W * 0.5 + 130;
 
 const FADE_IN = 0.18;
 const FADE_OUT = 0.12;
@@ -65,7 +58,7 @@ function portraitUuidForSpeaker(speaker: string): string | null {
 }
 
 function bodyY(hasSpeaker: boolean): number {
-    return hasSpeaker ? 78 : 96;
+    return hasSpeaker ? L.bodyYSpeaker : L.bodyYNarration;
 }
 
 /**
@@ -100,11 +93,12 @@ export class DialoguePanel extends Component {
     private _hintArrow: Node | null = null;
     private _hintOp: UIOpacity | null = null;
     private _rootOp: UIOpacity | null = null;
-    private _hintBaseY = 0;
-    private _arrowBaseY = 18;
+    private _hintBaseY = L.hintY;
+    private _arrowBaseY = L.arrowY;
     private _sfCache = new Map<string, SpriteFrame>();
     private _portraitLoadGen = 0;
     private _hasPortrait = false;
+    private _ready = false;
 
     private _lines: DialogueLine[] = [];
     private _index = 0;
@@ -136,15 +130,12 @@ export class DialoguePanel extends Component {
     }
 
     onLoad() {
-        this.build();
-        this.hideVisualImmediate();
+        this.loadPrefab();
         // Never show with system-font fallback — swapping to UI font is the flash.
         loadUiFont().then(() => {
             this.applyFonts();
             this._fontReady = true;
-            const pending = this._pending;
-            this._pending = null;
-            if (pending) this.beginPlay(pending.lines, pending.onDone);
+            this.flushPending();
         });
     }
 
@@ -175,9 +166,21 @@ export class DialoguePanel extends Component {
             void loadUiFont().then(() => {
                 this._fontReady = true;
                 this.applyFonts();
+                this.flushPending();
             });
         }
+        if (!this._ready || !this._fontReady) {
+            this._pending = { lines, onDone };
+            return;
+        }
         this.beginPlay(lines, onDone);
+    }
+
+    private flushPending() {
+        if (!this._ready || !this._fontReady || !this._pending) return;
+        const pending = this._pending;
+        this._pending = null;
+        this.beginPlay(pending.lines, pending.onDone);
     }
 
     /** Snap opaque while LoadingScreen still covers — then the gate can lift cleanly. */
@@ -279,14 +282,11 @@ export class DialoguePanel extends Component {
     }
 
     private layoutChrome(hasSpeaker: boolean, hasPortrait: boolean) {
-        const nameY = BOX_H * 0.5 + 2;
         if (this._namePlate) {
-            this._namePlate.setPosition(NAME_STACK_X, nameY, 0);
+            this._namePlate.setPosition(L.nameStackX, L.nameY, 0);
         }
         if (this._portraitRoot) {
-            // Headshot sits directly above the name plate (may peek above the box).
-            const avatarY = nameY + NAME_PLATE_H * 0.5 + 8 + AVATAR_FRAME * 0.5;
-            this._portraitRoot.setPosition(NAME_STACK_X, avatarY, 0);
+            this._portraitRoot.setPosition(L.nameStackX, L.portraitY, 0);
             this._portraitRoot.active = hasPortrait && hasSpeaker;
         }
         if (this._bodyLab) {
@@ -535,186 +535,150 @@ export class DialoguePanel extends Component {
         this.tryAdvance();
     }
 
-    private build() {
+    private loadPrefab() {
         const canvas = this.node;
+        for (const name of ['DialogueDimmer', 'DialogueBox', 'DialoguePanel']) {
+            const old = canvas.getChildByName(name);
+            if (old) old.destroy();
+        }
 
-        // Drop leftover dimmer / box from older builds.
-        const oldDim = canvas.getChildByName('DialogueDimmer');
-        if (oldDim) oldDim.destroy();
-        const oldBox = canvas.getChildByName('DialogueBox');
-        if (oldBox) oldBox.destroy();
-
-        const root = new Node('DialogueBox');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.setPosition(0, BOX_Y, 0);
-        root.addComponent(UITransform).setContentSize(BOX_W, BOX_H);
-        this._rootOp = root.addComponent(UIOpacity);
-        this._rootOp.opacity = 0;
-
-        const g = root.addComponent(Graphics);
-        drawDialogueChrome(g, BOX_W, BOX_H);
-        this._root = root;
-        const x0 = -BOX_W * 0.5;
-        const y0 = -BOX_H * 0.5;
-
-        // Headshot above the name plate (not a full-body left column).
-        const portraitRoot = new Node('Portrait');
-        portraitRoot.layer = root.layer;
-        portraitRoot.setParent(root);
-        const nameY = BOX_H * 0.5 + 2;
-        portraitRoot.setPosition(
-            NAME_STACK_X,
-            nameY + NAME_PLATE_H * 0.5 + 8 + AVATAR_FRAME * 0.5,
-            0,
-        );
-        portraitRoot.addComponent(UITransform).setContentSize(AVATAR_FRAME, AVATAR_FRAME);
-        const pg = portraitRoot.addComponent(Graphics);
-        const fw = AVATAR_FRAME;
-        pg.fillColor = UI_WOOD;
-        pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
-        pg.fill();
-        pg.fillColor = UI_WOOD_DARK;
-        pg.roundRect(-AVATAR * 0.5 - 2, -AVATAR * 0.5 - 2, AVATAR + 4, AVATAR + 4, 12);
-        pg.fill();
-        pg.strokeColor = UI_GOLD;
-        pg.lineWidth = 3;
-        pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
-        pg.stroke();
-        this._portraitRoot = portraitRoot;
-
-        const faceN = new Node('Face');
-        faceN.layer = root.layer;
-        faceN.setParent(portraitRoot);
-        faceN.setPosition(0, 0, 0);
-        const faceUt = faceN.addComponent(UITransform);
-        faceUt.setContentSize(AVATAR, AVATAR);
-        const faceSp = faceN.addComponent(Sprite);
-        faceSp.sizeMode = Sprite.SizeMode.CUSTOM;
-        faceSp.type = Sprite.Type.SIMPLE;
-        this._portraitSp = faceSp;
-        portraitRoot.active = false;
-
-        const namePlate = new Node('NamePlate');
-        namePlate.layer = root.layer;
-        namePlate.setParent(root);
-        namePlate.setPosition(NAME_STACK_X, nameY, 0);
-        namePlate.addComponent(UITransform).setContentSize(NAME_PLATE_W, NAME_PLATE_H);
-        const ng = namePlate.addComponent(Graphics);
-        ng.fillColor = UI_WOOD;
-        ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
-        ng.fill();
-        ng.fillColor = new Color(196, 132, 64, 255);
-        ng.roundRect(
-            -NAME_PLATE_W * 0.5 + 3,
-            -NAME_PLATE_H * 0.5 + 3,
-            NAME_PLATE_W - 6,
-            NAME_PLATE_H - 6,
-            8,
-        );
-        ng.fill();
-        ng.strokeColor = UI_GOLD;
-        ng.lineWidth = 2;
-        ng.roundRect(-NAME_PLATE_W * 0.5, -NAME_PLATE_H * 0.5, NAME_PLATE_W, NAME_PLATE_H, 10);
-        ng.stroke();
-        this._namePlate = namePlate;
-
-        const nameN = new Node('Name');
-        nameN.layer = namePlate.layer;
-        nameN.setParent(namePlate);
-        const nameUt = nameN.addComponent(UITransform);
-        const nameLab = nameN.addComponent(Label);
-        styleUiLabel(nameLab, {
-            size: 28,
-            color: UI_CREAM,
-            outline: true,
-            outlineWidth: 2,
+        assetManager.loadAny({ uuid: DIALOGUE_PANEL_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[DialoguePanel] prefab missing', err);
+                this._ready = true;
+                this.flushPending();
+                return;
+            }
+            const inst = instantiate(asset as Prefab);
+            inst.name = 'DialogueBox';
+            inst.layer = canvas.layer;
+            inst.setParent(canvas);
+            this._root = inst;
+            this.bindRefs(inst);
+            this.paintChromeOnce();
+            this.hideVisualImmediate();
+            this._ready = true;
+            this.flushPending();
         });
-        nameLab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        nameLab.verticalAlign = Label.VerticalAlign.CENTER;
-        nameLab.overflow = Label.Overflow.CLAMP;
-        nameLab.enableWrapText = false;
-        nameUt.setContentSize(200, 36);
-        this._nameLab = nameLab;
+    }
 
-        const bodyN = new Node('Body');
-        bodyN.layer = root.layer;
-        bodyN.setParent(root);
-        // Top-anchored: sit just under the top padding / name plate.
-        bodyN.setPosition(0, bodyY(false), 0);
-        const bodyUt = bodyN.addComponent(UITransform);
-        bodyUt.setAnchorPoint(0.5, 1);
-        const body = bodyN.addComponent(Label);
-        styleUiLabel(body, {
-            size: 34,
-            color: new Color(255, 246, 220, 255),
-            outline: true,
-            outlineWidth: 3,
-        });
-        // Overflow BEFORE size: Label(NONE) shrinks the node to the empty string,
-        // and RESIZE_HEIGHT would then wrap on that ~2-glyph width.
-        body.overflow = Label.Overflow.RESIZE_HEIGHT;
-        body.enableWrapText = true;
-        body.horizontalAlign = Label.HorizontalAlign.LEFT;
-        body.verticalAlign = Label.VerticalAlign.TOP;
-        body.lineHeight = 48;
-        bodyUt.setContentSize(BOX_W - 100, 150);
-        this._bodyLab = body;
+    private bindRefs(root: Node) {
+        this._rootOp = root.getComponent(UIOpacity) ?? root.addComponent(UIOpacity);
+        this._portraitRoot = root.getChildByName('Portrait');
+        this._portraitSp = this._portraitRoot?.getChildByName('Face')?.getComponent(Sprite) ?? null;
+        if (this._portraitSp) {
+            this._portraitSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            this._portraitSp.type = Sprite.Type.SIMPLE;
+        }
+        this._namePlate = root.getChildByName('NamePlate');
+        this._nameLab = this._namePlate?.getChildByName('Name')?.getComponent(Label) ?? null;
+        this._bodyLab = root.getChildByName('Body')?.getComponent(Label) ?? null;
+        this._hintRoot = root.getChildByName('Hint');
+        this._hintArrow = this._hintRoot?.getChildByName('HintArrow') ?? null;
+        this._hintLab = this._hintRoot?.getChildByName('HintLab')?.getComponent(Label) ?? null;
+        this._hintOp = this._hintRoot?.getComponent(UIOpacity) ?? this._hintRoot?.addComponent(UIOpacity) ?? null;
+        this._hintBaseY = L.hintY;
+        this._arrowBaseY = L.arrowY;
 
-        // Continue cue — fully inside the box (bottom-right padding ≥ 28px).
-        const hintRoot = new Node('Hint');
-        hintRoot.layer = root.layer;
-        hintRoot.setParent(root);
-        this._hintBaseY = y0 + 70;
-        hintRoot.setPosition(x0 + BOX_W - 118, this._hintBaseY, 0);
-        hintRoot.addComponent(UITransform).setContentSize(200, 64);
-        this._hintOp = hintRoot.addComponent(UIOpacity);
-        this._hintOp.opacity = 255;
-        this._hintRoot = hintRoot;
+        if (this._nameLab) {
+            styleUiLabel(this._nameLab, {
+                size: 28,
+                color: UI_CREAM,
+                outline: true,
+                outlineWidth: 2,
+            });
+            this._nameLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._nameLab.verticalAlign = Label.VerticalAlign.CENTER;
+            this._nameLab.overflow = Label.Overflow.CLAMP;
+            this._nameLab.enableWrapText = false;
+        }
+        if (this._bodyLab) {
+            styleUiLabel(this._bodyLab, {
+                size: 34,
+                color: new Color(255, 246, 220, 255),
+                outline: true,
+                outlineWidth: 3,
+            });
+            this._bodyLab.overflow = Label.Overflow.RESIZE_HEIGHT;
+            this._bodyLab.enableWrapText = true;
+            this._bodyLab.horizontalAlign = Label.HorizontalAlign.LEFT;
+            this._bodyLab.verticalAlign = Label.VerticalAlign.TOP;
+            this._bodyLab.lineHeight = 48;
+        }
+        if (this._hintLab) {
+            styleUiLabel(this._hintLab, {
+                size: 24,
+                color: new Color(255, 230, 150, 255),
+                outline: true,
+                outlineWidth: 2,
+                outlineColor: new Color(60, 36, 12, 255),
+            });
+            this._hintLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._hintLab.verticalAlign = Label.VerticalAlign.CENTER;
+            this._hintLab.overflow = Label.Overflow.CLAMP;
+            this._hintLab.enableWrapText = false;
+        }
+        this.applyFonts();
+    }
 
-        this._arrowBaseY = 16;
-        const arrow = new Node('HintArrow');
-        arrow.layer = root.layer;
-        arrow.setParent(hintRoot);
-        arrow.setPosition(0, this._arrowBaseY, 0);
-        arrow.addComponent(UITransform).setContentSize(36, 24);
-        const ag = arrow.addComponent(Graphics);
-        const gold = new Color(255, 220, 120, 255);
-        const edge = new Color(90, 50, 16, 255);
-        ag.fillColor = edge;
-        ag.moveTo(0, -10);
-        ag.lineTo(-13, 8);
-        ag.lineTo(13, 8);
-        ag.close();
-        ag.fill();
-        ag.fillColor = gold;
-        ag.moveTo(0, -7);
-        ag.lineTo(-10, 6);
-        ag.lineTo(10, 6);
-        ag.close();
-        ag.fill();
-        this._hintArrow = arrow;
+    private paintChromeOnce() {
+        const root = this._root;
+        if (!root) return;
+        const chrome = root.getChildByName('Chrome')?.getComponent(Graphics);
+        if (chrome) drawDialogueChrome(chrome, L.boxW, L.boxH);
 
-        const hintN = new Node('HintLab');
-        hintN.layer = root.layer;
-        hintN.setParent(hintRoot);
-        hintN.setPosition(0, -14, 0);
-        const hintUt = hintN.addComponent(UITransform);
-        const hint = hintN.addComponent(Label);
-        styleUiLabel(hint, {
-            size: 24,
-            color: new Color(255, 230, 150, 255),
-            outline: true,
-            outlineWidth: 2,
-            outlineColor: new Color(60, 36, 12, 255),
-        });
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        hint.verticalAlign = Label.VerticalAlign.CENTER;
-        hint.overflow = Label.Overflow.CLAMP;
-        hint.enableWrapText = false;
-        hintUt.setContentSize(200, 32);
-        hint.string = '点击继续';
-        this._hintLab = hint;
+        const pg = this._portraitRoot?.getComponent(Graphics);
+        if (pg) {
+            const fw = L.avatarFrame;
+            const av = L.avatar;
+            pg.clear();
+            pg.fillColor = UI_WOOD;
+            pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
+            pg.fill();
+            pg.fillColor = UI_WOOD_DARK;
+            pg.roundRect(-av * 0.5 - 2, -av * 0.5 - 2, av + 4, av + 4, 12);
+            pg.fill();
+            pg.strokeColor = UI_GOLD;
+            pg.lineWidth = 3;
+            pg.roundRect(-fw * 0.5, -fw * 0.5, fw, fw, 16);
+            pg.stroke();
+        }
+
+        const ng = this._namePlate?.getComponent(Graphics);
+        if (ng) {
+            const w = L.namePlateW;
+            const h = L.namePlateH;
+            ng.clear();
+            ng.fillColor = UI_WOOD;
+            ng.roundRect(-w * 0.5, -h * 0.5, w, h, 10);
+            ng.fill();
+            ng.fillColor = new Color(196, 132, 64, 255);
+            ng.roundRect(-w * 0.5 + 3, -h * 0.5 + 3, w - 6, h - 6, 8);
+            ng.fill();
+            ng.strokeColor = UI_GOLD;
+            ng.lineWidth = 2;
+            ng.roundRect(-w * 0.5, -h * 0.5, w, h, 10);
+            ng.stroke();
+        }
+
+        const ag = this._hintArrow?.getComponent(Graphics);
+        if (ag) {
+            const gold = new Color(255, 220, 120, 255);
+            const edge = new Color(90, 50, 16, 255);
+            ag.clear();
+            ag.fillColor = edge;
+            ag.moveTo(0, -10);
+            ag.lineTo(-13, 8);
+            ag.lineTo(13, 8);
+            ag.close();
+            ag.fill();
+            ag.fillColor = gold;
+            ag.moveTo(0, -7);
+            ag.lineTo(-10, 6);
+            ag.lineTo(10, 6);
+            ag.close();
+            ag.fill();
+        }
     }
 
     /** Keep wrap width after font / string updates (Label can shrink the node). */
@@ -724,7 +688,7 @@ export class DialoguePanel extends Component {
         const ut = n.getComponent(UITransform);
         if (!ut) return;
         const hasSpeaker = !!(this._namePlate?.active);
-        const w = BOX_W - 100;
+        const w = L.bodyW;
         ut.setAnchorPoint(0.5, 1);
         n.setPosition(0, bodyY(hasSpeaker), 0);
         if (ut.contentSize.width < w - 1 || ut.contentSize.width > w + 1) {

@@ -1,0 +1,317 @@
+[
+  {
+    "id": 1,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"44766969-a397-41be-aa3e-ed2f77068bf7@f9941\", \"kind\": \"工具\"}",
+    "num": 0,
+    "link_id": 1001
+  },
+  {
+    "id": 2,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1001
+  },
+  {
+    "id": 3,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"08a2a30f-35b6-487a-8e11-bc4786ea9ea0@f9941\", \"kind\": \"工具\"}",
+    "num": 0,
+    "link_id": 1002
+  },
+  {
+    "id": 4,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1002
+  },
+  {
+    "id": 5,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"9868439a-ba91-4030-8483-45abb0a6b9e1@f9941\", \"kind\": \"工具\"}",
+    "num": 0,
+    "link_id": 1003
+  },
+  {
+    "id": 6,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1003
+  },
+  {
+    "id": 7,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"ff16e656-2a76-4471-8a1a-38ad49f457b5@f9941\", \"kind\": \"工具\"}",
+    "num": 0,
+    "link_id": 1004
+  },
+  {
+    "id": 8,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1004
+  },
+  {
+    "id": 9,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"0625f4d3-2b16-47a6-814c-4f89e986726c@f9941\", \"kind\": \"工具\"}",
+    "num": 0,
+    "link_id": 1005
+  },
+  {
+    "id": 10,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1005
+  },
+  {
+    "id": 11,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"fdc0f0f2-5da1-4a35-b096-ce5c574fed3c@f9941\", \"kind\": \"种子\"}",
+    "num": 0,
+    "link_id": 1006
+  },
+  {
+    "id": 12,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1006
+  },
+  {
+    "id": 13,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"9d7b2992-0774-4044-8be2-4eca6808b082@f9941\", \"kind\": \"道具\"}",
+    "num": 0,
+    "link_id": 1007
+  },
+  {
+    "id": 14,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1007
+  },
+  {
+    "id": 15,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"695a362e-30eb-4750-9159-a2f61c636a18@f9941\", \"kind\": \"作物\"}",
+    "num": 0,
+    "link_id": 1008
+  },
+  {
+    "id": 16,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1008
+  },
+  {
+    "id": 17,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"b303ff74-caa7-4f68-8716-f50672f84ae8@f9941\", \"kind\": \"材料\"}",
+    "num": 0,
+    "link_id": 1009
+  },
+  {
+    "id": 18,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1009
+  },
+  {
+    "id": 19,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"b06191e5-aaa3-473b-a9e8-e8fd97d53fe9@f9941\", \"kind\": \"材料\"}",
+    "num": 0,
+    "link_id": 1010
+  },
+  {
+    "id": 20,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1010
+  },
+  {
+    "id": 21,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"0d34ee4c-7ac4-4bbe-a1df-edd4e6ad7a6f@f9941\", \"kind\": \"材料\"}",
+    "num": 0,
+    "link_id": 1011
+  },
+  {
+    "id": 22,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1011
+  },
+  {
+    "id": 23,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"d59e0a71-c294-4f63-ba89-14046cf94836@f9941\", \"kind\": \"材料\"}",
+    "num": 0,
+    "link_id": 1012
+  },
+  {
+    "id": 24,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1012
+  },
+  {
+    "id": 25,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"1afa835d-393c-4e83-88a7-5e0c3db3e6ac@f9941\", \"kind\": \"食材\"}",
+    "num": 0,
+    "link_id": 1013
+  },
+  {
+    "id": 26,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1013
+  },
+  {
+    "id": 27,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"1457b015-51ed-421c-8bd6-7ccccba78dd1@f9941\", \"kind\": \"矿石\"}",
+    "num": 0,
+    "link_id": 1014
+  },
+  {
+    "id": 28,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1014
+  },
+  {
+    "id": 29,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"ae905224-b7ee-4d96-9609-1637f6e69307@f9941\", \"kind\": \"矿石\"}",
+    "num": 0,
+    "link_id": 1015
+  },
+  {
+    "id": 30,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1015
+  },
+  {
+    "id": 31,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"38fab6f1-b10a-48ee-925e-9cc041a617ac@f9941\", \"kind\": \"矿石\"}",
+    "num": 0,
+    "link_id": 1016
+  },
+  {
+    "id": 32,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999,
+    "link_id": 1016
+  },
+  {
+    "id": 33,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"39971d4b-95b7-4cf7-ab7a-068c77975fbb@f9941\", \"kind\": \"货币\"}",
+    "num": 0,
+    "link_id": 1017
+  },
+  {
+    "id": 34,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 999999,
+    "link_id": 1017
+  },
+  {
+    "id": 35,
+    "display_template_id": 11,
+    "param": "{\"icon\": \"7918e9f4-330e-4a06-95ba-e98a74906d3f@f9941\", \"kind\": \"配方\"}",
+    "num": 0,
+    "link_id": 1018
+  },
+  {
+    "id": 36,
+    "display_template_id": 1,
+    "param": "[]",
+    "num": 1,
+    "link_id": 1018
+  },
+  {
+    "id": 37,
+    "display_template_id": 12,
+    "param": "{\"price\": 35, \"currency\": \"gold\"}",
+    "num": 35,
+    "link_id": 1008
+  },
+  {
+    "id": 38,
+    "display_template_id": 12,
+    "param": "{\"price\": 5, \"currency\": \"gold\"}",
+    "num": 5,
+    "link_id": 1009
+  },
+  {
+    "id": 39,
+    "display_template_id": 12,
+    "param": "{\"price\": 8, \"currency\": \"gold\"}",
+    "num": 8,
+    "link_id": 1010
+  },
+  {
+    "id": 40,
+    "display_template_id": 12,
+    "param": "{\"price\": 2, \"currency\": \"gold\"}",
+    "num": 2,
+    "link_id": 1011
+  },
+  {
+    "id": 41,
+    "display_template_id": 12,
+    "param": "{\"price\": 8, \"currency\": \"gold\"}",
+    "num": 8,
+    "link_id": 1012
+  },
+  {
+    "id": 42,
+    "display_template_id": 12,
+    "param": "{\"price\": 40, \"currency\": \"gold\"}",
+    "num": 40,
+    "link_id": 1013
+  },
+  {
+    "id": 43,
+    "display_template_id": 12,
+    "param": "{\"price\": 25, \"currency\": \"gold\"}",
+    "num": 25,
+    "link_id": 1014
+  },
+  {
+    "id": 44,
+    "display_template_id": 12,
+    "param": "{\"price\": 25, \"currency\": \"gold\"}",
+    "num": 25,
+    "link_id": 1015
+  },
+  {
+    "id": 45,
+    "display_template_id": 12,
+    "param": "{\"price\": 40, \"currency\": \"gold\"}",
+    "num": 40,
+    "link_id": 1016
+  }
+]

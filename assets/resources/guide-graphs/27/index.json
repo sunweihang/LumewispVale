@@ -1,0 +1,7 @@
+{
+  "guideId": 27,
+  "name": "砍树·斧头",
+  "description": "打开背包，把斧头拖到快捷栏，再点击松树或橡树砍伐",
+  "category": "goto",
+  "exportFlag": true
+}

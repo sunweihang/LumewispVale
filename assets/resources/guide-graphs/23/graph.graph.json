@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "graphId": "guide_23",
+  "profile": {
+    "name": "guide",
+    "useLightTheme": false,
+    "nodeFilter": {
+      "allowAll": false,
+      "whitelist": [
+        "GuideEntranceBlueprint",
+        "TryBagToHotbarBlueprint",
+        "TrySelectToolBlueprint",
+        "TryOpenBagBlueprint",
+        "TryWorldPlotBlueprint",
+        "TryWorldDecorBlueprint",
+        "TryWorldNodeBlueprint",
+        "TryFishBlueprint",
+        "TryCraftBenchBlueprint",
+        "TryHarvestBoostBlueprint",
+        "TryHintFarmBlueprint",
+        "TryTownGateBlueprint",
+        "TryMayorBlueprint",
+        "TryTownOutdoorBlueprint",
+        "TryIndoorOrDoorBlueprint",
+        "TryMineCopperBlueprint",
+        "AimQuestDockBlueprint",
+        "FloatConst",
+        "Add",
+        "Branch",
+        "BoolConst",
+        "StringConst",
+        "DebugLog",
+        "FloatCompareBranch"
+      ],
+      "blacklist": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_entrance",
+      "typeName": "GuideEntranceBlueprint",
+      "title": "引导入口",
+      "position": {
+        "x": 40,
+        "y": 80,
+        "w": 220,
+        "h": 120
+      },
+      "minWidth": 220,
+      "minHeight": 120,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "解析",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    },
+    {
+      "id": "node_0",
+      "typeName": "TryTownOutdoorBlueprint",
+      "title": "TryTownOutdoorBlueprint",
+      "position": {
+        "x": 320,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {
+        "names": "sign_mine,door_portal_mine",
+        "nearTip": "点击东门外矿洞路牌进入",
+        "farTip": "往东走到矿洞路牌"
+      }
+    },
+    {
+      "id": "node_1",
+      "typeName": "TryMineCopperBlueprint",
+      "title": "TryMineCopperBlueprint",
+      "position": {
+        "x": 600,
+        "y": 80,
+        "w": 240,
+        "h": 140
+      },
+      "minWidth": 240,
+      "minHeight": 140,
+      "inputs": [
+        {
+          "name": "前序",
+          "portType": "GraphFlow"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "已瞄准",
+          "portType": "GraphFlow"
+        },
+        {
+          "name": "未命中",
+          "portType": "GraphFlow"
+        }
+      ],
+      "customData": {}
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node_entrance",
+      "fromPortIndex": 0,
+      "toNodeId": "node_0",
+      "toPortIndex": 0
+    },
+    {
+      "fromNodeId": "node_0",
+      "fromPortIndex": 1,
+      "toNodeId": "node_1",
+      "toPortIndex": 0
+    }
+  ]
+}

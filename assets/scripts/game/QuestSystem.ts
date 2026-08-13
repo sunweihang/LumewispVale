@@ -621,6 +621,47 @@ export class QuestSystem extends Component {
         return parkId ? { activeId: parkId, label: labels[line] } : null;
     }
 
+    /**
+     * GM: park on a single quest for testing.
+     * Completes every earlier quest (by sort), clears target + later completions,
+     * grants craft tools, unlocks maps.
+     */
+    jumpToQuest(questId: number): {
+        activeId: number;
+        name: string;
+        chapter: string;
+        unlockMap: string;
+    } | null {
+        if (!this._tables || !questId) return null;
+        const target = this._tables.TQuest.get(questId);
+        if (!target) return null;
+
+        const all = this.allQuests();
+        const priorIds = all.filter((q) => q.sort < target.sort).map((q) => q.id);
+        for (const q of all) {
+            if (q.sort >= target.sort) this._completed.delete(q.id);
+        }
+        this.completeQuestIds(priorIds);
+        this.syncCountersFromQuests(priorIds);
+        this.applyFlagsFromQuests(priorIds);
+        this.grantToolsFromCraftTables();
+
+        this._awaitingClaim = false;
+        this._activeId = questId;
+        this._progressToastQuestId = 0;
+        this._progressToastCurrent = 0;
+        this.persistToGameState();
+        this.emitChange();
+        // Don't auto-claim if counters already satisfy the objective.
+        this.checkProgress(false);
+        return {
+            activeId: questId,
+            name: target.name,
+            chapter: target.chapter,
+            unlockMap: target.unlockMap ?? '',
+        };
+    }
+
     /** Grant + mark complete for each id not yet finished. */
     private completeQuestIds(ids: number[]): boolean {
         if (!this._tables) return false;

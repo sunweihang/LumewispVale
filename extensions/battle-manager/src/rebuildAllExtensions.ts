@@ -17,6 +17,7 @@ const RELOAD_PRIORITY: Record<string, number> = {
   'ballistic-editor': 21,
   'modifier-editor': 22,
   'story-editor': 23,
+  'guide-editor': 23.5,
   'unit-editor': 24,
   'effect-preview': 30,
   'battle-manager': 100,

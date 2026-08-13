@@ -3,14 +3,38 @@ import { loadConfigTables } from './ConfigService';
 import { FARMER_FRAMES } from './FarmerFrames';
 import { FARM_FRAMES } from './FarmFrames';
 import { FISHING_FRAMES } from './FishingFrames';
-import { INFO_BOARD_FRAMES, INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
-import { JOYSTICK_FRAMES } from './JoystickFrames';
-import { MATERIAL_FRAMES } from './MaterialFrames';
+import { FISHING_MINIGAME_PREFAB_UUID } from './FishingMinigameFrames';
+import { DIALOGUE_PANEL_PREFAB_UUID } from './DialoguePanelFrames';
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
+import {
+    FARM_BAG_PANEL_PREFAB_UUID,
+    FARM_CHEST_PANEL_PREFAB_UUID,
+    FARM_CRAFT_PANEL_PREFAB_UUID,
+    FARM_CRAFT_ROW_PREFAB_UUID,
+    FARM_HOTBAR_PREFAB_UUID,
+    FARM_LEARN_PANEL_PREFAB_UUID,
+    FARM_TOOL_TIP_PREFAB_UUID,
+} from './FarmHudFrames';
+import { GM_CHIP_PREFAB_UUID, GM_PANEL_PREFAB_UUID } from './GmPanelFrames';
+import { INFO_BOARD_FRAMES, INFO_BOARD_PREFAB_UUID } from './InfoBoardFrames';
+import { allItemIconUuids } from './ItemCatalog';
+import { JOYSTICK_FRAMES } from './JoystickFrames';
+import { LOADING_SCREEN_PREFAB_UUID } from './LoadingScreenFrames';
+import { MATERIAL_FRAMES } from './MaterialFrames';
 import { NPC_FRAMES } from './NpcFrames';
 import { QUEST_FRAMES, QUEST_PANEL_PREFAB_UUID } from './QuestFrames';
+import { QUEST_TRACKER_PREFAB_UUID } from './QuestTrackerFrames';
+import { REWARD_POPUP_PREFAB_UUID } from './RewardPopupFrames';
+import { STICK_VISUAL_PREFAB_UUID } from './StickVisualFrames';
 import { STORY_INTRO_FRAMES } from './StoryIntroFrames';
+import { STORY_INTRO_PANEL_PREFAB_UUID } from './StoryIntroPanelFrames';
 import { TOOL_FRAMES } from './ToolFrames';
+import {
+    TOWN_SHOP_PREFAB_UUID,
+    TOWN_SHOP_ROW_PREFAB_UUID,
+} from './TownShopFrames';
+import { TUTORIAL_GUIDE_PREFAB_UUID } from './TutorialGuideFrames';
+import { UI_CHROME_FRAMES } from './UiChromeFrames';
 import { loadUiFont } from './UiFont';
 
 const STORY_UUIDS = [
@@ -48,9 +72,11 @@ function collectCriticalSpriteUuids(): string[] {
     flattenUuids(DIALOGUE_PORTRAIT_FRAMES, set);
     flattenUuids(TOOL_FRAMES, set);
     flattenUuids(MATERIAL_FRAMES, set);
+    for (const u of allItemIconUuids()) set.add(u);
     flattenUuids(FARM_FRAMES, set);
     flattenUuids(QUEST_FRAMES, set);
     flattenUuids(INFO_BOARD_FRAMES, set);
+    flattenUuids(UI_CHROME_FRAMES, set);
     flattenUuids(JOYSTICK_FRAMES, set);
     for (const u of STORY_UUIDS) set.add(u);
     // Array.from — web-mobile downlevel turns [...set] into [].concat(set).
@@ -120,6 +146,25 @@ export async function warmupCriticalAssets(onProgress?: WarmupProgress): Promise
     await Promise.all([
         loadPrefab(INFO_BOARD_PREFAB_UUID),
         loadPrefab(QUEST_PANEL_PREFAB_UUID),
+        loadPrefab(TOWN_SHOP_PREFAB_UUID),
+        loadPrefab(TOWN_SHOP_ROW_PREFAB_UUID),
+        loadPrefab(DIALOGUE_PANEL_PREFAB_UUID),
+        loadPrefab(REWARD_POPUP_PREFAB_UUID),
+        loadPrefab(STORY_INTRO_PANEL_PREFAB_UUID),
+        loadPrefab(LOADING_SCREEN_PREFAB_UUID),
+        loadPrefab(FARM_HOTBAR_PREFAB_UUID),
+        loadPrefab(FARM_BAG_PANEL_PREFAB_UUID),
+        loadPrefab(FARM_CHEST_PANEL_PREFAB_UUID),
+        loadPrefab(FARM_CRAFT_PANEL_PREFAB_UUID),
+        loadPrefab(FARM_CRAFT_ROW_PREFAB_UUID),
+        loadPrefab(FARM_LEARN_PANEL_PREFAB_UUID),
+        loadPrefab(FARM_TOOL_TIP_PREFAB_UUID),
+        loadPrefab(QUEST_TRACKER_PREFAB_UUID),
+        loadPrefab(FISHING_MINIGAME_PREFAB_UUID),
+        loadPrefab(STICK_VISUAL_PREFAB_UUID),
+        loadPrefab(TUTORIAL_GUIDE_PREFAB_UUID),
+        loadPrefab(GM_PANEL_PREFAB_UUID),
+        loadPrefab(GM_CHIP_PREFAB_UUID),
     ]);
 
     const uuids = collectCriticalSpriteUuids();

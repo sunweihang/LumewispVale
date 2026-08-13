@@ -164,6 +164,46 @@ export enum GotoAction {
 }
 
  
+ 
+/**
+ * 物品类型
+ */
+export enum ItemType {
+    /**
+     * 杂项
+     */
+    Misc = 0,
+    /**
+     * 工具
+     */
+    Tool = 1,
+    /**
+     * 材料
+     */
+    Material = 2,
+    /**
+     * 消耗品
+     */
+    Consumable = 3,
+    /**
+     * 货币
+     */
+    Currency = 4,
+    /**
+     * 作物
+     */
+    Crop = 5,
+    /**
+     * 配方
+     */
+    Recipe = 6,
+    /**
+     * 种子
+     */
+    Seed = 7,
+}
+
+ 
 
 
 
@@ -351,6 +391,70 @@ export class CDialogue {
 
 
 
+export class CDisplay {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.display_template_id === undefined) { throw new Error() }
+        this.displayTemplateId = _json_.display_template_id
+        if (_json_.param === undefined) { throw new Error() }
+        this.param = _json_.param
+        if (_json_.num === undefined) { throw new Error() }
+        this.num = _json_.num
+        if (_json_.link_id === undefined) { throw new Error() }
+        this.linkId = _json_.link_id
+    }
+
+    readonly id: number
+    readonly displayTemplateId: number
+    readonly param: string
+    readonly num: number
+    readonly linkId: number
+
+    resolve(tables:Tables) {
+        
+        
+        
+        
+        
+    }
+}
+
+
+
+
+
+export class CDisplayTemplate {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.desc === undefined) { throw new Error() }
+        this.desc = _json_.desc
+        if (_json_.param_desc === undefined) { throw new Error() }
+        this.paramDesc = _json_.param_desc
+    }
+
+    readonly id: number
+    readonly name: string
+    readonly desc: string
+    readonly paramDesc: string
+
+    resolve(tables:Tables) {
+        
+        
+        
+        
+    }
+}
+
+
+
+
+
 export class CFlag {
 
     constructor(_json_: any) {
@@ -408,14 +512,50 @@ export class CItem {
     constructor(_json_: any) {
         if (_json_.id === undefined) { throw new Error() }
         this.id = _json_.id
+        if (_json_.type === undefined) { throw new Error() }
+        this.type = _json_.type
         if (_json_.name === undefined) { throw new Error() }
         this.name = _json_.name
+        if (_json_.display_id === undefined) { throw new Error() }
+        this.displayId = _json_.display_id
+        if (_json_.use_condition_id === undefined) { throw new Error() }
+        this.useConditionId = _json_.use_condition_id
+        if (_json_.use_effect_id === undefined) { throw new Error() }
+        this.useEffectId = _json_.use_effect_id
+        if (_json_.max_stack === undefined) { throw new Error() }
+        this.maxStack = _json_.max_stack
+        if (_json_.desc === undefined) { throw new Error() }
+        this.desc = _json_.desc
+        if (_json_.gm_grant === undefined) { throw new Error() }
+        this.gmGrant = _json_.gm_grant
+        if (_json_.gm_amount === undefined) { throw new Error() }
+        this.gmAmount = _json_.gm_amount
+        if (_json_.sort === undefined) { throw new Error() }
+        this.sort = _json_.sort
     }
 
     readonly id: string
+    readonly type: ItemType
     readonly name: string
+    readonly displayId: number
+    readonly useConditionId: number
+    readonly useEffectId: number
+    readonly maxStack: number
+    readonly desc: string
+    readonly gmGrant: boolean
+    readonly gmAmount: number
+    readonly sort: number
 
     resolve(tables:Tables) {
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         
     }
@@ -709,7 +849,7 @@ export class TFlag {
 
 
 /**
- * 物品显示名
+ * 基础物品表
  */
 export class TItem {
     private _dataMap: Map<string, CItem>
@@ -810,6 +950,74 @@ export class TChat {
 
 
 
+/**
+ * 展示配置表
+ */
+export class TDisplay {
+    private _dataMap: Map<number, CDisplay>
+    private _dataList: CDisplay[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, CDisplay>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CDisplay
+            _v = new CDisplay(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, CDisplay> { return this._dataMap; }
+    getDataList(): CDisplay[] { return this._dataList; }
+
+    get(key: number): CDisplay | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
+/**
+ * 展示模板表
+ */
+export class TDisplayTemplate {
+    private _dataMap: Map<number, CDisplayTemplate>
+    private _dataList: CDisplayTemplate[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, CDisplayTemplate>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: CDisplayTemplate
+            _v = new CDisplayTemplate(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, CDisplayTemplate> { return this._dataMap; }
+    getDataList(): CDisplayTemplate[] { return this._dataList; }
+
+    get(key: number): CDisplayTemplate | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+
+
+
+
 type JsonLoader = (file: string) => any
 
 export class Tables {
@@ -845,7 +1053,7 @@ export class Tables {
     get TFlag(): TFlag  { return this._TFlag;}
     private _TItem: TItem
     /**
-     * 物品显示名
+     * 基础物品表
      */
     get TItem(): TItem  { return this._TItem;}
     private _TDialogue: TDialogue
@@ -858,6 +1066,16 @@ export class Tables {
      * 对白台词行
      */
     get TChat(): TChat  { return this._TChat;}
+    private _TDisplay: TDisplay
+    /**
+     * 展示配置表
+     */
+    get TDisplay(): TDisplay  { return this._TDisplay;}
+    private _TDisplayTemplate: TDisplayTemplate
+    /**
+     * 展示模板表
+     */
+    get TDisplayTemplate(): TDisplayTemplate  { return this._TDisplayTemplate;}
 
     constructor(loader: JsonLoader) {
         this._TCondition = new TCondition(loader('tcondition'))
@@ -869,6 +1087,8 @@ export class Tables {
         this._TItem = new TItem(loader('titem'))
         this._TDialogue = new TDialogue(loader('tdialogue'))
         this._TChat = new TChat(loader('tchat'))
+        this._TDisplay = new TDisplay(loader('tdisplay'))
+        this._TDisplayTemplate = new TDisplayTemplate(loader('tdisplaytemplate'))
 
         this._TCondition.resolve(this)
         this._TCraftRecipe.resolve(this)
@@ -879,6 +1099,8 @@ export class Tables {
         this._TItem.resolve(this)
         this._TDialogue.resolve(this)
         this._TChat.resolve(this)
+        this._TDisplay.resolve(this)
+        this._TDisplayTemplate.resolve(this)
     }
 }
 

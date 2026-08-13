@@ -1,0 +1,7 @@
+{
+  "guideId": 14,
+  "name": "拜访镇长",
+  "description": "往北走到镇长府，点大门进屋，再跟镇长·艾岚打招呼",
+  "category": "goto",
+  "exportFlag": true
+}

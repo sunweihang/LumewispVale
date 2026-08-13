@@ -1,0 +1,7 @@
+{
+  "guideId": 18,
+  "name": "商店购买",
+  "description": "走进任意商店，购买一件商品",
+  "category": "goto",
+  "exportFlag": true
+}

@@ -1,0 +1,7 @@
+{
+  "guideId": 24,
+  "name": "开采铜矿",
+  "description": "选中锄头，点击铜矿石开采",
+  "category": "goto",
+  "exportFlag": true
+}

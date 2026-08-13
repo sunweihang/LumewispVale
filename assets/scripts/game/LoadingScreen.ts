@@ -8,6 +8,7 @@ import {
     Input,
     Label,
     Node,
+    Prefab,
     Sprite,
     SpriteFrame,
     UIOpacity,
@@ -15,11 +16,16 @@ import {
     assetManager,
     game,
     input,
+    instantiate,
     sys,
     tween,
     Tween,
     view,
 } from 'cc';
+import {
+    LOADING_SCREEN_LAYOUT as L,
+    LOADING_SCREEN_PREFAB_UUID,
+} from './LoadingScreenFrames';
 import { DESIGN_W, portraitVisibleSize } from './PortraitFit';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 import { playUiClick } from './UiAudio';
@@ -27,14 +33,7 @@ import { playUiClick } from './UiAudio';
 const { ccclass } = _decorator;
 
 /** Formal splash art — 1080×2200, fixed-width friendly. */
-const SPLASH_W = 1080;
-const SPLASH_H = 2200;
 const SPLASH_SF_UUID = '5a4ebb12-2f98-4075-a870-b9286e9ac348@f9941';
-
-/** Progress dock while warming assets (design Y). */
-const DOCK_Y_LOADING = -880;
-/** Start hint sits higher so it clears the phone home indicator. */
-const DOCK_Y_READY = -640;
 
 /** Game HUD that must stay hidden under the boot gate. */
 const HIDE_WHILE_LOADING = [
@@ -48,20 +47,20 @@ const HIDE_WHILE_LOADING = [
     'FarmUseBtn',
     'FarmInfoBoard',
     'GmChip',
+    'GmDimmer',
     'GmPanel',
     'TouchControls',
     'StickVisual',
     // DialogueBox / StoryIntro stay mountable under the gate for seamless handoff.
     'QuestPanel',
     'TownShopPanel',
-    'TownShopDimmer',
     'RewardPopup',
-    'RewardDimmer',
 ];
 
 /**
  * Full-screen boot gate with splash key art + progress.
  * Stays above all runtime UI until close().
+ * Layout from LoadingScreen.prefab; script binds data + progress fill.
  */
 @ccclass('LoadingScreen')
 export class LoadingScreen extends Component {
@@ -77,14 +76,16 @@ export class LoadingScreen extends Component {
     private _startHintOp: UIOpacity | null = null;
     private _barTrack: Node | null = null;
     private _progress = 0;
-    private _barW = 720;
-    private _barH = 32;
+    private _barW = L.barW;
+    private _barH = L.barH;
     private _open = false;
     private _readyForStart = false;
     private _startResolved = false;
     private _suppressChrome = true;
     private _onStart: (() => void) | null = null;
     private _chromeWas = new Map<string, boolean>();
+    private _ready = false;
+    private _pendingTip: string | undefined;
 
     /** Build and show immediately (call before other UI). */
     static mount(canvas: Node): LoadingScreen {
@@ -97,7 +98,7 @@ export class LoadingScreen extends Component {
         let comp = canvas.getComponent(LoadingScreen);
         if (comp) canvas.removeComponent(comp);
         comp = canvas.addComponent(LoadingScreen);
-        comp.build(canvas);
+        comp.beginMount(canvas);
         return comp;
     }
 
@@ -111,8 +112,13 @@ export class LoadingScreen extends Component {
 
     setProgress(p: number, tip?: string) {
         this._progress = Math.max(0, Math.min(1, p));
+        if (tip !== undefined) this._pendingTip = tip;
+        if (!this._ready) return;
         this.paintBar();
         if (tip !== undefined && this._tipLab) this._tipLab.string = tip;
+        else if (this._pendingTip !== undefined && this._tipLab) {
+            this._tipLab.string = this._pendingTip;
+        }
         this.layoutToVisible();
         this.bringToFront();
         this.suppressGameChrome();
@@ -181,145 +187,6 @@ export class LoadingScreen extends Component {
         this.bringToFront();
     }
 
-    private build(canvas: Node) {
-        this._open = true;
-        const root = new Node('LoadingScreen');
-        root.layer = canvas.layer;
-        root.setParent(canvas);
-        root.setSiblingIndex(canvas.children.length - 1);
-        root.addComponent(UITransform).setContentSize(DESIGN_W, SPLASH_H);
-        const op = root.addComponent(UIOpacity);
-        op.opacity = 255;
-        this._root = root;
-
-        // Oversized opaque veil — never leave gaps while splash scales / loads.
-        const veilN = new Node('Veil');
-        veilN.layer = root.layer;
-        veilN.setParent(root);
-        veilN.setSiblingIndex(0);
-        veilN.addComponent(UITransform).setContentSize(2400, 3200);
-        this._veil = veilN.addComponent(Graphics);
-        this.paintVeil(2400, 3200);
-
-        const splashN = new Node('Splash');
-        splashN.layer = root.layer;
-        splashN.setParent(root);
-        splashN.setPosition(0, 0, 0);
-        const splashUt = splashN.addComponent(UITransform);
-        splashUt.setContentSize(SPLASH_W, SPLASH_H);
-        splashUt.setAnchorPoint(0.5, 0.5);
-        const sp = splashN.addComponent(Sprite);
-        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        sp.type = Sprite.Type.SIMPLE;
-        this._splash = sp;
-        const cached = assetManager.assets.get(SPLASH_SF_UUID) as SpriteFrame | null | undefined;
-        if (cached) {
-            sp.spriteFrame = cached;
-        } else {
-            assetManager.loadAny({ uuid: SPLASH_SF_UUID }, (err, asset) => {
-                if (!err && asset && sp.isValid) {
-                    sp.spriteFrame = asset as SpriteFrame;
-                    this.layoutToVisible();
-                    this.bringToFront();
-                }
-            });
-        }
-
-        const titleN = new Node('Title');
-        titleN.layer = root.layer;
-        titleN.setParent(root);
-        titleN.setPosition(0, 820, 0);
-        titleN.addComponent(UITransform).setContentSize(900, 100);
-        const title = titleN.addComponent(Label);
-        styleUiLabel(title, {
-            size: 72,
-            color: new Color(255, 236, 180, 255),
-            outline: true,
-            outlineWidth: 5,
-            outlineColor: new Color(40, 28, 12, 255),
-        });
-        title.horizontalAlign = Label.HorizontalAlign.CENTER;
-        title.string = '微光溪谷';
-        this._titleLab = title;
-
-        const subN = new Node('Sub');
-        subN.layer = root.layer;
-        subN.setParent(root);
-        subN.setPosition(0, 740, 0);
-        subN.addComponent(UITransform).setContentSize(700, 40);
-        const sub = subN.addComponent(Label);
-        styleUiLabel(sub, {
-            size: 28,
-            color: new Color(230, 220, 180, 240),
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(30, 24, 12, 230),
-        });
-        sub.horizontalAlign = Label.HorizontalAlign.CENTER;
-        sub.string = 'Lumewisp Vale';
-        this._subLab = sub;
-
-        const dock = new Node('ProgressDock');
-        dock.layer = root.layer;
-        dock.setParent(root);
-        dock.setPosition(0, DOCK_Y_LOADING, 0);
-        dock.addComponent(UITransform).setContentSize(900, 160);
-
-        const track = new Node('BarTrack');
-        track.layer = root.layer;
-        track.setParent(dock);
-        track.setPosition(0, 24, 0);
-        track.addComponent(UITransform).setContentSize(this._barW + 14, this._barH + 14);
-        this._barTrack = track;
-        const tg = track.addComponent(Graphics);
-        tg.fillColor = new Color(28, 22, 16, 230);
-        tg.roundRect(-(this._barW + 14) * 0.5, -(this._barH + 14) * 0.5, this._barW + 14, this._barH + 14, 16);
-        tg.fill();
-        tg.strokeColor = new Color(220, 180, 100, 255);
-        tg.lineWidth = 3;
-        tg.roundRect(-(this._barW + 14) * 0.5, -(this._barH + 14) * 0.5, this._barW + 14, this._barH + 14, 16);
-        tg.stroke();
-
-        const fill = new Node('BarFill');
-        fill.layer = root.layer;
-        fill.setParent(track);
-        fill.addComponent(UITransform).setContentSize(this._barW, this._barH);
-        this._barFillGfx = fill.addComponent(Graphics);
-
-        const tipN = new Node('Tip');
-        tipN.layer = root.layer;
-        tipN.setParent(dock);
-        tipN.setPosition(0, -30, 0);
-        tipN.addComponent(UITransform).setContentSize(900, 40);
-        const tip = tipN.addComponent(Label);
-        styleUiLabel(tip, {
-            size: 28,
-            color: new Color(255, 242, 210, 255),
-            outline: true,
-            outlineWidth: 3,
-            outlineColor: new Color(40, 28, 14, 230),
-        });
-        tip.horizontalAlign = Label.HorizontalAlign.CENTER;
-        tip.string = '正在唤醒溪谷…';
-        this._tipLab = tip;
-
-        this.buildStartHint(dock);
-
-        this.paintBar();
-        this.layoutToVisible();
-        this.suppressGameChrome();
-        this.bringToFront();
-        view.on('canvas-resize', this.layoutToVisible, this);
-
-        loadUiFont().then((font) => {
-            if (!font) return;
-            if (this._titleLab) applyUiFont(this._titleLab);
-            if (this._subLab) applyUiFont(this._subLab);
-            if (this._tipLab) applyUiFont(this._tipLab);
-            if (this._startHintLab) applyUiFont(this._startHintLab);
-        });
-    }
-
     onDestroy() {
         view.off('canvas-resize', this.layoutToVisible, this);
         this.stopStartPulse();
@@ -327,33 +194,168 @@ export class LoadingScreen extends Component {
         if (this._open) this.restoreGameChrome();
     }
 
-    private buildStartHint(dock: Node) {
-        const hint = new Node('StartHint');
-        hint.layer = dock.layer;
-        hint.setParent(dock);
-        hint.setPosition(0, 0, 0);
-        hint.addComponent(UITransform).setContentSize(900, 72);
-        hint.active = false;
-        this._startHintOp = hint.addComponent(UIOpacity);
-        this._startHintOp.opacity = 255;
+    private beginMount(canvas: Node) {
+        this._open = true;
+        // Instant veil so teardown never flashes the farm while the prefab loads.
+        this.mountTempGate(canvas);
+        this.suppressGameChrome();
+        this.bringToFront();
+        view.on('canvas-resize', this.layoutToVisible, this);
 
-        const labN = new Node('Label');
-        labN.layer = dock.layer;
-        labN.setParent(hint);
-        labN.addComponent(UITransform).setContentSize(900, 72);
-        const lab = labN.addComponent(Label);
-        styleUiLabel(lab, {
-            size: 48,
-            color: new Color(255, 242, 210, 255),
-            outline: true,
-            outlineWidth: 4,
-            outlineColor: new Color(40, 28, 14, 230),
+        assetManager.loadAny({ uuid: LOADING_SCREEN_PREFAB_UUID }, (err, asset) => {
+            if (err || !asset) {
+                console.warn('[LoadingScreen] prefab missing', err);
+                this._ready = true;
+                this.setProgress(this._progress, this._pendingTip);
+                return;
+            }
+            const old = this._root;
+            const inst = instantiate(asset as Prefab);
+            inst.name = 'LoadingScreen';
+            inst.layer = canvas.layer;
+            inst.setParent(canvas);
+            inst.setSiblingIndex(canvas.children.length - 1);
+            if (old?.isValid) {
+                old.removeFromParent();
+                old.destroy();
+            }
+            this._root = inst;
+            this.bindRefs(inst);
+            this.paintChromeOnce();
+            this._ready = true;
+            this.setProgress(this._progress, this._pendingTip);
+            this.bringToFront();
+            loadUiFont().then((font) => {
+                if (!font) return;
+                if (this._titleLab) applyUiFont(this._titleLab);
+                if (this._subLab) applyUiFont(this._subLab);
+                if (this._tipLab) applyUiFont(this._tipLab);
+                if (this._startHintLab) applyUiFont(this._startHintLab);
+            });
         });
-        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
-        lab.verticalAlign = Label.VerticalAlign.CENTER;
-        lab.string = '点击开始游戏';
-        this._startHintLab = lab;
-        this._startHint = hint;
+    }
+
+    /** Sync opaque cover — replaced when the prefab instantiates. */
+    private mountTempGate(canvas: Node) {
+        const root = new Node('LoadingScreen');
+        root.layer = canvas.layer;
+        root.setParent(canvas);
+        root.setSiblingIndex(canvas.children.length - 1);
+        root.addComponent(UITransform).setContentSize(L.designW, L.splashH);
+        const op = root.addComponent(UIOpacity);
+        op.opacity = 255;
+        this._root = root;
+
+        const veilN = new Node('Veil');
+        veilN.layer = root.layer;
+        veilN.setParent(root);
+        veilN.addComponent(UITransform).setContentSize(2400, 3200);
+        this._veil = veilN.addComponent(Graphics);
+        this.paintVeil(2400, 3200);
+    }
+
+    private bindRefs(root: Node) {
+        const op = root.getComponent(UIOpacity) ?? root.addComponent(UIOpacity);
+        op.opacity = 255;
+        this._veil = root.getChildByName('Veil')?.getComponent(Graphics) ?? null;
+        this._splash = root.getChildByName('Splash')?.getComponent(Sprite) ?? null;
+        if (this._splash) {
+            this._splash.sizeMode = Sprite.SizeMode.CUSTOM;
+            this._splash.type = Sprite.Type.SIMPLE;
+            const cached = assetManager.assets.get(SPLASH_SF_UUID) as SpriteFrame | null | undefined;
+            if (cached) this._splash.spriteFrame = cached;
+            else if (!this._splash.spriteFrame) {
+                assetManager.loadAny({ uuid: SPLASH_SF_UUID }, (err, asset) => {
+                    if (!err && asset && this._splash?.isValid) {
+                        this._splash.spriteFrame = asset as SpriteFrame;
+                        this.layoutToVisible();
+                        this.bringToFront();
+                    }
+                });
+            }
+        }
+        this._titleLab = root.getChildByName('Title')?.getComponent(Label) ?? null;
+        this._subLab = root.getChildByName('Sub')?.getComponent(Label) ?? null;
+        const dock = root.getChildByName('ProgressDock');
+        this._barTrack = dock?.getChildByName('BarTrack') ?? null;
+        const fill = this._barTrack?.getChildByName('BarFill');
+        this._barFillGfx = fill?.getComponent(Graphics) ?? null;
+        const fillUt = fill?.getComponent(UITransform);
+        if (fillUt) {
+            this._barW = fillUt.contentSize.width || L.barW;
+            this._barH = fillUt.contentSize.height || L.barH;
+        }
+        this._tipLab = dock?.getChildByName('Tip')?.getComponent(Label) ?? null;
+        this._startHint = dock?.getChildByName('StartHint') ?? null;
+        this._startHintLab = this._startHint?.getChildByName('Label')?.getComponent(Label) ?? null;
+        this._startHintOp =
+            this._startHint?.getComponent(UIOpacity) ?? this._startHint?.addComponent(UIOpacity) ?? null;
+        if (this._startHint) this._startHint.active = false;
+
+        if (this._titleLab) {
+            styleUiLabel(this._titleLab, {
+                size: 72,
+                color: new Color(255, 236, 180, 255),
+                outline: true,
+                outlineWidth: 5,
+                outlineColor: new Color(40, 28, 12, 255),
+            });
+            this._titleLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        }
+        if (this._subLab) {
+            styleUiLabel(this._subLab, {
+                size: 28,
+                color: new Color(230, 220, 180, 240),
+                outline: true,
+                outlineWidth: 3,
+                outlineColor: new Color(30, 24, 12, 230),
+            });
+            this._subLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        }
+        if (this._tipLab) {
+            styleUiLabel(this._tipLab, {
+                size: 28,
+                color: new Color(255, 242, 210, 255),
+                outline: true,
+                outlineWidth: 3,
+                outlineColor: new Color(40, 28, 14, 230),
+            });
+            this._tipLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        }
+        if (this._startHintLab) {
+            styleUiLabel(this._startHintLab, {
+                size: 48,
+                color: new Color(255, 242, 210, 255),
+                outline: true,
+                outlineWidth: 4,
+                outlineColor: new Color(40, 28, 14, 230),
+            });
+            this._startHintLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+            this._startHintLab.verticalAlign = Label.VerticalAlign.CENTER;
+        }
+    }
+
+    private paintChromeOnce() {
+        if (this._veil) {
+            const ut = this._veil.node.getComponent(UITransform);
+            const w = ut?.contentSize.width ?? 2400;
+            const h = ut?.contentSize.height ?? 3200;
+            this.paintVeil(w, h);
+        }
+        const track = this._barTrack?.getComponent(Graphics);
+        if (track) {
+            const tw = L.trackW;
+            const th = L.trackH;
+            track.clear();
+            track.fillColor = new Color(28, 22, 16, 230);
+            track.roundRect(-tw * 0.5, -th * 0.5, tw, th, 16);
+            track.fill();
+            track.strokeColor = new Color(220, 180, 100, 255);
+            track.lineWidth = 3;
+            track.roundRect(-tw * 0.5, -th * 0.5, tw, th, 16);
+            track.stroke();
+        }
+        this.paintBar();
     }
 
     private showStartGate() {
@@ -526,13 +528,13 @@ export class LoadingScreen extends Component {
      * Scale splash with cover so width always fills and height never letterboxes.
      */
     private layoutToVisible = () => {
-        if (!this._root?.isValid) return;
+        if (!this._root?.isValid || !this._ready) return;
         const vis = portraitVisibleSize();
         const visW = Math.max(DESIGN_W, vis.width || DESIGN_W);
         const visH = Math.max(vis.height || 1920, 1920);
-        const scale = Math.max(visW / SPLASH_W, visH / SPLASH_H);
-        const w = Math.ceil(SPLASH_W * scale);
-        const h = Math.ceil(SPLASH_H * scale);
+        const scale = Math.max(visW / L.splashW, visH / L.splashH);
+        const w = Math.ceil(L.splashW * scale);
+        const h = Math.ceil(L.splashH * scale);
 
         // Veil larger than visible frame — blocks any HUD peeking at edges.
         const veilW = Math.ceil(Math.max(w, visW) + 400);
@@ -547,9 +549,9 @@ export class LoadingScreen extends Component {
         const title = this._titleLab?.node;
         const sub = this._subLab?.node;
         const dock = this._root.getChildByName('ProgressDock');
-        if (title) title.setPosition(0, 820 * scale, 0);
-        if (sub) sub.setPosition(0, 740 * scale, 0);
-        const dockY = this._readyForStart ? DOCK_Y_READY : DOCK_Y_LOADING;
+        if (title) title.setPosition(0, L.titleY * scale, 0);
+        if (sub) sub.setPosition(0, L.subY * scale, 0);
+        const dockY = this._readyForStart ? L.dockYReady : L.dockYLoading;
         if (dock) dock.setPosition(0, dockY * scale, 0);
         this.bringToFront();
     };
@@ -564,7 +566,13 @@ export class LoadingScreen extends Component {
         g.roundRect(-this._barW * 0.5, -this._barH * 0.5, w, this._barH, 12);
         g.fill();
         g.fillColor = new Color(255, 220, 130, 110);
-        g.roundRect(-this._barW * 0.5, -this._barH * 0.5 + this._barH * 0.55, w, this._barH * 0.32, 10);
+        g.roundRect(
+            -this._barW * 0.5,
+            -this._barH * 0.5 + this._barH * 0.55,
+            w,
+            this._barH * 0.32,
+            10,
+        );
         g.fill();
     }
 }

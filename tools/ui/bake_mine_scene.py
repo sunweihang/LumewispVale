@@ -49,11 +49,28 @@ MOUTH_LANE = {
 DOOR_GATE = {(dx, iy) for dx, iy in MOUTH_LANE if iy <= -5}
 THROAT = {(dx, iy) for dx, iy in MOUTH_LANE if iy >= -4}
 
-# Timber frame feet (tile). Sprite is tall (~112px) — keep clear under the whole post+beam.
+# Shared foot offset for bottom-anchored actors (ay=0). Same tile row → same footY
+# so depth order is only from intentional north/south placement — never from a
+# lower bake offset that accidentally puts a tall wall south of a timber post.
+ACTOR_FOOT = 28
+# Wall seals sit on rim cells; keep feet ≥ path props on the same row so a wide
+# seal sprite cannot sort in front of an adjacent timber (pure foot-Y depth).
+SEAL_FOOT = 40
+
+# Timber frame feet (tile). Sprite 112px — keep ≥2.2 tiles between same-column
+# feet so stacked frames don't chew each other's posts. Use floats (no int-round).
+# Stay off the north rim (y≥6) — posts there punched holes in the back wall.
 TIMBER_SITES = [
-    (-5, -3), (5, -3), (-5, -1), (5, -0.5), (-5, 1.5), (5, 1.5),
-    (-3.5, 3.5), (3.5, 3), (-4.5, 5), (1.5, 5.5), (4, 6), (-1, 4),
+    (-5.0, -3.0), (5.0, -3.0),
+    (-5.0, -0.5), (5.0, 0.0),
+    (-5.0, 2.2), (5.0, 2.2),
+    (-4.0, 4.5), (4.5, 4.5),  # ≥2.2 tiles above side posts; stay below north rim
 ]
+
+
+def timber_placed(tx: float, ty: float) -> bool:
+    """False for plaza-lane sites the baker skips."""
+    return not (abs(tx) <= 4.2 and -7 <= ty <= 2)
 
 
 def under_structure(ix: float, iy: float) -> bool:
@@ -61,12 +78,62 @@ def under_structure(ix: float, iy: float) -> bool:
     if abs(ix) <= 5 and -7 <= iy <= 0:
         return True  # mouth plaza + approach
     for tx, ty in TIMBER_SITES:
-        if abs(tx) <= 4.2 and -7 <= ty <= 2:
-            continue  # not placed
+        if not timber_placed(tx, ty):
+            continue
         # Foot + neighbors + ~3 tiles north (tall post+crossbeam silhouette)
         if abs(ix - tx) <= 1.85 and -0.6 <= (iy - ty) <= 2.9:
             return True
     return False
+
+
+def seal_world_foot(ix: float, iy: float) -> float:
+    """Wall-face foot Y.
+
+    Only same-row side faces beside timber are nudged north (so posts stay in
+    front). Seals further south keep their own feet — otherwise the lower-left /
+    lower-right rim empties out visually.
+    """
+    y = iy * TILE + SEAL_FOOT
+    for tx, ty in TIMBER_SITES:
+        if not timber_placed(tx, ty):
+            continue
+        if abs(ix - tx) > 1.6:
+            continue
+        # Same row / slightly north of the post only — not the vestibule south rim
+        if not (-0.35 <= (iy - ty) <= 1.8):
+            continue
+        t_foot = ty * TILE + ACTOR_FOOT
+        if y < t_foot + 2:
+            y = t_foot + 2
+    return y
+
+
+def seal_world_x(ix: float, iy: float, base_x: float) -> float:
+    """Keep seal sprites from horizontally overlapping timber posts.
+
+    Never relocate seals that sit *north* of a post — that was emptying the
+    back wall while fixing the vestibule (拆东墙补西墙).
+    """
+    x = base_x
+    timber_hw, seal_hw, pad = 48.0, 56.0, 12.0
+    for tx, ty in TIMBER_SITES:
+        if not timber_placed(tx, ty):
+            continue
+        if abs(ix - tx) > 2.6:
+            continue
+        # North of the post = back/side wall behind timber — leave X alone
+        if (iy - ty) > 0.35:
+            continue
+        if not (-2.6 <= (iy - ty) <= 0.35):
+            continue
+        tcx = tx * TILE
+        if x + seal_hw <= tcx - timber_hw - pad or x - seal_hw >= tcx + timber_hw + pad:
+            continue
+        if ix >= tx or ix > 0:
+            x = tcx + timber_hw + seal_hw + pad
+        else:
+            x = tcx - timber_hw - seal_hw - pad
+    return x
 
 PROPS = {
     "mouth": ("bld-mine-mouth", 288, 224),
@@ -323,8 +390,26 @@ class MineBake:
                 bk = f"{dx},{iy}"
                 if bk not in floor:
                     wall.add(bk)
+        # Lower vestibule buttress (y=-7..-1): hard left/right rock — never floor.
+        # Keeps the mouth plaza enclosed on both sides (walk-out / open sides).
+        for iy in range(-7, 0):
+            for dx in (-7, -6, 6, 7):
+                nk = f"{dx},{iy}"
+                floor.discard(nk)
+                wall.add(nk)
+            for dx in (-5, 5):
+                # Timber feet need floor on their cell; everything else is wall
+                timber_here = any(
+                    timber_placed(tx, ty) and abs(tx - dx) < 0.55 and abs(ty - iy) < 0.55
+                    for tx, ty in TIMBER_SITES
+                )
+                if timber_here:
+                    continue
+                nk = f"{dx},{iy}"
+                floor.discard(nk)
+                wall.add(nk)
         # Outer rock south of the sign stays sealed (no walk-out)
-        for ix in range(-6, 7):
+        for ix in range(-8, 9):
             for iy in (-8, -9, -10):
                 nk = f"{ix},{iy}"
                 if (ix, iy) not in MOUTH_LANE:
@@ -426,6 +511,28 @@ class MineBake:
             self.floor.add(f"{ix},{iy}")
             self.wall.discard(f"{ix},{iy}")
             self.clear.add(f"{ix},{iy}")
+        # Northern cap — no floor scallops punching through the back wall (y≥8)
+        for key in list(self.floor):
+            _ix, iy = map(int, key.split(","))
+            if iy >= 8:
+                self.floor.discard(key)
+                self.wall.add(key)
+        # Wall cells are never walkable / wet / dirt
+        self.dirt -= self.wall
+        self.water -= self.wall
+        self.floor -= self.wall
+        # Re-seal ring after north cap / buttress edits
+        add_wall: Set[str] = set()
+        for key in self.floor:
+            ix, iy = map(int, key.split(","))
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    nk = f"{ix + dx},{iy + dy}"
+                    if nk not in self.floor:
+                        add_wall.add(nk)
+        self.wall |= add_wall
         gaps = self.assert_sealed()
         # Gate south tip may touch padded void outside AABB pad — ignore those
         gate_keys = {f"{ix},{iy}" for ix, iy in MOUTH_LANE if iy <= -5}
@@ -671,7 +778,7 @@ class MineBake:
         self.add_actor(name or f"prop_{kind}", sf, x, y, w, h, 0.0)
 
     def place_actors(self) -> None:
-        foot = 28
+        foot = ACTOR_FOOT
 
         def at(tx, ty):
             return tx * TILE, ty * TILE + foot
@@ -696,11 +803,11 @@ class MineBake:
         for i, (tx, ty) in enumerate([(0, 0.8), (0, 1.6), (2, 1.2), (4, 1.3), (5.5, 1.4)]):
             self._prop("rails", tx * TILE, ty * TILE + foot - 8, f"prop_rails_{i}")
 
-        # Timber frames — keep mouth plaza clear
+        # Timber frames — float feet (no int-round collapse / 1-tile stack)
         for i, (tx, ty) in enumerate(TIMBER_SITES):
-            if abs(tx) <= 4.2 and -7 <= ty <= 2:
+            if not timber_placed(tx, ty):
                 continue
-            self._prop("timber", *at(int(round(tx)), int(round(ty))), f"prop_timber_{i}")
+            self._prop("timber", tx * TILE, ty * TILE + foot, f"prop_timber_{i}")
 
         # Staging clutter — against outer walls only, never on timber / mouth
         for i, (kind, tx, ty) in enumerate([
@@ -765,7 +872,7 @@ class MineBake:
                 f"decor_{rock_tag}_solid_ore_{kind}_{i}",
                 sf,
                 tx * TILE + jx,
-                ty * TILE + 22 + jy,
+                ty * TILE + ACTOR_FOOT + jy,
                 w,
                 h,
                 0.0,
@@ -841,7 +948,8 @@ class MineBake:
                     else:
                         kind = "twig"
                 x = ix * TILE + noise(ix, iy) * 18
-                y = iy * TILE + noise(iy, ix) * 14
+                # Foot on tile row (+ jitter); keep ay=0 actors on the shared foot band
+                y = iy * TILE + ACTOR_FOOT + noise(iy, ix) * 14
                 if self._decor(kind, x, y, n):
                     n += 1
                     # occasional second soft clutter same cell
@@ -889,7 +997,16 @@ class MineBake:
                 return True
             return False
 
-        # Dense seal on ring0 — skip door + north throat
+        def place_seal(ix: int, iy: int, name: str, sf: str, x_off: float = 0.0, y_off: float = 0.0) -> None:
+            nonlocal n
+            w, h = ((96, 128) if sf == sf_a else (112, 96))
+            outward = 12 if ix > 0 else (-12 if ix < 0 else 0)
+            x = seal_world_x(ix, iy, ix * TILE + noise(ix, iy) * 4 + outward + x_off)
+            y = seal_world_foot(ix, iy) + y_off
+            self.add_actor(name, sf, x, y, w, h, 0.0)
+            n += 1
+
+        # Dense seal on EVERY ring0 cell (except mouth plaza). Full visual enclosure.
         for ix, iy in ring0:
             if in_walk_lane(ix, iy):
                 continue
@@ -899,59 +1016,119 @@ class MineBake:
                 sf = sf_a
             else:
                 sf = sf_b
-            w, h = (96, 128) if sf == sf_a else (112, 96)
-            x = ix * TILE + noise(ix, iy) * 6
-            y = iy * TILE + 10
-            self.add_actor(f"cliff_seal_{ix}_{iy}", sf, x, y, w, h, 0.0)
-            n += 1
-            if ((ix + iy) & 1) == 0 and not in_walk_lane(ix, iy):
+            place_seal(ix, iy, f"cliff_seal_{ix}_{iy}", sf)
+            if ((ix + iy) & 1) == 0:
                 sf2 = sf_b or sf_a
-                w2, h2 = (112, 96) if sf2 == sf_b else (96, 128)
-                self.add_actor(
+                place_seal(
+                    ix,
+                    iy,
                     f"cliff_seal_x_{ix}_{iy}",
                     sf2,
-                    x + 22,
-                    y - 4,
-                    w2,
-                    h2,
-                    0.0,
+                    x_off=18 * (1 if ix >= 0 else -1),
+                    y_off=4,
                 )
+
+        # Full-perimeter buttress — south vestibule + north cap + side columns.
+        # One pass for every wall cell on the outer shell (not plaza), so we never
+        # thicken one side by starving another.
+        floor_ys = [int(k.split(",")[1]) for k in self.floor] or [0]
+        floor_xs = [int(k.split(",")[0]) for k in self.floor] or [0]
+        y_lo, y_hi = min(floor_ys), max(floor_ys)
+        x_lo, x_hi = min(floor_xs), max(floor_xs)
+        buttress: List[Tuple[int, int]] = []
+        for key in self.wall:
+            ix, iy = map(int, key.split(","))
+            if in_walk_lane(ix, iy):
+                continue
+            on_south = y_lo - 1 <= iy <= y_lo + 2 and abs(ix) >= 5
+            on_north = y_hi - 1 <= iy <= y_hi + 3
+            on_west = ix <= x_lo and y_lo <= iy <= y_hi + 1
+            on_east = ix >= x_hi and y_lo <= iy <= y_hi + 1
+            on_side_col = abs(ix) >= 5 and -7 <= iy <= y_hi + 2
+            if on_south or on_north or on_west or on_east or on_side_col:
+                buttress.append((ix, iy))
+        placed_primary = {
+            nm for nm, *_ in self.nodes if isinstance(nm, str) and nm.startswith("cliff_seal_")
+        }
+        for ix, iy in buttress:
+            primary = f"cliff_seal_{ix}_{iy}"
+            side = f"cliff_seal_side_{ix}_{iy}"
+            if primary in placed_primary and side in placed_primary:
+                continue
+            if primary in placed_primary and abs(ix) < 6 and not (iy >= y_hi - 1):
+                # ring0 already covered mid sides; still double-up north + outer cols
+                continue
+            sf = sf_b if ((ix + iy) & 1) and sf_b else (sf_a or sf_b)
+            name = side if primary in placed_primary else primary
+            # North cap: native foot/X only (no timber shove — back wall must stay put)
+            if iy >= y_hi - 1:
+                w, h = ((96, 128) if sf == sf_a else (112, 96))
+                x = ix * TILE + (8 if ix > 0 else (-8 if ix < 0 else 0))
+                y = iy * TILE + SEAL_FOOT
+                self.add_actor(name, sf, x, y, w, h, 0.0)
                 n += 1
+                placed_primary.add(name)
+            else:
+                place_seal(ix, iy, name, sf)
+                placed_primary.add(name)
 
         for ix, iy in ring1:
             if in_walk_lane(ix, iy):
                 continue
-            if noise01(ix, iy, 89) > 0.35:
+            # Always seal ring1 on the full outer shell (N/E/S/W), never random-skip rim
+            on_rim = (
+                iy <= y_lo + 1
+                or iy >= y_hi - 1
+                or ix <= x_lo + 1
+                or ix >= x_hi - 1
+                or abs(ix) >= 5
+            )
+            if not on_rim and noise01(ix, iy, 89) > 0.35:
                 continue
             sf = sf_b or sf_a
-            w, h = (112, 96) if sf == sf_b else (96, 128)
-            self.add_actor(
-                f"cliff_seal_r1_{ix}_{iy}",
-                sf,
-                ix * TILE,
-                iy * TILE + 8,
-                w,
-                h,
-                0.0,
-            )
-            n += 1
+            if iy >= y_hi - 1:
+                w, h = ((96, 128) if sf == sf_a else (112, 96))
+                self.add_actor(
+                    f"cliff_seal_r1_{ix}_{iy}",
+                    sf,
+                    ix * TILE,
+                    iy * TILE + SEAL_FOOT,
+                    w,
+                    h,
+                    0.0,
+                )
+                n += 1
+            else:
+                place_seal(ix, iy, f"cliff_seal_r1_{ix}_{iy}", sf)
 
         for ix, iy in ring0:
             if in_walk_lane(ix, iy):
                 continue
             if under_structure(ix, iy):
                 continue
-            x = ix * TILE
-            y = iy * TILE + 16
+            # Accents/torches share seal X separation so they never bury timber
+            x = seal_world_x(ix, iy, ix * TILE + 10)
+            y = seal_world_foot(ix, iy)
             if noise01(ix, iy, 91) < 0.35:
                 accent = "wallCrystal" if noise01(ix, iy, 92) > 0.5 else "wallOre"
-                self._decor(accent, x + 10, y + 20, n)
+                self._decor(accent, x, y + 24, n)
                 n += 1
             if noise01(ix, iy, 93) > 0.7 and self.sf("prop-torch"):
-                self._prop("torch", x + 8, y + 28, f"prop_torch_wall_{n}")
+                self._prop("torch", x, y + ACTOR_FOOT, f"prop_torch_wall_{n}")
                 n += 1
 
-        print(f"wall seal faces: ring0={len(ring0)} placed≈{n} (door+throat open)")
+        # Coverage check — every non-plaza ring0 cell must have a seal face
+        sealed_cells = {
+            (int(nm.split("_")[-2]), int(nm.split("_")[-1]))
+            for nm, *_rest in self.nodes
+            if isinstance(nm, str) and nm.startswith("cliff_seal_")
+            and nm.split("_")[-1].lstrip("-").isdigit()
+            and nm.split("_")[-2].lstrip("-").isdigit()
+        }
+        miss = [c for c in ring0 if c not in sealed_cells and not in_walk_lane(c[0], c[1])]
+        if miss:
+            raise SystemExit(f"FAIL ring0 seal gaps: {len(miss)} e.g. {miss[:12]}")
+        print(f"wall seal faces: ring0={len(ring0)} placed≈{n} gaps=0 (door+throat open)")
 
     def build(self) -> List[Tuple]:
         self.build_layout()
@@ -1069,6 +1246,55 @@ def remap_ids(obj, id_map):
     return obj
 
 
+def assert_actor_depth(baked: List[Tuple]) -> None:
+    """Fail bake if foot-Y depth would paint seals/tall walls over timber posts."""
+    actors = []
+    for n in baked:
+        name, _sf, x, y, w, h, _ax, ay, is_ground = n
+        if is_ground or name.startswith("__"):
+            continue
+        foot = y - h * ay
+        actors.append((name, x, foot, w, h))
+
+    timbers = [a for a in actors if a[0].startswith("prop_timber")]
+    # Tall backdrop walls + wall accents that must not bury timber
+    walls = [
+        a
+        for a in actors
+        if a[0].startswith("cliff_seal")
+        or a[0].startswith("decor_wallOre")
+        or a[0].startswith("decor_wallCrystal")
+        or a[0].startswith("decor_caveWall")
+    ]
+
+    bad: List[str] = []
+    for tname, tx, tf, tw, th in timbers:
+        t_left, t_right = tx - tw * 0.5, tx + tw * 0.5
+        t_top = tf + th
+        for wname, wx, wf, ww, wh in walls:
+            if wf >= tf:
+                continue  # wall foot north/equal → behind or tie; OK for depth sort
+            w_left, w_right = wx - ww * 0.5, wx + ww * 0.5
+            w_top = wf + wh
+            if t_right < w_left or w_right < t_left:
+                continue
+            if t_top < wf or w_top < tf:
+                continue
+            bad.append(f"{wname} foot={wf:.0f} over {tname} foot={tf:.0f}")
+
+    # Same-column timber must not AABB-overlap (stacked frames chew posts)
+    for i, (an, ax, af, aw, ah) in enumerate(timbers):
+        for bn, bx, bf, bw, bh in timbers[i + 1 :]:
+            if abs(ax - bx) > (aw + bw) * 0.45:
+                continue
+            if af < bf + bh and bf < af + ah:
+                bad.append(f"{an}@{af:.0f} overlaps {bn}@{bf:.0f}")
+
+    if bad:
+        raise SystemExit("FAIL actor depth feet:\n  " + "\n  ".join(bad[:24]))
+    print(f"OK actor depth: timber={len(timbers)} wall={len(walls)} (no seal-over-timber)")
+
+
 def main() -> None:
     uuids = load_uuid_map()
     nature = load_nature()
@@ -1077,6 +1303,7 @@ def main() -> None:
         uuids.setdefault(k, v)
 
     baked = MineBake(uuids, nature, terrain).build()
+    assert_actor_depth(baked)
 
     src = json.loads(SHELL_SCENE.read_text(encoding="utf-8"))
     world_id = next(

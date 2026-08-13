@@ -9,6 +9,8 @@ const TABLE_FILES = [
     'tgoto',
     'tflag',
     'titem',
+    'tdisplay',
+    'tdisplaytemplate',
     'tdialogue',
     'tchat',
 ] as const;
