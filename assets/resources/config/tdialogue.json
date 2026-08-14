@@ -214,5 +214,11 @@
     "script_id": "oreshop_pass",
     "kind": "dialogue",
     "name": "商会放行"
+  },
+  {
+    "id": 10037,
+    "script_id": "quest_1035",
+    "kind": "dialogue",
+    "name": "任务1035"
   }
 ]

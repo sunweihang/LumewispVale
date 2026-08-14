@@ -19,6 +19,7 @@ import { FARM_FRAMES } from './FarmFrames';
 import { FarmWorldLayout } from './FarmWorldLayout';
 import { FishingMinigame, FishingResult } from './FishingMinigame';
 import { GameState } from './GameState';
+import { STAMINA_COST, advancePlotsOvernight, type PlotSnapshot } from './DayRules';
 import { InputBridge } from './InputBridge';
 import { ActionAnim, PlayerAnimator } from './PlayerAnimator';
 import { footSolidFor } from './GridPath';
@@ -236,9 +237,74 @@ export class FarmSystem extends Component {
         if (!this.world) return;
         // Plots only exist on the farm — town / mine / mayor house share tile
         // indices with TILLABLE and must not steal empty-ground click-to-move.
-        if (FarmWorldLayout.isBaked(this.world)) this.initPlots();
+        if (FarmWorldLayout.isBaked(this.world)) {
+            this.initPlots();
+            this.applyPlots();
+        }
         this.spawnHudLabels();
         this.refreshHud();
+    }
+
+    get hasPlots(): boolean {
+        return this._plots.size > 0;
+    }
+
+    capturePlots() {
+        if (!this.hasPlots) return;
+        const list: PlotSnapshot[] = [];
+        this._plots.forEach((plot, key) => {
+            list.push({
+                key,
+                phase: plot.phase,
+                stage: plot.stage,
+                watered: plot.watered,
+            });
+        });
+        GameState.capturePlots(list);
+    }
+
+    applyPlots() {
+        const snap = GameState.plots;
+        if (!snap || !this.hasPlots) return;
+        for (const p of snap) {
+            const plot = this._plots.get(p.key);
+            if (!plot) continue;
+            plot.phase = p.phase;
+            plot.stage = p.stage;
+            plot.watered = p.watered;
+            plot.grow = 0;
+            this.applyTileVisual(plot);
+            this.applyCropVisual(plot);
+            this.syncGrowTimer(plot);
+        }
+    }
+
+    /** Overnight: watered crops mature. Call while plots are live on the farm. */
+    advancePlotsOnSleep() {
+        if (!this.hasPlots) {
+            if (GameState.plots) GameState.plots = advancePlotsOvernight(GameState.plots);
+            return;
+        }
+        for (const plot of this._plots.values()) {
+            if (plot.phase === 'crop' && plot.watered && plot.stage < 2) {
+                plot.stage = 2;
+                plot.grow = 0;
+                this.applyCropVisual(plot);
+                this.syncGrowTimer(plot);
+            }
+        }
+        this.capturePlots();
+        this.refreshHud();
+    }
+
+    trySpendStamina(cost: number): boolean {
+        if (cost <= 0) return true;
+        if (GameState.stamina < cost) {
+            this.floatTip('体力不足，回小屋休息');
+            return false;
+        }
+        GameState.stamina -= cost;
+        return true;
     }
 
     /** True while walking to / performing a farm job (incl. cast walk-up). */
@@ -573,6 +639,10 @@ export class FarmSystem extends Component {
             this.floatTip(NEED_ROD_TIP);
             return;
         }
+        if (GameState.stamina < STAMINA_COST.fish) {
+            this.floatTip('体力不足，回小屋休息');
+            return;
+        }
         this.beginJob({
             kind: 'fish',
             anim: 'pick',
@@ -597,6 +667,18 @@ export class FarmSystem extends Component {
         }
         if (need === 'seeds' && this.seeds <= 0) return;
         if (need === 'boost' && this.boosts <= 0) return;
+        const cost =
+            need === 'hand'
+                ? STAMINA_COST.harvest
+                : need === 'hoe'
+                  ? STAMINA_COST.till
+                  : need === 'can'
+                    ? STAMINA_COST.water
+                    : 0;
+        if (cost > 0 && GameState.stamina < cost) {
+            this.floatTip('体力不足，回小屋休息');
+            return;
+        }
         this.queuePlotJob(key);
     }
 
@@ -641,6 +723,16 @@ export class FarmSystem extends Component {
 
     private queueNatureJob(hit: { node: Node; act: NatureAct }) {
         if (!hit.node?.isValid) return;
+        const cost =
+            hit.act === 'chop'
+                ? STAMINA_COST.chop
+                : hit.act === 'dig'
+                  ? STAMINA_COST.dig
+                  : STAMINA_COST.pull;
+        if (GameState.stamina < cost) {
+            this.floatTip('体力不足，回小屋休息');
+            return;
+        }
         const anim: ActionAnim =
             hit.act === 'chop' ? 'chop' : hit.act === 'dig' ? 'hoe' : 'pick';
         // Aim at the object's foot (anchor bottom) — walk up beside it, not its crown.
@@ -1055,6 +1147,7 @@ export class FarmSystem extends Component {
             quests.activeQuest.id === 1007 &&
             !quests.isAwaitingClaim;
         const difficulty = tutorialCast ? 0.18 : 0.32 + Math.random() * 0.28;
+        this.trySpendStamina(STAMINA_COST.fish);
         mini.open(
             difficulty,
             (result: FishingResult) => {
@@ -1078,10 +1171,12 @@ export class FarmSystem extends Component {
         const plot = this._plots.get(key);
         if (!plot || !this.canActOnPlot(plot)) return;
         if (this.tool === 'hand' && plot.phase === 'crop' && plot.stage >= 2) {
+            if (!this.trySpendStamina(STAMINA_COST.harvest)) return;
             this.harvest(plot);
             playFarmGather();
             this._onQuestStat?.('harvest', undefined, 1);
         } else if (this.tool === 'hoe' && plot.phase === 'soil') {
+            if (!this.trySpendStamina(STAMINA_COST.till)) return;
             this.till(plot);
             playFarmTool();
             this._onQuestStat?.('till', undefined, 1);
@@ -1092,6 +1187,7 @@ export class FarmSystem extends Component {
             playFarmTool();
             this._onQuestStat?.('plant', undefined, 1);
         } else if (this.tool === 'can' && plot.phase === 'crop' && !plot.watered && plot.stage < 2) {
+            if (!this.trySpendStamina(STAMINA_COST.water)) return;
             this.water(plot);
             playFarmTool();
             this._onQuestStat?.('water', undefined, 1);
@@ -1105,7 +1201,7 @@ export class FarmSystem extends Component {
             this.applyBoost(plot);
             this.boosts -= 1;
             playFarmTool();
-            this.floatTip('催熟完成！');
+            this.floatTip('催熟一晚！');
             this._onInvChange?.();
         }
     }
@@ -1113,9 +1209,13 @@ export class FarmSystem extends Component {
     /** @returns true when more swings are still needed (tree / solid rock). */
     private applyNatureClear(target: Node, act: NatureAct): boolean {
         if (!this.player || !target.isValid) return false;
+        const cost =
+            act === 'chop' ? STAMINA_COST.chop : act === 'dig' ? STAMINA_COST.dig : STAMINA_COST.pull;
+        const id = target.uuid;
+        const prior = this._natureHits.get(id) ?? 0;
+        if (prior === 0 && !this.trySpendStamina(cost)) return false;
         const need = this.hitsToClear(target, act);
         if (need > 1) {
-            const id = target.uuid;
             const hits = (this._natureHits.get(id) ?? 0) + 1;
             if (hits < need) {
                 this._natureHits.set(id, hits);
@@ -1847,7 +1947,9 @@ export class FarmSystem extends Component {
 
     private previewForPlot(plot: Plot): string {
         const need = this.neededTool(plot);
-        if (!need) return '生长中…';
+        if (!need) {
+            return plot.phase === 'crop' && plot.watered ? '明早成熟' : '生长中…';
+        }
         if (this.tool !== need) return `需选择：${this.toolName(need)}`;
         if (plot.phase === 'crop' && plot.stage >= 2) return '点击收获';
         if (plot.phase === 'soil') return '点击锄地';
@@ -1856,9 +1958,9 @@ export class FarmSystem extends Component {
         }
         if (plot.phase === 'crop' && !plot.watered) return '点击浇水';
         if (need === 'boost') {
-            return this.boosts > 0 ? '点击催熟' : `缺${itemName('boost', '催熟剂')}`;
+            return this.boosts > 0 ? '点击催熟一晚' : '明早成熟 · 或用催熟剂';
         }
-        return '生长中…';
+        return '明早成熟';
     }
 
     /** Instantly mature a watered growing crop (consumable boost / ad finish). */
@@ -1880,21 +1982,7 @@ export class FarmSystem extends Component {
                 this.finishGrowBoost(key);
             }
         }
-        const total = Math.max(0.1, this.growSeconds);
-        const mid = total * 0.5;
         for (const plot of this._plots.values()) {
-            if (plot.phase !== 'crop' || !plot.watered || plot.stage >= 2) {
-                this.syncGrowTimer(plot);
-                continue;
-            }
-            plot.grow = Math.min(total, plot.grow + dt);
-            let stage = 0;
-            if (plot.grow >= total) stage = 2;
-            else if (plot.grow >= mid) stage = 1;
-            if (stage !== plot.stage) {
-                plot.stage = stage;
-                this.applyCropVisual(plot);
-            }
             this.syncGrowTimer(plot);
         }
         this.refreshActionHint();
@@ -2102,9 +2190,7 @@ export class FarmSystem extends Component {
             return;
         }
         if (!this.world || !plot.tile) return;
-        const total = Math.max(0.1, this.growSeconds);
-        const remain = Math.max(0, Math.ceil(total - plot.grow));
-        const text = `${remain}秒`;
+        const text = '明早';
         if (!plot.growUi?.isValid) {
             this.spawnGrowUi(plot);
         }

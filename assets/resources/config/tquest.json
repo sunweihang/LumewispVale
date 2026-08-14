@@ -110,7 +110,7 @@
   {
     "id": 1005,
     "name": "浇灌作物",
-    "desc": "打开背包把水壶拖到快捷栏，给种下的作物浇水。完成后获得催熟剂。",
+    "desc": "选中水壶给作物浇水。完成后获得催熟剂；夜里睡一觉田才会熟。",
     "condition_id": 5,
     "param": "",
     "num": 2,
@@ -118,7 +118,7 @@
     "reward_gold": 25,
     "reward_item": "boost",
     "reward_count": 2,
-    "next_id": 1006,
+    "next_id": 1035,
     "sort": 50,
     "intro_script": "quest_1005",
     "outro_script": "",
@@ -128,7 +128,7 @@
   {
     "id": 1006,
     "name": "丰收时刻",
-    "desc": "把催熟剂拖到快捷栏，点作物催熟，再空手收获。",
+    "desc": "睡醒后空手点击成熟作物收获。也可用催熟剂跳过一晚。",
     "condition_id": 6,
     "param": "",
     "num": 2,
@@ -448,5 +448,23 @@
     "outro_script": "ch2_done",
     "chapter": "spring",
     "unlock_map": "mine"
+  },
+  {
+    "id": 1035,
+    "name": "第一夜",
+    "desc": "天色不早了，点小屋门睡到明天。浇过水的作物会在夜里长大。",
+    "condition_id": 10,
+    "param": "sleep_first",
+    "num": 1,
+    "goto_id": 28,
+    "reward_gold": 20,
+    "reward_item": "",
+    "reward_count": 0,
+    "next_id": 1006,
+    "sort": 55,
+    "intro_script": "quest_1035",
+    "outro_script": "",
+    "chapter": "farm",
+    "unlock_map": ""
   }
 ]

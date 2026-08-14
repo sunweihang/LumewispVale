@@ -19,7 +19,7 @@ export type TravelMapId = 'farm' | 'town' | 'mine' | 'mayorHouse' | 'clinic' | '
  * Persist bag + load destination scene.
  * Call only after unlock checks.
  */
-export function travelTo(
+export function     travelTo(
     map: TravelMapId,
     opts: {
         farm?: FarmSystem | null;
@@ -28,7 +28,10 @@ export function travelTo(
         spawnY: number;
     },
 ) {
-    if (opts.farm) GameState.captureInventory(opts.farm);
+    if (opts.farm) {
+        GameState.captureInventory(opts.farm);
+        opts.farm.capturePlots();
+    }
     if (opts.quests) opts.quests.persistToGameState();
     GameState.pendingSpawn = { map, x: opts.spawnX, y: opts.spawnY };
     const scene = SCENE_FOR[map];

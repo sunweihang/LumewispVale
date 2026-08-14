@@ -33,9 +33,13 @@ import {
     UI_GOLD as GOLD,
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
+    UI_PARCHMENT as PARCHMENT,
+    UI_STROKE as STROKE,
+    UI_WOOD as WOOD,
+    UI_WOOD_DARK as WOOD_DARK,
     applyWoodButton,
     applyWoodPanel,
-    drawWoodButton,
+    drawParchmentRow,
     loadPanelCloseFrame,
     paintPanelCloseVisual,
 } from './UiChrome';
@@ -1422,24 +1426,41 @@ export class QuestPanel extends Component {
         return n === this.node ? { x, y } : null;
     }
 
+    /**
+     * Per-quest card plate. Prefer procedural parchment (same as shop/bag rows) —
+     * AI row sprites were often invisible (Graphics disabled + Sprite on same node).
+     */
     private paintRowPlate(g: Graphics, w: number, h: number, active: boolean, done: boolean) {
         const node = g.node;
-        g.clear();
-        g.enabled = false;
-        const key: FrameKey = done ? 'rowDone' : active ? 'rowActive' : 'row';
-        const sf = this._frames.get(key) ?? null;
-        let sp = node.getComponent(Sprite);
-        if (!sp) sp = node.addComponent(Sprite);
-        sp.sizeMode = Sprite.SizeMode.CUSTOM;
-        sp.trim = false;
-        sp.type = Sprite.Type.SLICED;
-        if (sf) {
-            sp.spriteFrame = sf;
-            node.getComponent(UITransform)?.setContentSize(w, h);
+        const sp = node.getComponent(Sprite);
+        if (sp) sp.destroy();
+        g.enabled = true;
+        node.getComponent(UITransform)?.setContentSize(w, h);
+        if (done) {
+            const x0 = -w * 0.5;
+            const y0 = -h * 0.5;
+            const r = 12;
+            g.clear();
+            g.fillColor = new Color(70, 96, 48, 255);
+            g.roundRect(x0, y0, w, h, r);
+            g.fill();
+            g.fillColor = new Color(186, 200, 140, 255);
+            g.roundRect(x0 + 3, y0 + 3, w - 6, h - 6, Math.max(4, r - 2));
+            g.fill();
+            g.strokeColor = STROKE;
+            g.lineWidth = 2;
+            g.roundRect(x0, y0, w, h, r);
+            g.stroke();
             return;
         }
-        // AI row frames still loading — keep node sized; sprite lands on next refresh.
-        node.getComponent(UITransform)?.setContentSize(w, h);
+        drawParchmentRow(g, w, h);
+        if (active) {
+            // Gold inner rim so the tracked quest reads as the focus card.
+            g.strokeColor = GOLD;
+            g.lineWidth = 3;
+            g.roundRect(-w * 0.5 + 5, -h * 0.5 + 5, w - 10, h - 10, 8);
+            g.stroke();
+        }
     }
 
     private setHudVisible(visible: boolean) {

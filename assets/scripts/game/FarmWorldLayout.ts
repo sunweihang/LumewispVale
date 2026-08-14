@@ -264,6 +264,30 @@ export class FarmWorldLayout {
         return { id: best.id, node: best.node, key: best.id };
     }
 
+    /** Cottage door stand (south of `cottage_red`). */
+    static readonly COTTAGE_STAND = { x: 220, y: 372 };
+
+    static sleepDoorNode(world: Node): Node | null {
+        const house = world.getChildByName('cottage_red');
+        return house?.isValid ? house : null;
+    }
+
+    /** Hit-test the farmhouse facade / door apron. */
+    static findSleepDoor(world: Node, wx: number, wy: number): { node: Node } | null {
+        const house = this.sleepDoorNode(world);
+        if (!house) return null;
+        const ui = house.getComponent(UITransform);
+        const w = ui?.contentSize.width ?? 288;
+        const h = ui?.contentSize.height ?? 272;
+        const ax = ui?.anchorPoint.x ?? 0.5;
+        const ay = ui?.anchorPoint.y ?? 0;
+        const x0 = house.position.x - w * ax;
+        const y0 = house.position.y - h * ay;
+        if (wx < x0 - 24 || wx > x0 + w + 24) return null;
+        if (wy < y0 - 56 || wy > y0 + h * 0.55) return null;
+        return { node: house };
+    }
+
     /**
      * Lake footprint — same idea as dirt fields: warped blob + noisy rim
      * nibble so the macro shape isn't an axis-aligned box. Pixel-soft edges

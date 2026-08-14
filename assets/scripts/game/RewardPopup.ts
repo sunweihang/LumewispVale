@@ -30,7 +30,7 @@ import {
     UI_INK as INK,
     UI_INK_MUTE as INK_MUTE,
     UI_PRICE as COUNT_INK,
-    drawWoodParchmentPanel,
+    applyWoodPanel,
 } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
@@ -474,8 +474,8 @@ export class RewardPopup extends Component {
     private paintChromeOnce() {
         const panel = this._root;
         if (!panel) return;
-        const chrome = panel.getChildByName('Chrome')?.getComponent(Graphics);
-        if (chrome) drawWoodParchmentPanel(chrome, L.panelW, L.panelH, { radius: 28, lightInset: false });
+        const chrome = panel.getChildByName('Chrome');
+        if (chrome) applyWoodPanel(chrome, L.panelW, L.panelH);
         if (this._dimmer) {
             const dg = this._dimmer.getComponent(Graphics);
             if (dg) {

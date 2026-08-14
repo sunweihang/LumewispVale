@@ -27,7 +27,7 @@ import {
 import { DIALOGUE_PORTRAIT_FRAMES } from './DialoguePortraitFrames';
 import { InputBridge } from './InputBridge';
 import { playUiClick } from './UiAudio';
-import { UI_CREAM, UI_GOLD, UI_WOOD, UI_WOOD_DARK, drawDialogueChrome } from './UiChrome';
+import { UI_CREAM, UI_GOLD, UI_WOOD, UI_WOOD_DARK, applyDialogueChrome } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -624,8 +624,8 @@ export class DialoguePanel extends Component {
     private paintChromeOnce() {
         const root = this._root;
         if (!root) return;
-        const chrome = root.getChildByName('Chrome')?.getComponent(Graphics);
-        if (chrome) drawDialogueChrome(chrome, L.boxW, L.boxH);
+        const chrome = root.getChildByName('Chrome');
+        if (chrome) applyDialogueChrome(chrome, L.boxW, L.boxH);
 
         const pg = this._portraitRoot?.getComponent(Graphics);
         if (pg) {

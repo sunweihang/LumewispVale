@@ -30,7 +30,7 @@ import {
     STORY_INTRO_PANEL_PREFAB_UUID,
 } from './StoryIntroPanelFrames';
 import { playUiClick } from './UiAudio';
-import { UI_CREAM, UI_STROKE, drawDialogueChrome, drawWoodButton } from './UiChrome';
+import { UI_CREAM, UI_STROKE, applyDialogueChrome, applyWoodButton } from './UiChrome';
 import { applyUiFont, loadUiFont, styleUiLabel } from './UiFont';
 
 const { ccclass } = _decorator;
@@ -833,8 +833,8 @@ export class StoryIntroPanel extends Component {
             veil.rect(-1200, -1600, 2400, 3200);
             veil.fill();
         }
-        const caption = root.getChildByName('Caption')?.getComponent(Graphics);
-        if (caption) drawDialogueChrome(caption, L.boxW, L.boxH);
+        const caption = root.getChildByName('Caption');
+        if (caption) applyDialogueChrome(caption, L.boxW, L.boxH);
 
         const ag = this._hintArrow?.getComponent(Graphics);
         if (ag) {
@@ -855,8 +855,7 @@ export class StoryIntroPanel extends Component {
             ag.fill();
         }
 
-        const sg = this._skipBtn?.getComponent(Graphics);
-        if (sg) drawWoodButton(sg, L.skipW, L.skipH, 'on');
+        if (this._skipBtn) applyWoodButton(this._skipBtn, 'on', L.skipW, L.skipH);
     }
 
     private onSkipNodeTouch = (e: EventTouch) => {

@@ -64,6 +64,22 @@ export interface TownBoardQuest {
     deliverHint: string;
 }
 
+/** Wall-clock hours. `close` is exclusive; 24 = open until midnight. */
+export const SHOP_HOURS: Record<TownShopId, { open: number; close: number; label: string }> = {
+    seed: { open: 9, close: 18, label: '09:00–18:00' },
+    general: { open: 9, close: 18, label: '09:00–18:00' },
+    ore: { open: 8, close: 17, label: '08:00–17:00' },
+    fish: { open: 9, close: 18, label: '09:00–18:00' },
+    saloon: { open: 11, close: 24, label: '11:00–24:00' },
+};
+
+export function shopOpenAt(id: TownShopId, hour: number): boolean {
+    const h = SHOP_HOURS[id];
+    if (!h) return true;
+    if (h.close >= 24) return hour >= h.open;
+    return hour >= h.open && hour < h.close;
+}
+
 export const TOWN_SHOPS: TownShopDef[] = [
     {
         id: 'seed',
@@ -126,7 +142,7 @@ export const TOWN_SHOPS: TownShopDef[] = [
             { id: 'fiber_pack', title: '纤维捆', desc: '编织与制作常用', price: 25, count: 8 },
             { id: 'wood_pack', title: '木材捆', desc: '建筑与燃料', price: 35, count: 10 },
             { id: 'bait', title: '鱼饵', desc: '提高咬钩概率（占位）', price: 15, count: 5 },
-            { id: 'snack', title: '旅途干粮', desc: '补充体力的小点心（占位）', price: 10, count: 1 },
+            { id: 'snack', title: '旅途干粮', desc: '补充体力 +40', price: 10, count: 1 },
         ],
     },
     {
@@ -135,7 +151,7 @@ export const TOWN_SHOPS: TownShopDef[] = [
         building: 'fishshop',
         goods: [
             { id: 'bait', title: '高级鱼饵', desc: '湖边好帮手', price: 25, count: 8 },
-            { id: 'snack', title: '烤鱼片', desc: '渔夫招牌小吃', price: 18, count: 1 },
+            { id: 'snack', title: '烤鱼片', desc: '补充体力 +40', price: 18, count: 1 },
         ],
     },
     {
@@ -143,8 +159,8 @@ export const TOWN_SHOPS: TownShopDef[] = [
         title: '溪谷酒馆',
         building: 'saloon',
         goods: [
-            { id: 'snack', title: '热汤', desc: '驱散旅途疲惫', price: 12, count: 1 },
-            { id: 'snack', title: '麦芽酒', desc: '本地特色（占位）', price: 20, count: 1 },
+            { id: 'snack', title: '热汤', desc: '补充体力 +40', price: 12, count: 1 },
+            { id: 'snack', title: '麦芽酒', desc: '补充体力 +40', price: 20, count: 1 },
         ],
     },
 ];

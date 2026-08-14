@@ -40,11 +40,12 @@ import {
     portraitVisibleSize,
 } from './PortraitFit';
 import { ensureNightWash } from './NightWash';
-import { GameState } from './GameState';
+import { GameState, StoryMapId } from './GameState';
 import { QuestPanel } from './QuestPanel';
 import { QuestSystem } from './QuestSystem';
 import { warmupCriticalAssets, warmupDeferredAssets } from './AssetWarmup';
 import { DialoguePanel } from './DialoguePanel';
+import { bindDayCycle, clockHeldByUi, finishPendingPassOut, passOut, promptSleep, sleep } from './DayCycle';
 import { InputBridge } from './InputBridge';
 import { LoadingScreen } from './LoadingScreen';
 import { RewardPopup } from './RewardPopup';
@@ -133,6 +134,7 @@ export class GameBootstrap extends Component {
 
     onLoad() {
         loadUiFont();
+        void loadConfigTables();
         applyDesignResolution();
         this._ensureCanvas();
         this._ensureLetterboxCam();
@@ -450,6 +452,7 @@ export class GameBootstrap extends Component {
                 quests,
                 questPanel,
                 player,
+                map: mapId,
                 hud,
                 infoReady,
                 afterTables: () => {
@@ -547,6 +550,7 @@ export class GameBootstrap extends Component {
                 quests,
                 questPanel,
                 player,
+                map: mapId,
                 hud,
                 infoReady,
                 afterTables: () => {
@@ -695,6 +699,7 @@ export class GameBootstrap extends Component {
                 quests,
                 questPanel,
                 player,
+                map: mapId,
                 hud,
                 infoReady,
                 afterTables: () => {
@@ -786,6 +791,14 @@ export class GameBootstrap extends Component {
                         });
                         return;
                     }
+                    const bed = FarmWorldLayout.findSleepDoor(world, worldPt.x, worldPt.y);
+                    if (bed) {
+                        story.approachInteractThen(bed.node, () => {
+                            if (!bed.node.isValid) return;
+                            promptSleep();
+                        });
+                        return;
+                    }
                     if (story.tryFarmPortalTap(worldPt.x, worldPt.y)) return;
                 }
                 this.finishWorldTap(hud!, clickMove, player, world, farm, x, y, worldPt);
@@ -810,6 +823,7 @@ export class GameBootstrap extends Component {
                 quests,
                 questPanel,
                 player,
+                map: mapId,
                 hud,
                 infoReady,
                 afterTables: () => {
@@ -836,6 +850,7 @@ export class GameBootstrap extends Component {
         quests: QuestSystem;
         questPanel: QuestPanel;
         player: Node;
+        map: StoryMapId;
         hud?: FarmHUD | null;
         infoReady: Promise<FarmInfoBoard | null>;
         afterTables?: (tables: Tables) => void;
@@ -852,6 +867,7 @@ export class GameBootstrap extends Component {
                 questPanel.ensureMounted(() => resolve());
             });
             await opts.infoReady;
+            this.wireDayCycle(canvas, opts.map, opts.player, quests);
 
             loading.setProgress(0.9, '同步旅途…');
             const tables = await loadConfigTables();
@@ -859,6 +875,7 @@ export class GameBootstrap extends Component {
             applyCraftTables(tables);
             // Restore quest snapshot before afterTables flags (enter_town / enter_mine).
             quests.bindTables(tables);
+            if (opts.hud) await opts.hud.whenReady();
             opts.afterTables?.(tables);
             await loadUiFont();
 
@@ -935,6 +952,28 @@ export class GameBootstrap extends Component {
             InputBridge.moveLocked = false;
             InputBridge.clear();
         }
+    }
+
+    private wireDayCycle(canvas: Node, map: StoryMapId, player: Node, quests: QuestSystem) {
+        const farm = canvas.getComponent(FarmSystem);
+        const info = canvas.getChildByName('FarmInfoBoard')?.getComponent(FarmInfoBoard) ?? null;
+        const dialogue = canvas.getComponent(DialoguePanel);
+        const intro = canvas.getComponent(StoryIntroPanel);
+        if (!farm || !info || !dialogue || !intro) return;
+        info.clockHeld = () => clockHeldByUi(info);
+        info.onDayEnd = () => passOut();
+        info.onSkipDay = () => sleep({ passOut: false });
+        bindDayCycle({
+            map,
+            farm,
+            player,
+            infoBoard: info,
+            quests,
+            dialogue,
+            storyIntro: intro,
+            shopPanel: canvas.getComponent(TownShopPanel),
+        });
+        finishPendingPassOut();
     }
 
     private mountInfoBoard(

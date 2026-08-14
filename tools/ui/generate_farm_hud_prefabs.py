@@ -126,7 +126,12 @@ LEARN_BTN_H = round(72 * UI_SCALE)  # 108
 LEARN_PANEL_Y = round(80 * UI_SCALE)  # 120
 LEARN_TITLE_Y = LEARN_PANEL_H * 0.5 - round(56 * UI_SCALE)
 LEARN_ICON_ROW_Y = round(48 * UI_SCALE)
-LEARN_BTN_Y = -LEARN_PANEL_H * 0.5 + round(70 * UI_SCALE)
+# Name / desc / button must stack — a 108px centered desc box sat on the learn button.
+LEARN_NAME_Y = round(-16 * UI_SCALE)  # -24
+LEARN_NAME_H = round(36 * UI_SCALE)  # 54
+LEARN_DESC_Y = round(-59 * UI_SCALE)  # -88
+LEARN_DESC_H = round(44 * UI_SCALE)  # 66
+LEARN_BTN_Y = -LEARN_PANEL_H * 0.5 + LEARN_BTN_H * 0.5 + round(12 * UI_SCALE)  # -198
 
 TIP_W = round(280 * UI_SCALE)  # 420
 TIP_H = round(110 * UI_SCALE)  # 165
@@ -446,18 +451,18 @@ def build_learn_panel() -> PrefabBuilder:
         "Name",
         panel,
         0,
-        round(-20 * UI_SCALE),
+        LEARN_NAME_Y,
         LEARN_PANEL_W - round(64 * UI_SCALE),
-        round(40 * UI_SCALE),
+        LEARN_NAME_H,
         label={"text": "", "size": round(26 * UI_SCALE), "color": INK, "h_align": 1, "overflow": 1},
     )
     desc = b.node(
         "Desc",
         panel,
         0,
-        round(-72 * UI_SCALE),
+        LEARN_DESC_Y,
         LEARN_PANEL_W - round(80 * UI_SCALE),
-        round(72 * UI_SCALE),
+        LEARN_DESC_H,
         label={
             "text": "",
             "size": round(20 * UI_SCALE),
@@ -608,6 +613,8 @@ def main() -> None:
         "learnBtnH": LEARN_BTN_H,
         "learnTitleY": LEARN_TITLE_Y,
         "learnIconRowY": LEARN_ICON_ROW_Y,
+        "learnNameY": LEARN_NAME_Y,
+        "learnDescY": LEARN_DESC_Y,
         "learnBtnY": LEARN_BTN_Y,
         "tipW": TIP_W,
         "tipH": TIP_H,

@@ -44,7 +44,6 @@ import { QuestSystem } from './QuestSystem';
 import { RewardPopup } from './RewardPopup';
 import { StoryIntroPanel } from './StoryIntroPanel';
 import { StoryWorldHooks } from './StoryWorldHooks';
-import { TOOL_FRAMES } from './ToolFrames';
 import { TownShopPanel } from './TownShopPanel';
 import {
     TUTORIAL_GUIDE_LAYOUT as GL,
@@ -968,6 +967,17 @@ export class TutorialGuide extends Component implements GuideAimHost {
             return aim ? { kind: 'aim', aim } : { kind: 'suppress' };
         }
 
+        if (quests.activeQuest.id === 1035) {
+            this.farm?.setGatherClearance(null);
+            const house = this.farm?.findWorldNode('cottage_red') ?? null;
+            const aim = this.worldNodeGuide(
+                house,
+                '露穗：点小屋门睡觉',
+                '露穗：走近小屋门，再点一下',
+            );
+            return aim ? { kind: 'aim', aim } : { kind: 'suppress' };
+        }
+
         const hudPending = this.node.getComponent(FarmHUD);
         if (hudPending?.isTutorialCraftBusy || hudPending?.isTutorialCraftAwaitFly) {
             this.clearStickyTarget();
@@ -1121,7 +1131,7 @@ export class TutorialGuide extends Component implements GuideAimHost {
         }
         const boost = this.resolveHarvestBoostGuide();
         if (boost) return boost;
-        return this.worldOrQuest(null, '露穗：再等等，作物就要熟了');
+        return this.worldOrQuest(null, '露穗：今晚睡一觉，明早再收');
     }
 
     resolveHintFarm(): GuideAim | null {
@@ -1209,7 +1219,7 @@ export class TutorialGuide extends Component implements GuideAimHost {
                 if (!harvestPos) {
                     const boost = this.resolveHarvestBoostGuide();
                     if (boost) return boost;
-                    return this.worldOrQuest(null, '露穗：再等等，作物就要熟了');
+                    return this.worldOrQuest(null, '露穗：今晚睡一觉，明早再收');
                 }
                 if (tool !== 'hand') {
                     this.clearStickyTarget();
@@ -2994,7 +3004,7 @@ export class TutorialGuide extends Component implements GuideAimHost {
         const sp = this._dragGhostSp;
         if (!sp?.isValid || !itemId) return;
         if (sp.node.name === `Ghost_${itemId}` && sp.spriteFrame) return;
-        const uuid = itemIcon(itemId) || (TOOL_FRAMES as Record<string, string>)[itemId];
+        const uuid = itemIcon(itemId);
         if (!uuid) return;
         sp.node.name = `Ghost_${itemId}`;
         assetManager.loadAny({ uuid }, (err, asset) => {

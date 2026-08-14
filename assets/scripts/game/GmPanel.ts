@@ -28,6 +28,8 @@ import {
     GM_TAB_IDS,
 } from './GmPanelFrames';
 import { InputBridge } from './InputBridge';
+import { GameState } from './GameState';
+import { STAMINA_MAX } from './DayRules';
 import { gmGrantItems } from './ItemCatalog';
 import { travelTo, type TravelMapId } from './MapTravel';
 import { MineWorldLayout } from './MineWorldLayout';
@@ -41,9 +43,9 @@ import {
     UI_INK,
     UI_INK_MUTE,
     UI_STROKE,
-    drawParchmentRow,
-    drawWoodButton,
-    drawWoodParchmentPanel,
+    applyParchmentRow,
+    applyWoodButton,
+    applyWoodPanel,
     loadPanelCloseFrame,
     paintPanelCloseVisual,
     placePanelCloseButton,
@@ -396,8 +398,8 @@ export class GmPanel extends Component {
             dim.fill();
         }
         const panel = this._root.getChildByName('Panel');
-        const chrome = panel?.getChildByName('Chrome')?.getComponent(Graphics);
-        if (chrome) this.drawChrome(chrome, L.panelW, L.panelH);
+        const chrome = panel?.getChildByName('Chrome');
+        if (chrome) applyWoodPanel(chrome, L.panelW, L.panelH);
         for (const [id, btn] of this._tabBtns) {
             this.paintBtn(btn, id === this._tab ? 'tabOn' : 'tabOff');
         }
@@ -527,7 +529,7 @@ export class GmPanel extends Component {
         const dayY = this.beginSection(page, '日期 · 运行', dayCardH);
         const dayBtns: { label: string; fn: () => void }[] = [
             { label: '-1日', fn: () => this.infoBoard?.addMinutes(-20 * 60) },
-            { label: '+1日', fn: () => this.infoBoard?.addMinutes(20 * 60) },
+            { label: '睡到明天', fn: () => this.infoBoard?.onSkipDay?.() },
             {
                 label: '暂停',
                 fn: () => {
@@ -539,6 +541,31 @@ export class GmPanel extends Component {
         ];
         const pauseBtn = this.placeBtnRowFixed(page, dayBtns, dayY - 8, col3W, BTN_H);
         this._pauseLab = pauseBtn?.getChildByName('Label')?.getComponent(Label) ?? null;
+
+        const staCardH = CARD_PAD_Y + 34 + CARD_INNER_GAP + BTN_H + CARD_PAD_Y;
+        const staY = this.beginSection(page, '体力', staCardH);
+        this.placeBtnRowFixed(
+            page,
+            [
+                {
+                    label: '体力回满',
+                    fn: () => {
+                        GameState.stamina = STAMINA_MAX;
+                        this.infoBoard?.refreshStamina();
+                    },
+                },
+                {
+                    label: '体力清空',
+                    fn: () => {
+                        GameState.stamina = 0;
+                        this.infoBoard?.refreshStamina();
+                    },
+                },
+            ],
+            staY - 8,
+            col2W,
+            BTN_H,
+        );
     }
 
     private buildItemPage(page: Node) {
@@ -843,8 +870,8 @@ export class GmPanel extends Component {
         n.setSiblingIndex(0);
         n.setPosition(0, y, 0);
         n.addComponent(UITransform).setContentSize(w, h);
-        const g = n.addComponent(Graphics);
-        drawParchmentRow(g, w, h, 16);
+        n.addComponent(Graphics);
+        applyParchmentRow(n, w, h);
         return n;
     }
 
@@ -911,11 +938,14 @@ export class GmPanel extends Component {
 
     private paintBtn(btn: Node, kind: 'normal' | 'danger' | 'tabOn' | 'tabOff') {
         const ut = btn.getComponent(UITransform);
-        const g = btn.getComponent(Graphics);
-        if (!ut || !g) return;
+        if (!ut) return;
         const w = ut.contentSize.width;
         const h = ut.contentSize.height;
+        const plate = btn.getChildByName('AiPlate');
         if (kind === 'danger') {
+            if (plate) plate.active = false;
+            const g = btn.getComponent(Graphics) ?? btn.addComponent(Graphics);
+            g.enabled = true;
             g.clear();
             g.fillColor = new Color(160, 72, 48, 255);
             g.roundRect(-w * 0.5, -h * 0.5, w, h, 12);
@@ -930,7 +960,7 @@ export class GmPanel extends Component {
         } else {
             const map =
                 kind === 'tabOn' ? 'on' : kind === 'tabOff' ? 'off' : 'primary';
-            drawWoodButton(g, w, h, map);
+            applyWoodButton(btn, map, w, h);
         }
 
         const lab = btn.getChildByName('Label')?.getComponent(Label);
@@ -1166,10 +1196,6 @@ export class GmPanel extends Component {
         this.paintBtn(btn, danger ? 'danger' : 'normal');
         this._btns.push({ node: btn, action });
         return btn;
-    }
-
-    private drawChrome(g: Graphics, w: number, h: number) {
-        drawWoodParchmentPanel(g, w, h, { radius: 18, lightInset: true });
     }
 
     private refreshLabels() {

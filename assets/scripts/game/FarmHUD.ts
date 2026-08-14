@@ -43,6 +43,7 @@ import { FarmMaterial, FarmSystem, FarmTool } from './FarmSystem';
 import { FishingMinigame } from './FishingMinigame';
 import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
+import { loadConfigTables } from './ConfigService';
 import { allItems, itemIcon, itemTip } from './ItemCatalog';
 import { QUEST_FRAMES } from './QuestFrames';
 import { QuestSystem } from './QuestSystem';
@@ -257,6 +258,7 @@ export class FarmHUD extends Component {
     private _slots: { item: InvItemId | null; root: Node; glow: Graphics; icon: Sprite | null; count: Label | null }[] = [];
     private _invCells: { root: Node; icon: Sprite | null; count: Label | null }[] = [];
     private _frames: Partial<Record<InvItemId | keyof typeof TOOL_FRAMES, SpriteFrame>> = {};
+    private _ready: Promise<void> = Promise.resolve();
 
     /** Backpack storage stacks only (BAG_SLOTS). */
     private _backpack: (InvStack | null)[] = [];
@@ -361,7 +363,9 @@ export class FarmHUD extends Component {
 
     onLoad() {
         this.initBackpack();
-        this.loadFrames(() => this.build());
+        this._ready = this.loadFrames().then(() => {
+            if (this.isValid) this.build();
+        });
         loadUiFont().then((font) => {
             if (!font) return;
             if (this._tipTitle) applyUiFont(this._tipTitle);
@@ -1104,37 +1108,57 @@ export class FarmHUD extends Component {
         this.ensureHandSlot();
     }
 
-    private loadFrames(done: () => void) {
-        const chrome: { key: string; uuid: string }[] = [];
+    /** Resolves after item icons + HUD prefabs are built from Luban display. */
+    whenReady(): Promise<void> {
+        return this._ready;
+    }
+
+    private loadAny<T>(uuid: string): Promise<T | null> {
+        return new Promise((resolve) => {
+            assetManager.loadAny({ uuid }, (err, asset) => {
+                resolve(err || !asset ? null : (asset as T));
+            });
+        });
+    }
+
+    private async loadFrames(): Promise<void> {
+        try {
+            await loadConfigTables();
+        } catch (err) {
+            console.warn('[FarmHUD] config failed', err);
+        }
+        const jobs: Promise<void>[] = [];
         for (const k of TOOL_CHROME_KEYS) {
             const uuid = TOOL_FRAMES[k];
-            if (uuid) chrome.push({ key: k, uuid });
+            if (!uuid) continue;
+            jobs.push(
+                this.loadAny<SpriteFrame>(uuid).then((asset) => {
+                    if (asset) this._frames[k] = asset;
+                }),
+            );
         }
-        const items: { key: InvItemId; uuid: string }[] = [];
         for (const row of allItems()) {
             const uuid = itemIcon(row.id);
-            if (!uuid) continue;
-            items.push({ key: row.id as InvItemId, uuid });
-        }
-        // Fallback if config / display not ready yet (boot race).
-        if (items.length === 0) {
-            for (const id of [
-                'hand',
-                'hoe',
-                'seeds',
-                'can',
-                'axe',
-                'rod',
-                'boost',
-                'recipeScroll',
-                'parsnip',
-                ...ALL_MATERIALS,
-            ] as InvItemId[]) {
-                const uuid = itemIcon(id) || (TOOL_FRAMES as Record<string, string>)[id];
-                if (uuid) items.push({ key: id, uuid });
+            if (!uuid) {
+                console.warn('[FarmHUD] missing display icon', row.id);
+                continue;
             }
+            const key = row.id as InvItemId;
+            jobs.push(
+                this.loadAny<SpriteFrame>(uuid).then((asset) => {
+                    if (asset) this._frames[key] = asset;
+                    else console.warn('[FarmHUD] icon load failed', row.id, uuid);
+                }),
+            );
         }
         const questUuid = QUEST_FRAMES.questBtn;
+        if (questUuid) {
+            jobs.push(
+                this.loadAny<SpriteFrame>(questUuid).then((asset) => {
+                    if (asset) this._questBtnFrame = asset;
+                }),
+            );
+        }
         const prefabLoads: { key: keyof FarmHUD['_prefabs']; uuid: string }[] = [
             { key: 'hotbar', uuid: FARM_HOTBAR_PREFAB_UUID },
             { key: 'bag', uuid: FARM_BAG_PANEL_PREFAB_UUID },
@@ -1144,40 +1168,15 @@ export class FarmHUD extends Component {
             { key: 'learn', uuid: FARM_LEARN_PANEL_PREFAB_UUID },
             { key: 'tip', uuid: FARM_TOOL_TIP_PREFAB_UUID },
         ];
-        let left = chrome.length + items.length + (questUuid ? 1 : 0) + prefabLoads.length;
-        if (!left) {
-            done();
-            return;
+        for (const { key, uuid } of prefabLoads) {
+            jobs.push(
+                this.loadAny<Prefab>(uuid).then((asset) => {
+                    if (asset) this._prefabs[key] = asset;
+                    else console.warn('[FarmHUD] prefab missing', key);
+                }),
+            );
         }
-        const finish = () => {
-            left--;
-            if (left <= 0) done();
-        };
-        chrome.forEach(({ key, uuid }) => {
-            assetManager.loadAny({ uuid }, (err, asset) => {
-                if (!err && asset) this._frames[key as keyof typeof TOOL_FRAMES] = asset as SpriteFrame;
-                finish();
-            });
-        });
-        items.forEach(({ key, uuid }) => {
-            assetManager.loadAny({ uuid }, (err, asset) => {
-                if (!err && asset) this._frames[key] = asset as SpriteFrame;
-                finish();
-            });
-        });
-        if (questUuid) {
-            assetManager.loadAny({ uuid: questUuid }, (err, asset) => {
-                if (!err && asset) this._questBtnFrame = asset as SpriteFrame;
-                finish();
-            });
-        }
-        prefabLoads.forEach(({ key, uuid }) => {
-            assetManager.loadAny({ uuid }, (err, asset) => {
-                if (!err && asset) this._prefabs[key] = asset as Prefab;
-                else console.warn('[FarmHUD] prefab missing', key, err);
-                finish();
-            });
-        });
+        await Promise.all(jobs);
     }
 
     private build() {
@@ -2495,6 +2494,7 @@ export class FarmHUD extends Component {
 
         this._learnName = panel.getChildByName('Name')?.getComponent(Label) ?? null;
         if (this._learnName) {
+            this._learnName.node.setPosition(0, HL.learnNameY, 0);
             styleUiLabel(this._learnName, {
                 size: Math.round(26 * UI_SCALE),
                 color: UI_INK,
@@ -2503,6 +2503,9 @@ export class FarmHUD extends Component {
         }
         this._learnDesc = panel.getChildByName('Desc')?.getComponent(Label) ?? null;
         if (this._learnDesc) {
+            this._learnDesc.node.setPosition(0, HL.learnDescY, 0);
+            const descTf = this._learnDesc.node.getComponent(UITransform);
+            if (descTf) descTf.setContentSize(descTf.contentSize.width, Math.round(44 * UI_SCALE));
             styleUiLabel(this._learnDesc, {
                 size: Math.round(20 * UI_SCALE),
                 color: UI_INK_MUTE,
@@ -2512,6 +2515,7 @@ export class FarmHUD extends Component {
 
         this._learnBtn = panel.getChildByName('LearnBtn');
         if (this._learnBtn) {
+            this._learnBtn.setPosition(0, HL.learnBtnY, 0);
             applyWoodButton(this._learnBtn, 'primary', HL.learnBtnW, HL.learnBtnH);
             const btnLab = this._learnBtn.getChildByName('Label')?.getComponent(Label);
             if (btnLab) {
@@ -2940,20 +2944,11 @@ export class FarmHUD extends Component {
 
     private hitCraftRow(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
-        const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (this._craftJobs.has(row.recipe.id)) continue;
-            const btn = row.craftBtn;
-            const ui = btn.getComponent(UITransform);
-            if (!ui) continue;
-            const bx =
-                this._craftPanel.position.x + row.root.position.x + btn.position.x;
-            const by =
-                this._craftPanel.position.y + row.root.position.y + btn.position.y;
-            if (
-                Math.abs(x - bx) <= ui.contentSize.width * 0.5 &&
-                Math.abs(y - by) <= ui.contentSize.height * 0.5
-            ) {
+            // World AABB — rows live under ListHost, not Panel, so parent-local
+            // sums miss the button the tutorial arrow is already pointing at.
+            if (this.hitNodeOnCanvas(row.craftBtn, uiX, uiY, 8)) {
                 this.tryCraftRecipe(row.recipe);
                 return true;
             }
@@ -2963,19 +2958,9 @@ export class FarmHUD extends Component {
 
     private hitCraftAd(uiX: number, uiY: number): boolean {
         if (!this._craftOpen || !this._craftPanel?.isValid) return false;
-        const { x, y } = this.toDesignLocal(uiX, uiY);
         for (const row of this._craftRows) {
             if (!row.adBtn.active || !this._craftJobs.has(row.recipe.id)) continue;
-            const ui = row.adBtn.getComponent(UITransform);
-            if (!ui) continue;
-            const bx =
-                this._craftPanel.position.x + row.root.position.x + row.adBtn.position.x;
-            const by =
-                this._craftPanel.position.y + row.root.position.y + row.adBtn.position.y;
-            if (
-                Math.abs(x - bx) <= ui.contentSize.width * 0.5 &&
-                Math.abs(y - by) <= ui.contentSize.height * 0.5
-            ) {
+            if (this.hitNodeOnCanvas(row.adBtn, uiX, uiY, 8)) {
                 this.requestCraftAdBoost(row.recipe.id);
                 return true;
             }

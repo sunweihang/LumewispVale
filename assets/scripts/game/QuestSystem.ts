@@ -837,7 +837,7 @@ export class QuestSystem extends Component {
         this._awaitingClaim = false;
         this._activeId = quest.nextId > 0 ? quest.nextId : 0;
         if (this._activeId === 0) {
-            this.infoBoard?.showToast('本章主线告一段落，自由探索溪谷吧！');
+            this.infoBoard?.showToast('春厅点亮了。镇长说，下一步是修南路去海滩。');
         }
         this.persistToGameState();
         this.emitChange();

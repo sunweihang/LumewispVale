@@ -9,7 +9,9 @@ import {
     tween,
     view,
 } from 'cc';
+import { ClockState, DAY_MINUTES, SEC_PER_GAME_MIN } from './DayRules';
 import { FarmSystem } from './FarmSystem';
+import { GameState } from './GameState';
 import { InputBridge } from './InputBridge';
 import { applyNightWash } from './NightWash';
 import { DESIGN_H, DESIGN_W } from './PortraitFit';
@@ -20,10 +22,6 @@ const { ccclass, property } = _decorator;
 /** Short weekdays — fits the narrow date slot on mobile. */
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const SEASONS = ['春', '夏', '秋', '冬'];
-/** Real seconds per in-game minute. */
-const SEC_PER_GAME_MIN = 0.7;
-/** In-game day length (starts 06:00 → ends ~02:00). */
-const DAY_MINUTES = 20 * 60;
 
 export type GameClock = {
     day: number;
@@ -55,8 +53,18 @@ export class FarmInfoBoard extends Component {
     @property(Label)
     toastLab: Label | null = null;
 
+    @property(Label)
+    staminaLab: Label | null = null;
+
     @property(Node)
     needle: Node | null = null;
+
+    /** True while dialogue / shop / intro should freeze the clock. */
+    clockHeld: (() => boolean) | null = null;
+    /** 02:00 day-end — wired to DayCycle.passOut. */
+    onDayEnd: (() => void) | null = null;
+    /** GM +1 day — sleep without pass-out penalty. */
+    onSkipDay: (() => void) | null = null;
 
     private _toastHideAt = 0;
     /** Pending toasts while one is on screen (recipe unlocks, claim hints…). */
@@ -68,6 +76,7 @@ export class FarmInfoBoard extends Component {
     private _minutes = 0;
     private _acc = 0;
     private _paused = false;
+    private _dayEnding = false;
     private _goldPulseGen = 0;
 
     private _nightIntensity = -1;
@@ -82,6 +91,7 @@ export class FarmInfoBoard extends Component {
             if (this.timeLab) applyUiFont(this.timeLab);
             if (this.goldLab) applyUiFont(this.goldLab);
             if (this.toastLab) applyUiFont(this.toastLab);
+            if (this.staminaLab) applyUiFont(this.staminaLab);
         });
         // Size/layout only — keep prefab fill + cream outline colors.
         // Fonts must fit cream slots (date≈152×39, time≈152×43, gold bar 320×88).
@@ -111,6 +121,7 @@ export class FarmInfoBoard extends Component {
             this.goldLab.node.getComponent(UITransform)?.setContentSize(200, 52);
             this.goldLab.node.setPosition(52, 0, 0);
         }
+        this.ensureStaminaLab();
         if (this.toastLab) {
             styleUiLabel(this.toastLab, {
                 size: 44,
@@ -128,6 +139,8 @@ export class FarmInfoBoard extends Component {
     }
 
     start() {
+        this.hydrateFromGameState();
+        this.ensureStaminaLab();
         this.farm?.onGoldChange(() => this.refreshGold());
         this.refreshAll();
     }
@@ -138,13 +151,14 @@ export class FarmInfoBoard extends Component {
     };
 
     update(dt: number) {
-        if (!this._paused) {
+        if (!this._paused && !this.clockHeld?.()) {
             this._acc += dt;
             while (this._acc >= SEC_PER_GAME_MIN) {
                 this._acc -= SEC_PER_GAME_MIN;
                 this.advanceMinute();
             }
         }
+        this.refreshStamina();
         if (this.toastLab?.node.active) {
             // Stay above TutorialGuide arrow / other canvas chrome while visible.
             this.pinToastFront();
@@ -175,6 +189,27 @@ export class FarmInfoBoard extends Component {
     setPaused(paused: boolean) {
         this._paused = !!paused;
         if (paused) this._acc = 0;
+        this.persistClock();
+    }
+
+    /** Overlay GameState clock onto the board (after travel / sleep). */
+    applyClockState(c: ClockState) {
+        this._day = c.day;
+        this._season = c.season;
+        this._weekday = c.weekday;
+        this._minutes = Math.max(0, Math.min(DAY_MINUTES - 1, c.minutes | 0));
+        this._paused = !!c.paused;
+        this._dayEnding = false;
+        this._acc = 0;
+        this._nightIntensity = -1;
+        this.refreshClock();
+        this.persistClock();
+    }
+
+    refreshStamina() {
+        if (this.staminaLab) {
+            this.staminaLab.string = `体力 ${GameState.stamina}/${GameState.staminaMax}`;
+        }
     }
 
     /** Set display hour:minute within the 20h game day (06:00→01:59). */
@@ -185,8 +220,10 @@ export class FarmInfoBoard extends Component {
         if (since6 >= DAY_MINUTES) since6 = DAY_MINUTES - 1;
         this._minutes = since6;
         this._acc = 0;
+        this._dayEnding = since6 >= DAY_MINUTES - 1;
         this._nightIntensity = -1;
         this.refreshClock();
+        this.persistClock();
     }
 
     /** Nudge clock by signed in-game minutes (can roll day / season). */
@@ -195,10 +232,16 @@ export class FarmInfoBoard extends Component {
         if (!d) return;
         this._acc = 0;
         if (d > 0) {
+            const remain = DAY_MINUTES - this._minutes;
+            if (d >= remain && this.onSkipDay) {
+                this.onSkipDay();
+                return;
+            }
             while (d-- > 0) this.advanceMinute();
             return;
         }
         while (d++ < 0) this.rewindMinute();
+        this.persistClock();
     }
 
     setDay(day: number, weekday?: number, season?: number) {
@@ -207,6 +250,7 @@ export class FarmInfoBoard extends Component {
         if (season !== undefined) this._season = ((Math.floor(season) % 4) + 4) % 4;
         this._nightIntensity = -1;
         this.refreshClock();
+        this.persistClock();
     }
 
     /** Season label for UI (春夏秋冬). */
@@ -246,6 +290,57 @@ export class FarmInfoBoard extends Component {
         }
     }
 
+    private hydrateFromGameState() {
+        const c = GameState.clock;
+        if (c) {
+            this._day = c.day;
+            this._season = c.season;
+            this._weekday = c.weekday;
+            this._minutes = Math.max(0, Math.min(DAY_MINUTES - 1, c.minutes | 0));
+            this._paused = !!c.paused;
+        } else {
+            this.persistClock();
+        }
+    }
+
+    private persistClock() {
+        GameState.captureClock({
+            day: this._day,
+            season: this._season,
+            weekday: this._weekday,
+            minutes: this._minutes,
+            paused: this._paused,
+        });
+    }
+
+    private ensureStaminaLab() {
+        const gold = this.goldNode();
+        const parent = gold?.parent ?? this.node;
+        let n = this.staminaLab?.node ?? parent.getChildByName('Stamina');
+        if (!n?.isValid) {
+            n = new Node('Stamina');
+            n.layer = parent.layer;
+            n.setParent(parent);
+            n.addComponent(UITransform).setContentSize(280, 36);
+            const lab = n.addComponent(Label);
+            lab.horizontalAlign = Label.HorizontalAlign.RIGHT;
+            lab.verticalAlign = Label.VerticalAlign.CENTER;
+            lab.overflow = Label.Overflow.SHRINK;
+            styleUiLabel(lab, {
+                size: 26,
+                color: new Color(255, 244, 214, 255),
+                outline: true,
+                outlineWidth: 4,
+            });
+            this.staminaLab = lab;
+        } else if (!this.staminaLab) {
+            this.staminaLab = n.getComponent(Label);
+        }
+        if (gold && n) {
+            n.setPosition(gold.position.x, gold.position.y - 56, 0);
+        }
+    }
+
     private findNode(path: string[]): Node | null {
         let n: Node | null = this.node;
         for (const name of path) {
@@ -260,17 +355,18 @@ export class FarmInfoBoard extends Component {
     }
 
     private advanceMinute() {
-        this._minutes += 1;
-        if (this._minutes >= DAY_MINUTES) {
-            this._minutes = 0;
-            this._day += 1;
-            this._weekday = (this._weekday + 1) % 7;
-            if (this._day > 28) {
-                this._day = 1;
-                this._season = (this._season + 1) % 4;
-            }
+        if (this._minutes + 1 >= DAY_MINUTES) {
+            this._minutes = DAY_MINUTES - 1;
+            this.persistClock();
+            if (this._dayEnding) return;
+            this._dayEnding = true;
+            this.onDayEnd?.();
+            return;
         }
+        this._dayEnding = false;
+        this._minutes += 1;
         this.refreshClock();
+        this.persistClock();
     }
 
     private rewindMinute() {
@@ -290,6 +386,7 @@ export class FarmInfoBoard extends Component {
     private refreshAll() {
         this.refreshClock();
         this.refreshGold();
+        this.refreshStamina();
     }
 
     private refreshClock() {

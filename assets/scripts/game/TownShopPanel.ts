@@ -11,6 +11,8 @@ import {
     instantiate,
 } from 'cc';
 import { FarmSystem } from './FarmSystem';
+import { GameState } from './GameState';
+import { SNACK_STAMINA, clockHour } from './DayRules';
 import { InputBridge } from './InputBridge';
 import { itemName } from './ItemCatalog';
 import { QuestSystem } from './QuestSystem';
@@ -23,6 +25,8 @@ import {
     POST_QUEST_POOL,
     getTownSellGoods,
     TOWN_SHOPS,
+    shopOpenAt,
+    SHOP_HOURS,
 } from './TownCatalog';
 import {
     TOWN_SHOP_LAYOUT as L,
@@ -37,9 +41,9 @@ import {
     UI_INK_MUTE,
     UI_PRICE,
     UI_STROKE,
-    drawParchmentRow,
-    drawWoodButton,
-    drawWoodParchmentPanel,
+    applyParchmentRow,
+    applyWoodButton,
+    applyWoodPanel,
 } from './UiChrome';
 import { styleUiLabel } from './UiFont';
 import { GoldAmountHandle, bindGoldAmount, formatGoldAmount } from './UiGoldAmount';
@@ -183,6 +187,14 @@ export class TownShopPanel extends Component {
     openShop(shopId: string) {
         const shop = TOWN_SHOPS.find((s) => s.id === shopId) ?? null;
         if (!shop) return;
+        const hour = clockHour(GameState.ensureClock().minutes);
+        if (!shopOpenAt(shop.id, hour)) {
+            const hours = SHOP_HOURS[shop.id]?.label ?? '';
+            this.quests?.infoBoard?.showToast(
+                hours ? `${shop.title}打烊了（${hours}）` : `${shop.title}打烊了`,
+            );
+            return;
+        }
         this._mode = 'shop';
         const active = this.quests?.activeQuest?.id ?? 0;
         if (active === 1020) this._shopSide = 'sell';
@@ -406,10 +418,9 @@ export class TownShopPanel extends Component {
     private paintChromeOnce() {
         const panel = this._root;
         if (!panel) return;
-        const chrome = panel.getChildByName('Chrome')?.getComponent(Graphics);
-        if (chrome) drawWoodParchmentPanel(chrome, L.panelW, L.panelH, { radius: 22, lightInset: true });
-        const bodyCard = this._bodyCard?.getComponent(Graphics);
-        if (bodyCard) drawParchmentRow(bodyCard, L.panelW - 100, 420, 16);
+        const chrome = panel.getChildByName('Chrome');
+        if (chrome) applyWoodPanel(chrome, L.panelW, L.panelH);
+        if (this._bodyCard) applyParchmentRow(this._bodyCard, L.panelW - 100, 420);
         if (this._dimmer) {
             const dg = this._dimmer.getComponent(Graphics);
             if (dg) {
@@ -736,7 +747,11 @@ export class TownShopPanel extends Component {
                 farm.grass += n;
                 break;
             case 'bait':
+                break;
             case 'snack':
+                GameState.addStamina(SNACK_STAMINA * packs);
+                this.quests?.infoBoard?.showToast(`体力 +${SNACK_STAMINA * packs}`);
+                this.quests?.infoBoard?.refreshStamina();
                 break;
             default:
                 break;
@@ -844,22 +859,23 @@ export class TownShopPanel extends Component {
     }
 
     private paintConfirm(primary: boolean) {
-        const gfx = this._confirmBtn?.getComponent(Graphics);
-        if (gfx) drawWoodButton(gfx, L.confirmW, L.actionH, primary ? 'primary' : 'muted');
+        if (this._confirmBtn) {
+            applyWoodButton(this._confirmBtn, primary ? 'primary' : 'muted', L.confirmW, L.actionH);
+        }
         if (this._plainLab?.node.active) this._plainLab.color = primary ? UI_INK : UI_CREAM;
         if (this._tradeVerbLab?.node.active) this._tradeVerbLab.color = primary ? UI_INK : UI_CREAM;
     }
 
     private paintAccept(primary: boolean) {
-        const gfx = this._acceptBtn?.getComponent(Graphics);
-        if (gfx) drawWoodButton(gfx, L.actionW, L.actionH, primary ? 'primary' : 'muted');
+        if (this._acceptBtn) {
+            applyWoodButton(this._acceptBtn, primary ? 'primary' : 'muted', L.actionW, L.actionH);
+        }
         if (this._acceptLab) this._acceptLab.color = primary ? UI_INK : UI_CREAM;
     }
 
     private paintTab(node: Node | null, lab: Label | null, on: boolean) {
         if (!node) return;
-        const gfx = node.getComponent(Graphics);
-        if (gfx) drawWoodButton(gfx, L.tabW, L.tabH, on ? 'on' : 'off');
+        applyWoodButton(node, on ? 'on' : 'off', L.tabW, L.tabH);
         if (lab) lab.color = on ? UI_CREAM : UI_INK;
     }
 
@@ -903,8 +919,7 @@ export class TownShopPanel extends Component {
 
     private paintQtyBtn(node: Node | null, enabled: boolean) {
         if (!node) return;
-        const gfx = node.getComponent(Graphics);
-        if (gfx) drawWoodButton(gfx, L.qtyBtn, L.qtyBtn, enabled ? 'primary' : 'muted');
+        applyWoodButton(node, enabled ? 'primary' : 'muted', L.qtyBtn, L.qtyBtn);
         const lab = node.getChildByName('Label')?.getComponent(Label);
         if (lab) lab.color = enabled ? UI_INK : UI_CREAM;
     }
@@ -976,19 +991,30 @@ export class TownShopPanel extends Component {
         const listY = this._listHost ? L.listY : 0;
         row.setPosition(0, y - listY, 0);
 
-        const gfx = row.getComponent(Graphics);
-        if (gfx) {
-            drawParchmentRow(gfx, L.rowW, L.rowH, 12);
-            if (selected) {
-                gfx.strokeColor = UI_GOLD;
-                gfx.lineWidth = 4;
-                gfx.roundRect(-L.rowW * 0.5, -L.rowH * 0.5, L.rowW, L.rowH, 12);
-                gfx.stroke();
-                gfx.strokeColor = UI_STROKE;
-                gfx.lineWidth = 2;
-                gfx.roundRect(-L.rowW * 0.5 + 3, -L.rowH * 0.5 + 3, L.rowW - 6, L.rowH - 6, 10);
-                gfx.stroke();
+        applyParchmentRow(row, L.rowW, L.rowH);
+        let sel = row.getChildByName('Sel');
+        if (selected) {
+            if (!sel) {
+                sel = new Node('Sel');
+                sel.layer = row.layer;
+                sel.setParent(row);
+                sel.addComponent(UITransform).setContentSize(L.rowW, L.rowH);
+                sel.addComponent(Graphics);
             }
+            sel.active = true;
+            const sg = sel.getComponent(Graphics)!;
+            sg.clear();
+            sg.enabled = true;
+            sg.strokeColor = UI_GOLD;
+            sg.lineWidth = 4;
+            sg.roundRect(-L.rowW * 0.5, -L.rowH * 0.5, L.rowW, L.rowH, 12);
+            sg.stroke();
+            sg.strokeColor = UI_STROKE;
+            sg.lineWidth = 2;
+            sg.roundRect(-L.rowW * 0.5 + 3, -L.rowH * 0.5 + 3, L.rowW - 6, L.rowH - 6, 10);
+            sg.stroke();
+        } else if (sel) {
+            sel.active = false;
         }
 
         const titleLab = row.getChildByName('Title')?.getComponent(Label);

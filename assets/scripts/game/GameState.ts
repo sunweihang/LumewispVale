@@ -1,4 +1,10 @@
 import type { FarmMaterial, FarmTool } from './FarmSystem';
+import {
+    ClockState,
+    PlotSnapshot,
+    STAMINA_MAX,
+    defaultClock,
+} from './DayRules';
 
 /** Maps that can be gated by mainline progress. */
 export type StoryMapId =
@@ -98,6 +104,45 @@ class GameStateStore {
 
     /** Spawn hint after travel (e.g. near town farm sign). */
     pendingSpawn: { map: StoryMapId; x: number; y: number } | null = null;
+
+    /** Shared calendar. Null until the first info board hydrates it. */
+    clock: ClockState | null = null;
+    stamina = STAMINA_MAX;
+    staminaMax = STAMINA_MAX;
+    plots: PlotSnapshot[] | null = null;
+    /** Next wake restores 70% (pass-out). Consumed by DayCycle.sleep. */
+    passOutWake = false;
+    /** Arrive on farm after a 02:00 pass-out from another map. */
+    pendingPassOut = false;
+
+    ensureClock(): ClockState {
+        if (!this.clock) this.clock = defaultClock();
+        return this.clock;
+    }
+
+    captureClock(src: ClockState) {
+        this.clock = {
+            day: src.day,
+            season: src.season,
+            weekday: src.weekday,
+            minutes: src.minutes,
+            paused: src.paused,
+        };
+    }
+
+    capturePlots(list: PlotSnapshot[]) {
+        this.plots = list.map((p) => ({
+            key: p.key,
+            phase: p.phase,
+            stage: p.stage,
+            watered: p.watered,
+        }));
+    }
+
+    addStamina(n: number) {
+        const max = this.staminaMax;
+        this.stamina = Math.max(0, Math.min(max, this.stamina + n));
+    }
 
     hasSeenDialogue(id: string): boolean {
         return !!this.seenDialogue[id];

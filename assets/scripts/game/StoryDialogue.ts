@@ -182,6 +182,7 @@ export class StoryDialogue extends Component implements IStoryChatHost {
             'quest_1003',
             'quest_1004',
             'quest_1005',
+            'quest_1035',
             'quest_1006',
             'quest_1032',
             'quest_1033',

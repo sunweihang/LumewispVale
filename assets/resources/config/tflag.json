@@ -63,5 +63,10 @@
     "id": "light_spring_hall",
     "label": "点亮春厅",
     "unlock_map": ""
+  },
+  {
+    "id": "sleep_first",
+    "label": "第一夜入睡",
+    "unlock_map": ""
   }
 ]
